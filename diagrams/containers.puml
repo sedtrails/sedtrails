@@ -13,7 +13,7 @@ System_Boundary(sedtrailsSystem, "SedTRAILS Particle Tracking System"){
 
     Container(configInterface, "Simulation Configuration Interface", "Python", "An application that reads and interprets simulation configuration files")
 
-    Container(transportConverter, "Transport Converter", "Python", "An parallel application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
+    Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
     Container(pathwayVisualizer, "Pathway Visualizer", "Python", "An application to generate plots and animations of sand particle pathways.")
     Container(cache, "Simulation Caching and State Tracker", "Python", "Tracks simulation state, and recovers simulation outputs to allow restarts, and reusing simulation inputs and outputs")
     Container(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Pacticle Tracer System")
