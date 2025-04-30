@@ -151,7 +151,7 @@ class VSUse:
             print(header)
 
             f.seek(header_lenght)  # move pointer to this position, to skip the header
-            big_endian8 = struct.unpack('>Q', f.read(8))[0]  #  read moves the pointer
+            big_endian8 = struct.unpack('>Q', f.read(8))[0]  #  read moves the pointer, thefore it has to be reset
 
             f.seek(header_lenght)  # to reset the pointer to the header position
             little_endian8 = struct.unpack('<Q', f.read(8))[0]
@@ -200,6 +200,7 @@ class VSUse:
                 var_dim = code[-1] == ord('5')
                 name = f.read(16).decode('ascii').strip('\x00')
                 defname = f.read(16).decode('ascii').strip('\x00')
+
                 ianames = [f.read(16).decode('ascii').strip('\x00') for _ in range(5)]
                 iavalues = list(struct.unpack(('>' if fmt == 'b' else '<') + '5i', f.read(20)))
                 ranames = [f.read(16).decode('ascii').strip('\x00') for _ in range(5)]
