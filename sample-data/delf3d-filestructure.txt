@@ -1,0 +1,852 @@
+FileType: NEFIS
+SubType: Delft3D-trim
+FileName: 
+DatExt: D:\OSS\github_repos\nefis\tests\data\trim-f34.dat
+DefExt: D:\OSS\github_repos\nefis\tests\data\trim-f34.def
+Format: b
+AddressType: uint32
+GrpDat(1) (struct):
+    Offset: 39140
+    VarDim: 1
+    Name: map-series
+    DefName: map-series
+    DefIndex: 5
+    IANames:                                                                                 
+    IAValue: [538976288 538976288 538976288 538976288 538976288]
+    RANames:                                                                                 
+    RAValue: [1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19]
+    SANames:                                                                                 
+    SAValue:                                                                                 
+    DataSize: 95068
+    SizeDim: 6
+    OrderDim: 1
+GrpDat(2) (struct):
+    Offset: 37708
+    VarDim: 1
+    Name: map-info-series
+    DefName: map-info-series
+    DefIndex: 4
+    IANames:                                                                                 
+    IAValue: [538976288 538976288 538976288 538976288 538976288]
+    RANames:                                                                                 
+    RAValue: [1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19]
+    SANames:                                                                                 
+    SAValue:                                                                                 
+    DataSize: 4
+    SizeDim: 6
+    OrderDim: 1
+GrpDat(3) (struct):
+    Offset: 27924
+    VarDim: 1
+    Name: TEMPOUT
+    DefName: TEMPOUT
+    DefIndex: 3
+    IANames:                                                                                 
+    IAValue: [538976288 538976288 538976288 538976288 538976288]
+    RANames:                                                                                 
+    RAValue: [1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19]
+    SANames:                                                                                 
+    SAValue:                                                                                 
+    DataSize: 5280
+    SizeDim: 1
+    OrderDim: 1
+GrpDat(4) (struct):
+    Offset: 22968
+    VarDim: 1
+    Name: map-version
+    DefName: map-version
+    DefIndex: 2
+    IANames:                                                                                 
+    IAValue: [538976288 538976288 538976288 538976288 538976288]
+    RANames:                                                                                 
+    RAValue: [1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19]
+    SANames:                                                                                 
+    SAValue:                                                                                 
+    DataSize: 452
+    SizeDim: 1
+    OrderDim: 1
+GrpDat(5) (struct):
+    Offset: 4052
+    VarDim: 1
+    Name: map-const
+    DefName: map-const
+    DefIndex: 1
+    IANames:                                                                                 
+    IAValue: [538976288 538976288 538976288 538976288 538976288]
+    RANames:                                                                                 
+    RAValue: [1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19 1.35631564269401e-19]
+    SANames:                                                                                 
+    SAValue:                                                                                 
+    DataSize: 14412
+    SizeDim: 1
+    OrderDim: 1
+GrpDef(1) (struct):
+    Offset: 19444
+    Name: map-const
+    CelName: map-const
+    CelIndex: 1
+    SizeDim: 0
+    OrderDim: 1
+GrpDef(2) (struct):
+    Offset: 20288
+    Name: map-version
+    CelName: map-version
+    CelIndex: 2
+    SizeDim: 0
+    OrderDim: 1
+GrpDef(3) (struct):
+    Offset: 21132
+    Name: TEMPOUT
+    CelName: TEMPOUT
+    CelIndex: 3
+    SizeDim: 0
+    OrderDim: 1
+GrpDef(4) (struct):
+    Offset: 21436
+    Name: map-info-series
+    CelName: map-info-series
+    CelIndex: 4
+    SizeDim: 0
+    OrderDim: 1
+GrpDef(5) (struct):
+    Offset: 25340
+    Name: map-series
+    CelName: map-series
+    CelIndex: 5
+    SizeDim: 0
+    OrderDim: 1
+CelDef(1) (struct):
+    Offset: 18752
+    Name: map-const
+    CellSize: 14412
+    Elm: [1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41]
+CelDef(2) (struct):
+    Offset: 20188
+    Name: map-version
+    CellSize: 452
+    Elm: [42 43 44 45]
+CelDef(3) (struct):
+    Offset: 21032
+    Name: TEMPOUT
+    CellSize: 5280
+    Elm: [46 47 48 49]
+CelDef(4) (struct):
+    Offset: 21384
+    Name: map-info-series
+    CellSize: 4
+    Elm: 50
+CelDef(5) (struct):
+    Offset: 24968
+    Name: map-series
+    CellSize: 95068
+    Elm: [51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71]
+ElmDef(1) (struct):
+    Offset: 12028
+    Name: ITDATE
+    Type: 3
+    SizeVal: 4
+    SizeElm: 8
+    Quantity: 
+    Units: [YYYYMMDD]
+    Description: Initial date (input) & time (default 00:00:00)
+    Size: 2
+ElmDef(2) (struct):
+    Offset: 12192
+    Name: TUNIT
+    Type: 5
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   S   ]
+    Description: Time scale related to seconds
+    Size: 1
+ElmDef(3) (struct):
+    Offset: 12356
+    Name: DT
+    Type: 5
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: Time step (DT*TUNIT sec)
+    Size: 1
+ElmDef(4) (struct):
+    Offset: 12520
+    Name: SIMDAT
+    Type: 1
+    SizeVal: 16
+    SizeElm: 16
+    Quantity: 
+    Units: [   -   ]
+    Description: Simulation date and time [YYYYMMDD  HHMMSS]
+    Size: 1
+ElmDef(5) (struct):
+    Offset: 12684
+    Name: SELMAP
+    Type: 1
+    SizeVal: 21
+    SizeElm: 21
+    Quantity: 
+    Units: [   -   ]
+    Description: Selection flag for field values (2dH, 1dV & 2dV)
+    Size: 1
+ElmDef(6) (struct):
+    Offset: 12848
+    Name: NMAX
+    Type: 3
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: Number of N-grid points
+    Size: 1
+ElmDef(7) (struct):
+    Offset: 13012
+    Name: MMAX
+    Type: 3
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: Number of M-grid points
+    Size: 1
+ElmDef(8) (struct):
+    Offset: 13176
+    Name: KMAX
+    Type: 3
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: Number of layers
+    Size: 1
+ElmDef(9) (struct):
+    Offset: 13340
+    Name: LSTCI
+    Type: 3
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: Number of constituents
+    Size: 1
+ElmDef(10) (struct):
+    Offset: 13504
+    Name: LTUR
+    Type: 3
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: Number of turbulence quantities
+    Size: 1
+ElmDef(11) (struct):
+    Offset: 13668
+    Name: NOSTAT
+    Type: 3
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: Number of monitoring stations
+    Size: 1
+ElmDef(12) (struct):
+    Offset: 13832
+    Name: NSRC
+    Type: 3
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: Number of discharge
+    Size: 1
+ElmDef(13) (struct):
+    Offset: 13996
+    Name: NTRUV
+    Type: 3
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: Number of monitoring cross-sections
+    Size: 1
+ElmDef(14) (struct):
+    Offset: 14160
+    Name: GRDANG
+    Type: 5
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [  DEG  ]
+    Description: Edge between y-axis and real north
+    Size: 1
+ElmDef(15) (struct):
+    Offset: 14324
+    Name: XCOR
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   M   ]
+    Description: X-coord. bottom point in local system
+    Size: [22 15]
+ElmDef(16) (struct):
+    Offset: 14488
+    Name: YCOR
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   M   ]
+    Description: Y-coord. bottom point in local system
+    Size: [22 15]
+ElmDef(17) (struct):
+    Offset: 14652
+    Name: XZ
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   M   ]
+    Description: X-coord. zeta point in local system
+    Size: [22 15]
+ElmDef(18) (struct):
+    Offset: 14816
+    Name: YZ
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   M   ]
+    Description: Y-coord. zeta point in local system
+    Size: [22 15]
+ElmDef(19) (struct):
+    Offset: 14980
+    Name: ALFAS
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [  DEG  ]
+    Description: Orientation ksi-axis w.r.t. pos.x-axis at water level point
+    Size: [22 15]
+ElmDef(20) (struct):
+    Offset: 15144
+    Name: KCU
+    Type: 3
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   -   ]
+    Description: Mask array for U-velocity points
+    Size: [22 15]
+ElmDef(21) (struct):
+    Offset: 15308
+    Name: KCV
+    Type: 3
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   -   ]
+    Description: Mask array for V-velocity points
+    Size: [22 15]
+ElmDef(22) (struct):
+    Offset: 15472
+    Name: KCS
+    Type: 3
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   -   ]
+    Description: Non-active/active water-level point
+    Size: [22 15]
+ElmDef(23) (struct):
+    Offset: 15636
+    Name: DP0
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   M   ]
+    Description: Initial bottom depth (positive down)
+    Size: [22 15]
+ElmDef(24) (struct):
+    Offset: 15800
+    Name: DPS0
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   M   ]
+    Description: Initial bottom depth at zeta points (positive down)
+    Size: [22 15]
+ElmDef(25) (struct):
+    Offset: 15964
+    Name: DRYFLP
+    Type: 1
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: Criterium to calculate depth in zeta points
+    Size: 1
+ElmDef(26) (struct):
+    Offset: 16128
+    Name: NOROW
+    Type: 3
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: Number of rows for IROCOL table
+    Size: 1
+ElmDef(27) (struct):
+    Offset: 16292
+    Name: NOROCO
+    Type: 3
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: Number of rows & columns of IROCOL table
+    Size: 1
+ElmDef(28) (struct):
+    Offset: 16456
+    Name: IROCOL
+    Type: 3
+    SizeVal: 4
+    SizeElm: 700
+    Quantity: 
+    Units: [   -   ]
+    Description: Administration of zeta points
+    Size: [5 35]
+ElmDef(29) (struct):
+    Offset: 16620
+    Name: THICK
+    Type: 5
+    SizeVal: 4
+    SizeElm: 20
+    Quantity: 
+    Units: [ .01*% ]
+    Description: Fraction part of layer thickness of total water-height
+    Size: 5
+ElmDef(30) (struct):
+    Offset: 16784
+    Name: NAMCON
+    Type: 1
+    SizeVal: 20
+    SizeElm: 20
+    Quantity: 
+    Units: [   -   ]
+    Description: Name of constituent & turbulent quantity
+    Size: 1
+ElmDef(31) (struct):
+    Offset: 16948
+    Name: MNSTAT
+    Type: 3
+    SizeVal: 4
+    SizeElm: 40
+    Quantity: 
+    Units: [   -   ]
+    Description: (M,N) indices of monitoring stations
+    Size: [2 5]
+ElmDef(32) (struct):
+    Offset: 17112
+    Name: NAMST
+    Type: 1
+    SizeVal: 20
+    SizeElm: 100
+    Quantity: 
+    Units: [   -   ]
+    Description: Name of monitoring station
+    Size: 5
+ElmDef(33) (struct):
+    Offset: 17276
+    Name: NAMSRC
+    Type: 1
+    SizeVal: 20
+    SizeElm: 20
+    Quantity: 
+    Units: [   -   ]
+    Description: Name of discharge source
+    Size: 1
+ElmDef(34) (struct):
+    Offset: 17440
+    Name: MNTRA
+    Type: 3
+    SizeVal: 4
+    SizeElm: 64
+    Quantity: 
+    Units: [   -   ]
+    Description: (M1,N1)-(M2,N2) indices of monitoring cross-sections
+    Size: [4 4]
+ElmDef(35) (struct):
+    Offset: 17604
+    Name: NAMTRA
+    Type: 1
+    SizeVal: 20
+    SizeElm: 80
+    Quantity: 
+    Units: [   -   ]
+    Description: Name of monitoring cross-section
+    Size: 4
+ElmDef(36) (struct):
+    Offset: 17768
+    Name: LSED
+    Type: 3
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: Number of sediment constituents
+    Size: 1
+ElmDef(37) (struct):
+    Offset: 17932
+    Name: LSEDBL
+    Type: 3
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: Number of bedload sediment fractions
+    Size: 1
+ElmDef(38) (struct):
+    Offset: 18096
+    Name: NAMSED
+    Type: 1
+    SizeVal: 20
+    SizeElm: 20
+    Quantity: 
+    Units: [   -   ]
+    Description: Name of sediment fraction
+    Size: 1
+ElmDef(39) (struct):
+    Offset: 18260
+    Name: ZK
+    Type: 5
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   M   ]
+    Description: Vertical coordinates of cell interfaces
+    Size: 1
+ElmDef(40) (struct):
+    Offset: 18424
+    Name: COORDINATES
+    Type: 1
+    SizeVal: 16
+    SizeElm: 16
+    Quantity: 
+    Units: [   -   ]
+    Description: Cartesian or Spherical coordinates
+    Size: 1
+ElmDef(41) (struct):
+    Offset: 18588
+    Name: LAYER_MODEL
+    Type: 1
+    SizeVal: 16
+    SizeElm: 16
+    Quantity: 
+    Units: [   -   ]
+    Description: Sigma-model or Z-model
+    Size: 1
+ElmDef(42) (struct):
+    Offset: 19532
+    Name: FLOW-SIMDAT
+    Type: 1
+    SizeVal: 16
+    SizeElm: 16
+    Quantity: 
+    Units: [   -   ]
+    Description: FLOW Simulation date and time [YYYYMMDD  HHMMSS]
+    Size: 1
+ElmDef(43) (struct):
+    Offset: 19696
+    Name: FLOW-SYSTXT
+    Type: 1
+    SizeVal: 120
+    SizeElm: 120
+    Quantity: 
+    Units: [   -   ]
+    Description: FLOW System description
+    Size: 1
+ElmDef(44) (struct):
+    Offset: 19860
+    Name: FLOW-RUNTXT
+    Type: 1
+    SizeVal: 30
+    SizeElm: 300
+    Quantity: 
+    Units: [   -   ]
+    Description: FLOW User defined Model description
+    Size: 10
+ElmDef(45) (struct):
+    Offset: 20024
+    Name: FILE-VERSION
+    Type: 1
+    SizeVal: 16
+    SizeElm: 16
+    Quantity: 
+    Units: [   -   ]
+    Description: Version number of file
+    Size: 1
+ElmDef(46) (struct):
+    Offset: 20376
+    Name: XWAT
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   M   ]
+    Description: X-coord. water level point in local system
+    Size: [22 15]
+ElmDef(47) (struct):
+    Offset: 20540
+    Name: YWAT
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   M   ]
+    Description: Y-coord. water level point in local system
+    Size: [22 15]
+ElmDef(48) (struct):
+    Offset: 20704
+    Name: CODB
+    Type: 3
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   -   ]
+    Description: 1/-1 Active/Non-active bottom point ( w.r.t. coordinates )
+    Size: [22 15]
+ElmDef(49) (struct):
+    Offset: 20868
+    Name: CODW
+    Type: 3
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   -   ]
+    Description: 1/-1 Active/Non-active water level point (w.r.t. coordinates )
+    Size: [22 15]
+ElmDef(50) (struct):
+    Offset: 21220
+    Name: ITMAPC
+    Type: 3
+    SizeVal: 4
+    SizeElm: 4
+    Quantity: 
+    Units: [   -   ]
+    Description: timestep number (ITMAPC*DT*TUNIT := time in sec from ITDATE)
+    Size: 1
+ElmDef(51) (struct):
+    Offset: 21524
+    Name: S1
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   M   ]
+    Description: Water-level in zeta point
+    Size: [22 15]
+ElmDef(52) (struct):
+    Offset: 21688
+    Name: KFU
+    Type: 3
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   -   ]
+    Description: Non-active/active in U-point
+    Size: [22 15]
+ElmDef(53) (struct):
+    Offset: 21852
+    Name: KFV
+    Type: 3
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [   -   ]
+    Description: Non-active/active in V-point
+    Size: [22 15]
+ElmDef(54) (struct):
+    Offset: 22016
+    Name: U1
+    Type: 5
+    SizeVal: 4
+    SizeElm: 6600
+    Quantity: 
+    Units: [  M/S  ]
+    Description: U-velocity per layer in U-point
+    Size: [22 15 5]
+ElmDef(55) (struct):
+    Offset: 22180
+    Name: V1
+    Type: 5
+    SizeVal: 4
+    SizeElm: 6600
+    Quantity: 
+    Units: [  M/S  ]
+    Description: V-velocity per layer in V-point
+    Size: [22 15 5]
+ElmDef(56) (struct):
+    Offset: 22344
+    Name: W
+    Type: 5
+    SizeVal: 4
+    SizeElm: 7920
+    Quantity: 
+    Units: [  M/S  ]
+    Description: W-omega per layer in zeta point
+    Size: [22 15 6]
+ElmDef(57) (struct):
+    Offset: 22508
+    Name: WPHY
+    Type: 5
+    SizeVal: 4
+    SizeElm: 6600
+    Quantity: 
+    Units: [  M/S  ]
+    Description: W-velocity per layer in zeta point
+    Size: [22 15 5]
+ElmDef(58) (struct):
+    Offset: 22672
+    Name: R1
+    Type: 5
+    SizeVal: 4
+    SizeElm: 6600
+    Quantity: 
+    Units: [   -   ]
+    Description: Concentrations per layer in zeta point
+    Size: [22 15 5 1]
+ElmDef(59) (struct):
+    Offset: 22836
+    Name: TAUKSI
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [  N/M2 ]
+    Description: Bottom stress in U-point
+    Size: [22 15]
+ElmDef(60) (struct):
+    Offset: 23000
+    Name: TAUETA
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [  N/M2 ]
+    Description: Bottom stress in V-point
+    Size: [22 15]
+ElmDef(61) (struct):
+    Offset: 23164
+    Name: TAUMAX
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [  N/M2 ]
+    Description: Tau_max in zeta points (scalar)
+    Size: [22 15]
+ElmDef(62) (struct):
+    Offset: 23328
+    Name: VICWW
+    Type: 5
+    SizeVal: 4
+    SizeElm: 7920
+    Quantity: 
+    Units: [  M2/S ]
+    Description: Vertical eddy viscosity-3D in zeta point
+    Size: [22 15 6]
+ElmDef(63) (struct):
+    Offset: 23492
+    Name: DICWW
+    Type: 5
+    SizeVal: 4
+    SizeElm: 7920
+    Quantity: 
+    Units: [  M2/S ]
+    Description: Vertical eddy diffusivity-3D in zeta point
+    Size: [22 15 6]
+ElmDef(64) (struct):
+    Offset: 23656
+    Name: RICH
+    Type: 5
+    SizeVal: 4
+    SizeElm: 7920
+    Quantity: 
+    Units: [   -   ]
+    Description: Richardson number
+    Size: [22 15 6]
+ElmDef(65) (struct):
+    Offset: 23820
+    Name: RHO
+    Type: 5
+    SizeVal: 4
+    SizeElm: 6600
+    Quantity: 
+    Units: [ KG/M3 ]
+    Description: Density per layer in zeta point
+    Size: [22 15 5]
+ElmDef(66) (struct):
+    Offset: 23984
+    Name: UMNLDF
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [  M/S  ]
+    Description: Filtered U-velocity
+    Size: [22 15]
+ElmDef(67) (struct):
+    Offset: 24148
+    Name: VMNLDF
+    Type: 5
+    SizeVal: 4
+    SizeElm: 1320
+    Quantity: 
+    Units: [  M/S  ]
+    Description: Filtered V-velocity
+    Size: [22 15]
+ElmDef(68) (struct):
+    Offset: 24312
+    Name: VICUV
+    Type: 5
+    SizeVal: 4
+    SizeElm: 6600
+    Quantity: 
+    Units: [ M2/S  ]
+    Description: Horizontal eddy viscosity in zeta point
+    Size: [22 15 5]
+ElmDef(69) (struct):
+    Offset: 24476
+    Name: MNKSRC
+    Type: 3
+    SizeVal: 4
+    SizeElm: 28
+    Quantity: 
+    Units: [   -   ]
+    Description: (M,N,K) indices of discharge sources and time dep. location
+    Size: [7 1]
+ElmDef(70) (struct):
+    Offset: 24640
+    Name: VORTIC
+    Type: 5
+    SizeVal: 4
+    SizeElm: 6600
+    Quantity: 
+    Units: [  1/S  ]
+    Description: Vorticity at each layer in depth point
+    Size: [22 15 5]
+ElmDef(71) (struct):
+    Offset: 24804
+    Name: ENSTRO
+    Type: 5
+    SizeVal: 4
+    SizeElm: 6600
+    Quantity: 
+    Units: [  1/S2 ]
+    Description: Enstrophy at each layer in depth point
+    Size: [22 15 5]
