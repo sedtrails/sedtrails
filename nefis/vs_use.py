@@ -183,15 +183,6 @@ class VSUse:
             else:
                 raise ValueError('Unable to determine address type from file header.')
 
-            # if size_8 <= actual_size:
-            #     self.vs_struct.AddressType = 'uint64'
-            #     self.vs_struct.Format = 'b'
-            # elif size_4 <= actual_size:
-            #     self.vs_struct.AddressType = 'uint32'
-            #     self.vs_struct.Format = 'b'
-            # else:
-            #     raise ValueError('Unable to determine address type from file header.')
-
     def _read_group_data(self):
         fmt = self.vs_struct.Format
         addr_type = self.vs_struct.AddressType
