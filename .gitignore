@@ -9,6 +9,11 @@ __pycache__/
 # Mac OS X metadata files
 **/.DS_Store
 
+# Data files
+/sample-data/*.dat 
+/sample-data/*.def
+/sample-data/*.nc
+
 # Distribution / packaging
 .Python
 build/
