@@ -183,6 +183,9 @@ class VSUse:
             else:
                 raise ValueError('Unable to determine address type from file header.')
 
+            print(f'[DEBUG] Address Type: {self.vs_struct.AddressType}')
+            print(f'[DEBUG] Byte Order Format: {self.vs_struct.Format}')
+
     def _read_group_data(self):
         fmt = self.vs_struct.Format
         addr_type = self.vs_struct.AddressType
@@ -280,7 +283,7 @@ class VSUse:
 
 if __name__ == '__main__':
     # s = VSUse(r'/Users/mgarciaalvarez/devel/sedtrails/sample-data/trim-f34.dat')
-    s = VSUse(r'/Users/mgarciaalvarez/devel/sedtrails/sample-data/trim-f34.dat')
+    s = VSUse(r'/Users/mgarciaalvarez/devel/sedtrails/sample-data/trim-sedtrails.dat')
 
     r = s.run()
     print(r)
