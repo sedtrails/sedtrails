@@ -197,6 +197,8 @@ class VSUse:
             hash_table = [struct.unpack(bucket_format, f.read(addr_bytes))[0] for _ in range(997)]
             for offset in filter(lambda x: x != 2 ** (8 * addr_bytes) - 1, hash_table):
                 f.seek(offset)
+                print(f'[DEBUG] Reading group data at offset: {offset}')
+                print(f'[DEBUG] Current bucket format: {bucket_format}')
                 link = struct.unpack(bucket_format, f.read(addr_bytes))[0]
                 size = struct.unpack(bucket_format, f.read(addr_bytes))[0]
                 code = f.read(addr_bytes)
