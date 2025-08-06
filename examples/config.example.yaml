@@ -3,7 +3,7 @@ general:
     format: fm_netcdf
     reference_date: 1970-01-01  # Default reference date for the input model
 folder_settings:
-  input_data: ./sample-data/inlet_sedtrails.nc
+  input_data: C:/Users/hshafiei/Downloads/dfm/inlet_sedtrails.nc
   output_dir: ./results
 time:
   start: 2016-09-21 19:30:00
