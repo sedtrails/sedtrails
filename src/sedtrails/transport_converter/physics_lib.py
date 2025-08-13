@@ -56,14 +56,14 @@ def compute_shear_velocity(bed_shear_stress: np.ndarray, water_density: float) -
     Parameters:
     -----------
     bed_shear_stress : np.ndarray
-        Bed shear stress [N/m²]
+        τ = Bed shear stress [N/m²]
     water_density : float
-        Water density [kg/m³]
+        ρ_w = Water density [kg/m³]
 
     Returns:
     --------
     np.ndarray
-        Shear velocity [m/s]
+        u* = Shear velocity [m/s]
 
     Notes:
     ------
@@ -71,7 +71,7 @@ def compute_shear_velocity(bed_shear_stress: np.ndarray, water_density: float) -
 
     Reference:
     Soulsby, R. (1997). Dynamics of marine sands: a manual for practical applications.
-    Thomas Telford. Equation 2.6 (CHECK THIS????)
+    Thomas Telford. Equation 32
     """
     return np.sqrt(np.abs(bed_shear_stress) / water_density)
 
@@ -85,15 +85,15 @@ def compute_shields(
     Parameters:
     -----------
     bed_shear_stress : np.ndarray
-        Bed shear stress [N/m²]
+        τ = Bed shear stress [N/m²]
     gravity : float
-        Gravitational acceleration [m/s²]
+        g = Gravitational acceleration [m/s²]
     sediment_density : float
-        Sediment density [kg/m³]
+        ρ_s = Sediment density [kg/m³]
     water_density : float
-        Water density [kg/m³]
+        ρ_w = Water density [kg/m³]
     grain_diameter : float
-        Grain diameter [m]
+        d = Grain diameter [m]
 
     Returns:
     --------
@@ -106,7 +106,7 @@ def compute_shields(
 
     Reference:
     Soulsby, R. (1997). Dynamics of marine sands: a manual for practical applications.
-    Thomas Telford. Equation 2.8 (CHECK THIS????)
+    Thomas Telford. Equation 74
     """
     return np.abs(bed_shear_stress) / (gravity * (sediment_density - water_density) * grain_diameter)
 
@@ -115,21 +115,21 @@ def compute_bed_load_velocity(
     shields_number: np.ndarray, critical_shields: float, mean_shear_velocity: np.ndarray
 ) -> np.ndarray:
     """
-    Compute bed load velocity using Soulsby equation 7.
+    Compute bed load velocity using Soulsby et al. (2011) Equation 7.
 
     Parameters:
     -----------
     shields_number : np.ndarray
-        Shields parameter [-]
+        θ_max = Shields parameter [-]
     critical_shields : float
-        Critical Shields parameter [-]
+        θ_cr = Critical Shields parameter [-]
     mean_shear_velocity : np.ndarray
-        Mean shear velocity [m/s]
+        u*_mean = Mean shear velocity [m/s]
 
     Returns:
     --------
     np.ndarray
-        Bed load velocity [m/s]
+        U_bed = Bed load velocity [m/s]
 
     Notes:
     ------
@@ -137,9 +137,9 @@ def compute_bed_load_velocity(
 
     Only computed where θ_max > θ_cr (critical conditions).
 
-    References:  (CHECK THIS????)
+    References: 
     Fredsoe, J., & Deigaard, R. (1992). Mechanics of coastal sediment transport.
-    World Scientific.
+    World Scientific. Equation 7.51
 
     Soulsby, R. L., Mead, C. T., Wild, B. R., & Wood, M. J. (2011).
     Lagrangian model for simulating the dispersal of sand-sized particles in coastal waters.
@@ -169,11 +169,11 @@ def compute_transport_layer_thickness(
     transport_magnitude : np.ndarray
         Magnitude of sediment transport [kg/m/s]
     velocity_magnitude : np.ndarray
-        Velocity magnitude [m/s]
+        U_layer = Velocity magnitude [m/s]
     sediment_density : float
-        Sediment density [kg/m³]
+        ρ_s = Sediment density [kg/m³]
     porosity : float
-        Sediment porosity [-]
+        n = Sediment porosity [-]
 
     Returns:
     --------
@@ -214,19 +214,19 @@ def compute_suspended_velocity(
     Parameters:
     -----------
     flow_velocity_magnitude : np.ndarray
-        Flow velocity magnitude [m/s]
+        U_c = Flow velocity magnitude [m/s]
     bed_load_velocity : np.ndarray
-        Bed load velocity [m/s]
+        U_bed = Bed load velocity [m/s]
     settling_velocity : float
-        Particle settling velocity [m/s]
+        w_s = Particle settling velocity [m/s]
     von_karman_constant : float
-        von Kármán constant [-] (typically 0.4)
+        κ = von Kármán constant [-] (typically 0.4)
     max_shear_velocity : np.ndarray
-        Maximum shear velocity [m/s]
+        u*_max = Maximum shear velocity [m/s]
     shields_number : np.ndarray
-        Shields parameter [-]
+        θ_max = Shields parameter [-]
     critical_shields : float
-        Critical Shields parameter [-]
+        θ_cr = Critical Shields parameter [-]
     method : SuspendedVelocityMethod, optional
         Method to use for calculation
 
@@ -322,9 +322,9 @@ def compute_mixing_layer_thickness(
     Parameters:
     -----------
     max_bed_shear_stress : np.ndarray
-        Maximum bed shear stress [N/m²]
+        τ_max = Maximum bed shear stress [N/m²]
     critical_shear_stress : float
-        Critical shear stress [N/m²]
+        τ_cr = Critical shear stress [N/m²]
     method : MixingLayerMethod, optional
         Method to use for calculation
 
@@ -368,15 +368,15 @@ def compute_grain_properties(
     Parameters:
     -----------
     grain_diameter : float
-        Grain diameter [m]
+        d50 = Grain diameter [m]
     gravity : float
-        Gravitational acceleration [m/s²]
+        g = Gravitational acceleration [m/s²]
     sediment_density : float
-        Sediment density [kg/m³]
+        ρ_s = Sediment density [kg/m³]
     water_density : float
-        Water density [kg/m³]
+        ρ_w = Water density [kg/m³]
     kinematic_viscosity : float
-        Kinematic viscosity [m²/s]
+        ν = Kinematic viscosity [m²/s]
 
     Returns:
     --------
@@ -397,16 +397,16 @@ def compute_grain_properties(
     Pacific Coasts and Ports '97: Proceedings of the 13th Australasian Coastal and Ocean
     Engineering Conference and the 6th Australasian Port and Harbour Conference; Volume 1. Equation 14
     """
-    # Dimensionless grain size (Soulsby 1997, Equation 75)
+    # Dimensionless grain size, D* (Soulsby 1997, Equation 75)
     dstar = (gravity * (sediment_density / water_density - 1) / kinematic_viscosity**2) ** (1 / 3) * grain_diameter
 
-    # Critical Shields number (Soulsby & Whitehouse 1997, Equation 14)
+    # Critical Shields number, θ_cr (Soulsby & Whitehouse 1997, Equation 14)
     theta_cr = 0.3 / (1 + 1.2 * dstar) + 0.055 * (1 - np.exp(-0.020 * dstar))
 
-    # Settling velocity (Soulsby 1997, Equation 15)
+    # Settling velocity, w_s (Soulsby 1997, Equation 15)
     settling_velocity = (kinematic_viscosity / grain_diameter) * (np.sqrt(10.36**2 + 1.049 * dstar**3) - 10.36)
 
-    # Critical shear stress
+    # Critical shear stress, τ_cr
     critical_shear_stress = (sediment_density - water_density) * gravity * grain_diameter * theta_cr
 
     return {

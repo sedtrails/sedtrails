@@ -70,3 +70,6 @@ sedtrails = "sedtrails.configuration_interface.cli:app"
 [tool.pytest.ini_options]
 pythonpath = "src"
 addopts = ["--import-mode=importlib"]
+markers = [
+    "integration: mark a test as an integration test."
+]
