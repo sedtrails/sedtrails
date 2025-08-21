@@ -5,6 +5,7 @@ from .exceptions import (
     YamlParsingError,
     YamlOutputError,
     YamlValidationError,
+    MissingConfigurationParameter,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     'YamlParsingError',
     'YamlOutputError',
     'YamlValidationError',
+    'MissingConfigurationParameter',
 ]

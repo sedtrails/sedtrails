@@ -42,22 +42,22 @@
               "default": 1,
               "description": "initial state of Freedom Factor (0 = trapped, 1 = free)"
             },
-            "gamma_e": {
+            "soulsby_gamma_e": {
               "type": "number",
               "default": 0.1,
               "description": "long-term equilibrium proportion of free particles"
             },
-            "theta_s": {
+            "soulsby_theta_s": {
               "type": "number",
               "default": 0.1,
               "description": "transition scale value"
             },
-            "b_e": {
+            "soulsby_b_e": {
               "type": "number",
               "default": 1.7e-07,
               "description": "maximum free-to-trapped transition probability per second [1/s]"
             },
-            "mu_d": {
+            "soulsby_mu_d": {
               "type": "number",
               "default": 0.5,
               "description": "dynamic friction coefficient (0.5-1.0)"
@@ -333,7 +333,23 @@
       "properties": {
         "constants": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
+            "grain_diameter": {
+              "type": "number",
+              "default": 2.5e-4,
+              "description": "grain diameter of sediment [m]"
+            },
+            "morphology_factor": {
+              "type": "number",
+              "default": 1.0,
+              "description": "morphological acceleration factor (Roelvink, 2006) (1.0 = no effect)"
+            },
+            "porosity": {
+              "type": "number",
+              "default": 0.4,
+              "description": "porosity of sediment (40% default)"
+            },
             "g": {
               "type": "number",
               "default": 9.81,
@@ -344,7 +360,7 @@
               "default": 0.4,
               "description": "von Karman's constant"
             },
-            "kinetic_viscosity": {
+            "kinematic_viscosity": {
               "type": "number",
               "default": 1.36e-06,
               "description": "kinematic viscosity [m2/s]; (valid for Temp = 10 degC and salinity = 35 ppt, p. 26-27)"

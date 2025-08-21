@@ -1,7 +1,7 @@
 
 # SedTRAILS Installation
 
-## Installation for users
+## Installation for developers
 
 This is the step-by-step process to install SedTRAILS.
 
@@ -20,7 +20,7 @@ cd sedtrails
 
 4. Install the dependencies: ([more details](https://github.com/sedtrails/sedtrails/blob/dev/CONTRIBUTING.md))
 ```bash
-pip install .
+pip install -e .[dev]
 ```
 
 ## Confirming the installation

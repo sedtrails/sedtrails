@@ -110,16 +110,15 @@ class Simulation:
         from sedtrails.transport_converter.physics_converter import PhysicsConfig
 
         config = PhysicsConfig(
-            tracer_method=self._controller.get('physics.tracer_method', 'van_westen'),
-            gravity=self._controller.get('physics.constants.g', 9.81),
-            von_karman_constant=self._controller.get('physics.constants.von_karman', 0.40),
-            kinematic_viscosity=self._controller.get('physics.constants.kinematic_viscosity', 1.36e-6),
-            water_density=self._controller.get('physics.constants.rho_w', 1027.0),
-            particle_density=self._controller.get('physics.constants.rho_s', 2650.0),
-            # TODO: These parameters are missing from json schema.
-            porosity=self._controller.get('physics.porosity', 0.4),
-            grain_diameter=self._controller.get('physics.grain_diameter', 2.5e-4),
-            morfac=self._controller.get('physics.morfac', 1.0),
+            tracer_method=self._controller.get('physics.tracer_method'),
+            gravity=self._controller.get('physics.constants.g'),
+            von_karman_constant=self._controller.get('physics.constants.von_karman'),
+            kinematic_viscosity=self._controller.get('physics.constants.kinematic_viscosity'),
+            water_density=self._controller.get('physics.constants.rho_w'),
+            particle_density=self._controller.get('physics.constants.rho_s'),
+            porosity=self._controller.get('physics.porosity'),
+            grain_diameter=self._controller.get('physics.grain_diameter'),
+            morfac=self._controller.get('physics.morfology_morfac'),
         )
 
         return config

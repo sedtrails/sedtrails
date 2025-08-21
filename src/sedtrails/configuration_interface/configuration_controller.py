@@ -8,6 +8,7 @@ and provides configurations to other components.
 
 from abc import ABC, abstractmethod
 from sedtrails.configuration_interface.validator import YAMLConfigValidator
+from sedtrails.configuration_interface.find import find_value
 from typing import Dict, Any
 
 
@@ -140,8 +141,4 @@ class ConfigurationController(Controller):
 
         config_data = deepcopy(self.get_config())
 
-        for key in keys.split('.'):
-            config_data = config_data.get(key, default)
-            if not isinstance(config_data, dict):
-                return config_data
-        return config_data
+        return find_value(config_data, keys, default)
