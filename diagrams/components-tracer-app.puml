@@ -14,7 +14,7 @@ scale 1.5
 
 AddElementTag("review", $bgColor="lightred", $fontColor="red", $borderColor="red")
 
-Person(modeler, "Modeler", "Tracks sand particles in a costal system")
+Person(modeler, "Modeler", "Tracks sand particles in a coastal system")
 
 Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
 Container(configInterface, "Simulation Configuration Interface", "Python", "An application that reads and interprets simulation configuration files")

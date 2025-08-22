@@ -4,13 +4,13 @@
 title SedTRAILS: Component Diagram for Transport Converter
 scale 1.5
 
-Person(modeler, "Modeler", "wants to track sand particles in a costal system")
+Person(modeler, "Modeler", "wants to track sand particles in a coastal system")
 
 Container(configInterface, "Simulation Configuration Interface", "Python", "An application that reads and interprets simulation configuration files")
 
 Container_Boundary(transportConverter, "Transport Converter"){ 
     
-    Component(formatConverter, "Format Converter Interface", "Python", "An interface to read flow-field data from an specific Eulerian flow modeling system and convert it to the SedTRAILS standard data structure")
+    Component(formatConverter, "Format Converter Interface", "Python", "An interface to read flow-field data from a specific Eulerian flow modeling system and convert it to the SedTRAILS standard data structure")
 
     Component(physicsConverter, "Physics Converter", "Python", "Converts flow-field physical units using user-preferred conversion methods")
         
@@ -25,7 +25,7 @@ Container_Boundary(transportConverter, "Transport Converter"){
 
 Container(sedtrailsLogger, "SedTRAILS  Logger", "Python", "An application that logs simulation states, outputs, errors and computational performance metrics")
 
-Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a costal system")
+Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a coastal system")
 
 Container(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Particle Tracer System")
 

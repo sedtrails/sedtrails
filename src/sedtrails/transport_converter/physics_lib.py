@@ -249,21 +249,26 @@ def compute_suspended_velocity(
     Scientific Reports, 15(1), 8793.
     """
     if method == SuspendedVelocityMethod.SOULSBY_2011:
-        # Critical conditions where Shields number exceeds critical threshold
-        critical_conditions = shields_number > critical_shields
+        # Suppress warnings for this entire function
+        with np.errstate(divide='ignore', invalid='ignore'):
+            # Critical conditions where Shields number exceeds critical threshold
+            critical_conditions = shields_number > critical_shields
 
-        # Compute Rouse parameter internally
-        rouse_parameter = settling_velocity / (von_karman_constant * max_shear_velocity)
+            # Compute Rouse parameter internally
+            rouse_parameter = settling_velocity / (von_karman_constant * max_shear_velocity)
 
-        # Compute bed load ratio
-        bed_load_ratio = bed_load_velocity / flow_velocity_magnitude
+            # Compute bed load ratio
+            bed_load_ratio = bed_load_velocity / flow_velocity_magnitude
 
-        # Compute suspended sediment ratio
-        # Rs = ((Rb*(1-B_rouse))/(8/7-B_rouse)) * (((8/7*Rb)**(8-7*B_rouse) - 1) / ((8/7*Rb)**(7-7*B_rouse) - 1))
-        suspended_ratio = ((bed_load_ratio * (1 - rouse_parameter)) / (8 / 7 - rouse_parameter)) * (
-            ((8 / 7 * bed_load_ratio) ** (8 - 7 * rouse_parameter) - 1)
-            / ((8 / 7 * bed_load_ratio) ** (7 - 7 * rouse_parameter) - 1)
-        )
+            # Compute suspended sediment ratio
+            # Rs = ((Rb*(1-B_rouse))/(8/7-B_rouse)) * (((8/7*Rb)**(8-7*B_rouse) - 1) / ((8/7*Rb)**(7-7*B_rouse) - 1))
+            suspended_ratio = ((bed_load_ratio * (1 - rouse_parameter)) / (8 / 7 - rouse_parameter)) * (
+                ((8 / 7 * bed_load_ratio) ** (8 - 7 * rouse_parameter) - 1)
+                / ((8 / 7 * bed_load_ratio) ** (7 - 7 * rouse_parameter) - 1)
+            )
+
+            # Replace nans with zeros
+            suspended_ratio = np.nan_to_num(suspended_ratio)
 
         return np.where(critical_conditions, flow_velocity_magnitude * suspended_ratio, 0.0)
 

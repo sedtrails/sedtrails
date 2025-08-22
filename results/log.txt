@@ -1,0 +1,988 @@
+2025-08-13 11:20:10,604 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 11:20:10,604 - INFO - Log file: log.txt
+2025-08-13 11:20:10,604 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 11:25:04,058 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 11:25:04,059 - INFO - Log file: log.txt
+2025-08-13 11:25:04,060 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 11:26:16,755 - INFO - === SIMULATION START ===
+2025-08-13 11:26:16,755 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 11:26:16,755 - INFO - Python: 3.12.9
+2025-08-13 11:26:16,755 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 11:26:16,755 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 11:27:29,156 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 11:27:29,157 - INFO - Log file: log.txt
+2025-08-13 11:27:29,157 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 11:27:29,158 - INFO - === SIMULATION START ===
+2025-08-13 11:27:29,158 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 11:27:29,159 - INFO - Python: 3.12.9
+2025-08-13 11:27:29,159 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 11:27:29,159 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 12:15:22,236 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 12:15:22,236 - INFO - Log file: log.txt
+2025-08-13 12:15:22,236 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 12:16:49,119 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 12:16:49,133 - INFO - Log file: log.txt
+2025-08-13 12:16:49,133 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 12:50:31,029 - INFO - === SIMULATION START ===
+2025-08-13 12:50:31,047 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 12:50:31,047 - INFO - Python: 3.12.9
+2025-08-13 12:50:31,047 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 12:50:31,048 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 12:50:42,331 - INFO - Created 1 particle(s)
+2025-08-13 12:50:42,331 - INFO - Starting position: unknown
+2025-08-13 12:50:42,334 - INFO - Seeding method: 0 points
+2025-08-13 12:59:40,450 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 12:59:40,451 - INFO - Log file: log.txt
+2025-08-13 12:59:40,451 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 13:00:15,058 - INFO - === SIMULATION START ===
+2025-08-13 13:00:15,060 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 13:00:15,060 - INFO - Python: 3.12.9
+2025-08-13 13:00:15,061 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 13:00:15,061 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 13:00:15,061 - INFO - Created 1 particle(s)
+2025-08-13 13:00:15,061 - INFO - Starting position: unknown
+2025-08-13 13:00:15,062 - INFO - Seeding method: 0 points
+2025-08-13 13:29:01,587 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 13:29:01,587 - INFO - Log file: log.txt
+2025-08-13 13:29:01,587 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 13:29:01,587 - INFO - === SIMULATION START ===
+2025-08-13 13:29:01,587 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 13:29:01,587 - INFO - Python: 3.12.9
+2025-08-13 13:29:01,587 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 13:29:01,587 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 13:29:01,587 - INFO - Created 1 particle(s)
+2025-08-13 13:29:01,587 - INFO - Starting position: unknown
+2025-08-13 13:29:01,587 - INFO - Seeding method: 0 points
+2025-08-13 13:30:03,810 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 13:30:03,810 - INFO - Log file: log.txt
+2025-08-13 13:30:03,819 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 13:30:03,819 - INFO - === SIMULATION START ===
+2025-08-13 13:30:03,819 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 13:30:03,819 - INFO - Python: 3.12.9
+2025-08-13 13:30:03,819 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 13:30:03,819 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 13:30:03,819 - INFO - Created 1 particle(s)
+2025-08-13 13:30:03,819 - INFO - Starting position: unknown
+2025-08-13 13:30:03,819 - INFO - Seeding method: 0 points
+2025-08-13 13:34:03,708 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 13:34:03,708 - INFO - Log file: log.txt
+2025-08-13 13:34:03,708 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 13:34:03,708 - INFO - === SIMULATION START ===
+2025-08-13 13:34:03,708 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 13:34:03,708 - INFO - Python: 3.12.9
+2025-08-13 13:34:03,708 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 13:34:03,708 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 13:34:03,708 - INFO - Created 1 particle(s)
+2025-08-13 13:34:03,708 - INFO - Starting position: unknown
+2025-08-13 13:34:03,708 - INFO - Seeding method: 0 points
+2025-08-13 13:34:59,852 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 13:34:59,853 - INFO - Log file: log.txt
+2025-08-13 13:34:59,853 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 13:34:59,853 - INFO - === SIMULATION START ===
+2025-08-13 13:34:59,853 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 13:34:59,853 - INFO - Python: 3.12.9
+2025-08-13 13:34:59,853 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 13:34:59,853 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 13:34:59,853 - INFO - Created 1 particle(s)
+2025-08-13 13:34:59,853 - INFO - Starting position: unknown
+2025-08-13 13:34:59,853 - INFO - Seeding method: 0 points
+2025-08-13 13:40:23,670 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 13:40:23,670 - INFO - Log file: log.txt
+2025-08-13 13:40:23,670 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 13:40:23,670 - INFO - === SIMULATION START ===
+2025-08-13 13:40:23,670 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 13:40:23,670 - INFO - Python: 3.12.9
+2025-08-13 13:40:23,670 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 13:40:23,670 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 13:40:23,670 - INFO - Created 1 particle(s)
+2025-08-13 13:40:23,670 - INFO - Starting position: unknown
+2025-08-13 13:40:23,670 - INFO - Seeding method: 0 points
+2025-08-13 13:44:50,118 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 13:44:50,121 - INFO - Log file: log.txt
+2025-08-13 13:44:50,121 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 13:44:50,122 - INFO - === SIMULATION START ===
+2025-08-13 13:44:50,123 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 13:44:50,123 - INFO - Python: 3.12.9
+2025-08-13 13:44:50,123 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 13:44:50,123 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 13:44:50,123 - INFO - Created 1 particle(s)
+2025-08-13 13:44:50,123 - INFO - Starting position: unknown
+2025-08-13 13:44:50,124 - INFO - Seeding method: 0 points
+2025-08-13 13:46:02,822 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 13:46:02,822 - INFO - Log file: log.txt
+2025-08-13 13:46:02,822 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 13:46:02,822 - INFO - === SIMULATION START ===
+2025-08-13 13:46:02,822 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 13:46:02,822 - INFO - Python: 3.12.9
+2025-08-13 13:46:02,822 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 13:46:02,822 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 13:46:02,822 - INFO - Created 1 particle(s)
+2025-08-13 13:46:02,822 - INFO - Starting position: unknown
+2025-08-13 13:46:02,822 - INFO - Seeding method: 0 points
+2025-08-13 13:55:10,628 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 13:55:10,628 - INFO - Log file: log.txt
+2025-08-13 13:55:10,628 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 13:55:10,628 - INFO - === SIMULATION START ===
+2025-08-13 13:55:10,628 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 13:55:10,628 - INFO - Python: 3.12.9
+2025-08-13 13:55:10,628 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 13:55:10,628 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 13:55:10,628 - INFO - Created 1 particle(s)
+2025-08-13 13:55:10,628 - INFO - Starting position: unknown
+2025-08-13 13:55:10,628 - INFO - Seeding method: 0 points
+2025-08-13 14:22:26,359 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 14:22:26,360 - INFO - Log file: log.txt
+2025-08-13 14:22:26,360 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 14:22:30,685 - INFO - === SIMULATION START ===
+2025-08-13 14:22:30,686 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 14:22:30,686 - INFO - Python: 3.12.9
+2025-08-13 14:22:30,688 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 14:22:30,688 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 14:22:30,690 - INFO - Created 1 particle(s)
+2025-08-13 14:22:30,690 - INFO - Starting position: unknown
+2025-08-13 14:22:30,690 - INFO - Seeding method: 0 points
+2025-08-13 14:23:39,378 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 14:23:39,379 - INFO - Log file: log.txt
+2025-08-13 14:23:39,379 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 14:23:39,379 - INFO - === SIMULATION START ===
+2025-08-13 14:23:39,380 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 14:23:39,380 - INFO - Python: 3.12.9
+2025-08-13 14:23:39,380 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 14:23:39,380 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 14:23:39,380 - INFO - Created 1 particle(s)
+2025-08-13 14:23:39,380 - INFO - Starting position: unknown
+2025-08-13 14:23:39,381 - INFO - Seeding method: 0 points
+2025-08-13 14:28:56,428 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 14:28:56,429 - INFO - Log file: log.txt
+2025-08-13 14:28:56,429 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 14:29:00,890 - INFO - === SIMULATION START ===
+2025-08-13 14:29:00,891 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 14:29:00,891 - INFO - Python: 3.12.9
+2025-08-13 14:29:00,891 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 14:29:00,891 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 14:29:00,893 - INFO - Created 1 particle(s)
+2025-08-13 14:29:00,893 - INFO - Starting position: unknown
+2025-08-13 14:29:00,894 - INFO - Seeding method: 0 points
+2025-08-13 14:49:34,499 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 14:49:34,501 - INFO - Log file: log.txt
+2025-08-13 14:49:34,501 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 14:49:34,503 - INFO - === SIMULATION START ===
+2025-08-13 14:49:34,503 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 14:49:34,503 - INFO - Python: 3.12.9
+2025-08-13 14:49:34,503 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 14:49:34,503 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 14:49:34,503 - INFO - Created 1 particle(s)
+2025-08-13 14:49:34,503 - INFO - Starting position: unknown
+2025-08-13 14:49:34,503 - INFO - Seeding method: 0 points
+2025-08-13 14:56:34,340 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 14:56:34,340 - INFO - Log file: log.txt
+2025-08-13 14:56:34,340 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 14:56:34,341 - INFO - === SIMULATION START ===
+2025-08-13 14:56:34,341 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 14:56:34,341 - INFO - Python: 3.12.9
+2025-08-13 14:56:34,341 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 14:56:34,341 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 14:56:34,342 - INFO - Created 1 particle(s)
+2025-08-13 14:56:34,343 - INFO - Starting position: unknown
+2025-08-13 14:56:34,343 - INFO - Seeding method: 0 points
+2025-08-13 14:57:31,420 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 14:57:31,420 - INFO - Log file: log.txt
+2025-08-13 14:57:31,420 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 14:57:31,420 - INFO - === SIMULATION START ===
+2025-08-13 14:57:31,432 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 14:57:31,432 - INFO - Python: 3.12.9
+2025-08-13 14:57:31,432 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 14:57:31,432 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 14:57:31,432 - INFO - Created 1 particle(s)
+2025-08-13 14:57:31,432 - INFO - Starting position: unknown
+2025-08-13 14:57:31,432 - INFO - Seeding method: 0 points
+2025-08-13 14:59:31,121 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 14:59:31,121 - INFO - Log file: log.txt
+2025-08-13 14:59:31,121 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 14:59:31,121 - INFO - === SIMULATION START ===
+2025-08-13 14:59:31,121 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 14:59:31,121 - INFO - Python: 3.12.9
+2025-08-13 14:59:31,121 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 14:59:31,121 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 14:59:31,121 - INFO - Created 1 particle(s)
+2025-08-13 14:59:31,121 - INFO - Starting position: unknown
+2025-08-13 14:59:31,121 - INFO - Seeding method: 0 points
+2025-08-13 15:25:50,345 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 15:25:50,345 - INFO - Log file: log.txt
+2025-08-13 15:25:50,345 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 15:25:50,347 - INFO - === SIMULATION START ===
+2025-08-13 15:25:50,347 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 15:25:50,347 - INFO - Python: 3.12.9
+2025-08-13 15:25:50,347 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 15:25:50,347 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 15:25:50,348 - INFO - Created 1 particle(s)
+2025-08-13 15:25:50,348 - INFO - Starting position: unknown
+2025-08-13 15:25:50,348 - INFO - Seeding method: 0 points
+2025-08-13 15:27:08,214 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 15:27:08,215 - INFO - Log file: log.txt
+2025-08-13 15:27:08,215 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 15:27:08,216 - INFO - === SIMULATION START ===
+2025-08-13 15:27:08,216 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 15:27:08,216 - INFO - Python: 3.12.9
+2025-08-13 15:27:08,216 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 15:27:08,217 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 15:27:08,217 - INFO - Created 1 particle(s)
+2025-08-13 15:27:08,218 - INFO - Starting position: unknown
+2025-08-13 15:27:08,218 - INFO - Seeding method: 0 points
+2025-08-13 15:27:37,916 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 15:27:37,917 - INFO - Log file: log.txt
+2025-08-13 15:27:37,917 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 15:27:37,918 - INFO - === SIMULATION START ===
+2025-08-13 15:27:37,918 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 15:27:37,918 - INFO - Python: 3.12.9
+2025-08-13 15:27:37,918 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 15:27:37,918 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 15:27:37,920 - INFO - Created 1 particle(s)
+2025-08-13 15:27:37,920 - INFO - Starting position: unknown
+2025-08-13 15:27:37,920 - INFO - Seeding method: 0 points
+2025-08-13 15:41:10,507 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 15:41:10,507 - INFO - Log file: log.txt
+2025-08-13 15:41:10,507 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 15:41:10,507 - INFO - === SIMULATION START ===
+2025-08-13 15:41:10,507 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 15:41:10,507 - INFO - Python: 3.12.9
+2025-08-13 15:41:10,507 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 15:41:10,507 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 15:41:10,507 - INFO - Created 1 particle(s)
+2025-08-13 15:41:10,507 - INFO - Starting position: unknown
+2025-08-13 15:41:10,507 - INFO - Seeding method: 0 points
+2025-08-13 15:41:35,270 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 15:41:35,270 - INFO - Log file: log.txt
+2025-08-13 15:41:35,270 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 15:41:35,270 - INFO - === SIMULATION START ===
+2025-08-13 15:41:35,270 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 15:41:35,270 - INFO - Python: 3.12.9
+2025-08-13 15:41:35,270 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 15:41:35,270 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 15:41:35,270 - INFO - Created 1 particle(s)
+2025-08-13 15:41:35,270 - INFO - Starting position: unknown
+2025-08-13 15:41:35,270 - INFO - Seeding method: 0 points
+2025-08-13 15:42:38,703 - INFO - Status: Initial Data Loaded
+2025-08-13 15:42:38,703 - INFO -   num_timesteps: 504, flow_field_name: suspended_velocity
+2025-08-13 15:42:38,703 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 15:42:38,723 - INFO - Calculator compiled in 0.02 seconds
+2025-08-13 15:42:38,723 - INFO - Status: Warming Up Jit
+2025-08-13 15:42:42,947 - INFO - JIT warmed up in 4.22 seconds
+2025-08-13 15:43:12,290 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 15:43:12,290 - INFO - Log file: log.txt
+2025-08-13 15:43:12,290 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 15:43:12,303 - INFO - === SIMULATION START ===
+2025-08-13 15:43:12,303 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 15:43:12,303 - INFO - Python: 3.12.9
+2025-08-13 15:43:12,303 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 15:43:12,305 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 15:43:12,305 - INFO - Created 1 particle(s)
+2025-08-13 15:43:12,305 - INFO - Starting position: unknown
+2025-08-13 15:43:12,305 - INFO - Seeding method: 0 points
+2025-08-13 15:43:13,486 - INFO - Status: Initial Data Loaded
+2025-08-13 15:43:13,490 - INFO -   num_timesteps: 504, flow_field_name: suspended_velocity
+2025-08-13 15:43:13,490 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 15:43:13,507 - INFO - Calculator compiled in 0.02 seconds
+2025-08-13 15:43:13,507 - INFO - Status: Warming Up Jit
+2025-08-13 15:43:17,271 - INFO - JIT warmed up in 3.76 seconds
+2025-08-13 15:46:29,521 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 15:46:29,521 - INFO - Log file: log.txt
+2025-08-13 15:46:29,521 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 15:46:29,521 - INFO - === SIMULATION START ===
+2025-08-13 15:46:29,521 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 15:46:29,521 - INFO - Python: 3.12.9
+2025-08-13 15:46:29,521 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 15:46:29,521 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 15:46:29,521 - INFO - Created 1 particle(s)
+2025-08-13 15:46:29,521 - INFO - Starting position: unknown
+2025-08-13 15:46:29,521 - INFO - Seeding method: 0 points
+2025-08-13 15:46:30,265 - INFO - Status: Initial Data Loaded
+2025-08-13 15:46:30,265 - INFO -   num_timesteps: 144, flow_field_name: suspended_velocity
+2025-08-13 15:46:30,269 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 15:46:30,284 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 15:46:30,284 - INFO - Status: Warming Up Jit
+2025-08-13 15:46:32,286 - INFO - JIT warmed up in 2.0 seconds
+2025-08-13 15:49:45,475 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 15:49:45,475 - INFO - Log file: log.txt
+2025-08-13 15:49:45,475 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 15:49:45,475 - INFO - === SIMULATION START ===
+2025-08-13 15:49:45,475 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 15:49:45,475 - INFO - Python: 3.12.9
+2025-08-13 15:49:45,475 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 15:49:45,475 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 15:49:45,475 - INFO - Created 1 particle(s)
+2025-08-13 15:49:45,475 - INFO - Starting position: unknown
+2025-08-13 15:49:45,475 - INFO - Seeding method: 0 points
+2025-08-13 15:49:46,237 - INFO - Status: Initial Data Loaded
+2025-08-13 15:49:46,238 - INFO -   num_timesteps: 144, flow_field_name: suspended_velocity
+2025-08-13 15:49:46,239 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 15:49:46,253 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 15:49:46,253 - INFO - Status: Warming Up Jit
+2025-08-13 15:49:47,926 - INFO - JIT warmed up in 1.67 seconds
+2025-08-13 15:54:00,800 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 15:54:00,800 - INFO - Log file: log.txt
+2025-08-13 15:54:00,800 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 15:54:00,800 - INFO - === SIMULATION START ===
+2025-08-13 15:54:00,800 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 15:54:00,800 - INFO - Python: 3.12.9
+2025-08-13 15:54:00,800 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 15:54:00,800 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 15:54:00,800 - INFO - Created 1 particle(s)
+2025-08-13 15:54:00,800 - INFO - Starting position: unknown
+2025-08-13 15:54:00,800 - INFO - Seeding method: 0 points
+2025-08-13 15:54:01,578 - INFO - Status: Initial Data Loaded
+2025-08-13 15:54:01,578 - INFO -   num_timesteps: 144, flow_field_name: suspended_velocity
+2025-08-13 15:54:01,578 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 15:54:01,593 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 15:54:01,593 - INFO - Status: Warming Up Jit
+2025-08-13 15:54:03,226 - INFO - JIT warmed up in 1.63 seconds
+2025-08-13 15:54:08,728 - ERROR - === ERROR: Global Exception Handler ===
+2025-08-13 15:54:08,731 - ERROR - Exception type: AttributeError
+2025-08-13 15:54:08,731 - ERROR - Exception message: 'numpy.int64' object has no attribute 'seconds'
+2025-08-13 15:54:08,731 - ERROR - Stack trace:
+NoneType: None
+2025-08-13 15:54:08,732 - ERROR - ==================================================
+2025-08-13 15:54:08,732 - INFO - === SIMULATION FAILED ===
+2025-08-13 15:54:08,732 - INFO - Error type: AttributeError
+2025-08-13 15:54:08,732 - INFO - Error message: 'numpy.int64' object has no attribute 'seconds'
+2025-08-13 15:54:08,732 - INFO - Check log above for full stack trace
+2025-08-13 15:54:16,879 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 15:54:16,879 - INFO - Log file: log.txt
+2025-08-13 15:54:16,879 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 15:54:16,879 - INFO - === SIMULATION START ===
+2025-08-13 15:54:16,879 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 15:54:16,879 - INFO - Python: 3.12.9
+2025-08-13 15:54:16,879 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 15:54:16,879 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 15:54:16,879 - INFO - Created 1 particle(s)
+2025-08-13 15:54:16,879 - INFO - Starting position: unknown
+2025-08-13 15:54:16,879 - INFO - Seeding method: 0 points
+2025-08-13 15:54:17,609 - INFO - Status: Initial Data Loaded
+2025-08-13 15:54:17,610 - INFO -   num_timesteps: 144, flow_field_name: suspended_velocity
+2025-08-13 15:54:17,610 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 15:54:17,625 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 15:54:17,625 - INFO - Status: Warming Up Jit
+2025-08-13 15:54:19,203 - INFO - JIT warmed up in 1.58 seconds
+2025-08-13 15:55:31,160 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 15:55:31,160 - INFO - Log file: log.txt
+2025-08-13 15:55:31,160 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 15:55:31,160 - INFO - === SIMULATION START ===
+2025-08-13 15:55:31,160 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 15:55:31,160 - INFO - Python: 3.12.9
+2025-08-13 15:55:31,160 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 15:55:31,160 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 15:55:31,160 - INFO - Created 1 particle(s)
+2025-08-13 15:55:31,160 - INFO - Starting position: unknown
+2025-08-13 15:55:31,160 - INFO - Seeding method: 0 points
+2025-08-13 15:55:31,875 - INFO - Status: Initial Data Loaded
+2025-08-13 15:55:31,875 - INFO -   num_timesteps: 144, flow_field_name: suspended_velocity
+2025-08-13 15:55:31,875 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 15:55:31,892 - INFO - Calculator compiled in 0.02 seconds
+2025-08-13 15:55:31,893 - INFO - Status: Warming Up Jit
+2025-08-13 15:55:33,655 - INFO - JIT warmed up in 1.76 seconds
+2025-08-13 15:55:57,895 - INFO - === SIMULATION COMPLETE ===
+2025-08-13 15:55:57,895 - INFO - Total steps: 14400
+2025-08-13 15:55:57,895 - INFO - Runtime: 26.02s
+2025-08-13 15:55:57,895 - INFO - Final position: (40000.00, 17000.00)
+2025-08-13 15:55:59,681 - INFO - Creating visualization with 14401 trajectory points
+2025-08-13 15:56:02,236 - INFO - Status: Visualization Complete
+2025-08-13 15:56:02,236 - INFO -   output_plot_path: ./results/trajectory_plot.png
+2025-08-13 16:00:59,795 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:00:59,795 - INFO - Log file: log.txt
+2025-08-13 16:00:59,795 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:00:59,795 - INFO - === SIMULATION START ===
+2025-08-13 16:00:59,795 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:00:59,795 - INFO - Python: 3.12.9
+2025-08-13 16:00:59,795 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:00:59,795 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:00:59,795 - INFO - Created 1 particle(s)
+2025-08-13 16:00:59,795 - INFO - Starting position: unknown
+2025-08-13 16:00:59,795 - INFO - Seeding method: 0 points
+2025-08-13 16:01:00,596 - INFO - Status: Initial Data Loaded
+2025-08-13 16:01:00,596 - INFO -   num_timesteps: 144, flow_field_name: suspended_velocity
+2025-08-13 16:01:00,596 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:01:00,610 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 16:01:00,611 - INFO - Status: Warming Up Jit
+2025-08-13 16:01:02,213 - INFO - JIT warmed up in 1.6 seconds
+2025-08-13 16:01:29,793 - INFO - === SIMULATION COMPLETE ===
+2025-08-13 16:01:29,793 - INFO - Total steps: 14400
+2025-08-13 16:01:29,793 - INFO - Runtime: 29.2s
+2025-08-13 16:01:29,793 - INFO - Final position: (71158.86, 451756.99)
+2025-08-13 16:01:30,212 - INFO - Creating visualization with 14401 trajectory points
+2025-08-13 16:01:31,154 - INFO - Status: Visualization Complete
+2025-08-13 16:01:31,154 - INFO -   output_plot_path: ./results/trajectory_plot.png
+2025-08-13 16:03:24,070 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:03:24,070 - INFO - Log file: log.txt
+2025-08-13 16:03:24,070 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:03:24,070 - INFO - === SIMULATION START ===
+2025-08-13 16:03:24,070 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:03:24,070 - INFO - Python: 3.12.9
+2025-08-13 16:03:24,070 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:03:24,070 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:03:24,070 - INFO - Created 1 particle(s)
+2025-08-13 16:03:24,070 - INFO - Starting position: unknown
+2025-08-13 16:03:24,070 - INFO - Seeding method: 0 points
+2025-08-13 16:03:24,811 - INFO - Status: Initial Data Loaded
+2025-08-13 16:03:24,811 - INFO -   num_timesteps: 144, flow_field_name: suspended_velocity
+2025-08-13 16:03:24,811 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:03:24,821 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 16:03:24,821 - INFO - Status: Warming Up Jit
+2025-08-13 16:03:26,554 - INFO - JIT warmed up in 1.73 seconds
+2025-08-13 16:03:47,187 - INFO - === SIMULATION COMPLETE ===
+2025-08-13 16:03:47,187 - INFO - Total steps: 14400
+2025-08-13 16:03:47,187 - INFO - Runtime: 22.38s
+2025-08-13 16:03:47,187 - INFO - Final position: (nan, nan)
+2025-08-13 16:03:47,562 - INFO - Creating visualization with 14401 trajectory points
+2025-08-13 16:03:48,425 - INFO - Status: Visualization Complete
+2025-08-13 16:03:48,425 - INFO -   output_plot_path: ./results/trajectory_plot.png
+2025-08-13 16:04:13,484 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:04:13,484 - INFO - Log file: log.txt
+2025-08-13 16:04:13,484 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:04:13,484 - INFO - === SIMULATION START ===
+2025-08-13 16:04:13,486 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:04:13,486 - INFO - Python: 3.12.9
+2025-08-13 16:04:13,486 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:04:13,486 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:04:13,486 - INFO - Created 1 particle(s)
+2025-08-13 16:04:13,486 - INFO - Starting position: unknown
+2025-08-13 16:04:13,486 - INFO - Seeding method: 0 points
+2025-08-13 16:04:14,178 - INFO - Status: Initial Data Loaded
+2025-08-13 16:04:14,178 - INFO -   num_timesteps: 144, flow_field_name: suspended_velocity
+2025-08-13 16:04:14,178 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:04:14,193 - INFO - Calculator compiled in 0.02 seconds
+2025-08-13 16:04:14,193 - INFO - Status: Warming Up Jit
+2025-08-13 16:04:15,853 - INFO - JIT warmed up in 1.66 seconds
+2025-08-13 16:04:39,795 - INFO - === SIMULATION COMPLETE ===
+2025-08-13 16:04:39,795 - INFO - Total steps: 14400
+2025-08-13 16:04:39,795 - INFO - Runtime: 25.62s
+2025-08-13 16:04:39,795 - INFO - Final position: (70896.32, 451445.80)
+2025-08-13 16:04:40,164 - INFO - Creating visualization with 14401 trajectory points
+2025-08-13 16:04:40,979 - INFO - Status: Visualization Complete
+2025-08-13 16:04:40,979 - INFO -   output_plot_path: ./results/trajectory_plot.png
+2025-08-13 16:08:24,003 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:08:24,003 - INFO - Log file: log.txt
+2025-08-13 16:08:24,003 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:08:24,003 - INFO - === SIMULATION START ===
+2025-08-13 16:08:24,003 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:08:24,018 - INFO - Python: 3.12.9
+2025-08-13 16:08:24,018 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:08:24,018 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:08:24,018 - INFO - Created 1 particle(s)
+2025-08-13 16:08:24,020 - INFO - Starting position: unknown
+2025-08-13 16:08:24,020 - INFO - Seeding method: 0 points
+2025-08-13 16:08:24,780 - INFO - Status: Initial Data Loaded
+2025-08-13 16:08:24,780 - INFO -   num_timesteps: 144, flow_field_name: suspended_velocity
+2025-08-13 16:08:24,780 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:08:24,788 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 16:08:24,788 - INFO - Status: Warming Up Jit
+2025-08-13 16:08:26,361 - INFO - JIT warmed up in 1.57 seconds
+2025-08-13 16:09:01,305 - INFO - === SIMULATION COMPLETE ===
+2025-08-13 16:09:01,305 - INFO - Total steps: 14400
+2025-08-13 16:09:01,305 - INFO - Runtime: 36.52s
+2025-08-13 16:09:01,305 - INFO - Final position: (70896.32, 451445.80)
+2025-08-13 16:09:01,687 - INFO - Creating visualization with 14401 trajectory points
+2025-08-13 16:09:02,136 - INFO - Status: Visualization Complete
+2025-08-13 16:09:02,136 - INFO -   output_plot_path: ./results/trajectory_plot.png
+2025-08-13 16:09:35,456 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:09:35,456 - INFO - Log file: log.txt
+2025-08-13 16:09:35,456 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:09:35,456 - INFO - === SIMULATION START ===
+2025-08-13 16:09:35,456 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:09:35,456 - INFO - Python: 3.12.9
+2025-08-13 16:09:35,456 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:09:35,456 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:09:35,456 - INFO - Created 1 particle(s)
+2025-08-13 16:09:35,456 - INFO - Starting position: unknown
+2025-08-13 16:09:35,456 - INFO - Seeding method: 0 points
+2025-08-13 16:09:36,052 - INFO - Status: Initial Data Loaded
+2025-08-13 16:09:36,053 - INFO -   num_timesteps: 36, flow_field_name: suspended_velocity
+2025-08-13 16:09:36,053 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:09:36,064 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 16:09:36,064 - INFO - Status: Warming Up Jit
+2025-08-13 16:09:37,757 - INFO - JIT warmed up in 1.69 seconds
+2025-08-13 16:11:30,027 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:11:30,027 - INFO - Log file: log.txt
+2025-08-13 16:11:30,027 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:11:30,027 - INFO - === SIMULATION START ===
+2025-08-13 16:11:30,027 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:11:30,027 - INFO - Python: 3.12.9
+2025-08-13 16:11:30,027 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:11:30,027 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:11:30,027 - INFO - Created 1 particle(s)
+2025-08-13 16:11:30,027 - INFO - Starting position: unknown
+2025-08-13 16:11:30,027 - INFO - Seeding method: 0 points
+2025-08-13 16:11:30,589 - INFO - Status: Initial Data Loaded
+2025-08-13 16:11:30,589 - INFO -   num_timesteps: 12, flow_field_name: suspended_velocity
+2025-08-13 16:11:30,589 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:11:30,595 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 16:11:30,595 - INFO - Status: Warming Up Jit
+2025-08-13 16:11:32,070 - INFO - JIT warmed up in 1.48 seconds
+2025-08-13 16:13:19,736 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:13:19,747 - INFO - Log file: log.txt
+2025-08-13 16:13:19,747 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:13:19,747 - INFO - === SIMULATION START ===
+2025-08-13 16:13:19,747 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 16:13:19,747 - INFO - Python: 3.12.9
+2025-08-13 16:13:19,747 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:13:19,747 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:13:19,747 - INFO - Created 1 particle(s)
+2025-08-13 16:13:19,747 - INFO - Starting position: unknown
+2025-08-13 16:13:19,747 - INFO - Seeding method: 0 points
+2025-08-13 16:13:20,363 - INFO - Status: Initial Data Loaded
+2025-08-13 16:13:20,363 - INFO -   num_timesteps: 12, flow_field_name: suspended_velocity
+2025-08-13 16:13:20,364 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:13:20,500 - INFO - Calculator compiled in 0.14 seconds
+2025-08-13 16:13:20,500 - INFO - Status: Warming Up Jit
+2025-08-13 16:13:23,986 - INFO - JIT warmed up in 3.49 seconds
+2025-08-13 16:14:41,670 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:14:41,670 - INFO - Log file: log.txt
+2025-08-13 16:14:41,670 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:14:41,670 - INFO - === SIMULATION START ===
+2025-08-13 16:14:41,670 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:14:41,670 - INFO - Python: 3.12.9
+2025-08-13 16:14:41,670 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:14:41,670 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:14:41,670 - INFO - Created 1 particle(s)
+2025-08-13 16:14:41,670 - INFO - Starting position: unknown
+2025-08-13 16:14:41,670 - INFO - Seeding method: 0 points
+2025-08-13 16:14:42,252 - INFO - Status: Initial Data Loaded
+2025-08-13 16:14:42,253 - INFO -   num_timesteps: 12, flow_field_name: suspended_velocity
+2025-08-13 16:14:42,253 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:14:42,260 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 16:14:42,260 - INFO - Status: Warming Up Jit
+2025-08-13 16:14:43,854 - INFO - JIT warmed up in 1.59 seconds
+2025-08-13 16:16:06,859 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:16:06,859 - INFO - Log file: log.txt
+2025-08-13 16:16:06,859 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:16:06,859 - INFO - === SIMULATION START ===
+2025-08-13 16:16:06,859 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:16:06,859 - INFO - Python: 3.12.9
+2025-08-13 16:16:06,859 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:16:06,859 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:16:06,859 - INFO - Created 1 particle(s)
+2025-08-13 16:16:06,859 - INFO - Starting position: unknown
+2025-08-13 16:16:06,859 - INFO - Seeding method: 0 points
+2025-08-13 16:16:07,553 - INFO - Status: Initial Data Loaded
+2025-08-13 16:16:07,554 - INFO -   num_timesteps: 144, flow_field_name: suspended_velocity
+2025-08-13 16:16:07,554 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:16:07,561 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 16:16:07,561 - INFO - Status: Warming Up Jit
+2025-08-13 16:16:09,167 - INFO - JIT warmed up in 1.61 seconds
+2025-08-13 16:27:33,691 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:27:33,691 - INFO - Log file: log.txt
+2025-08-13 16:27:33,691 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:27:33,691 - INFO - === SIMULATION START ===
+2025-08-13 16:27:33,691 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:27:33,691 - INFO - Python: 3.12.9
+2025-08-13 16:27:33,691 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:27:33,691 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:27:33,691 - INFO - Created 1 particle(s)
+2025-08-13 16:27:33,691 - INFO - Starting position: unknown
+2025-08-13 16:27:33,691 - INFO - Seeding method: 0 points
+2025-08-13 16:27:33,691 - ERROR - === ERROR: Global Exception Handler ===
+2025-08-13 16:27:33,691 - ERROR - Exception type: ZeroDuration
+2025-08-13 16:27:33,691 - ERROR - Exception message: read_input_timestep cannot be of length zero
+2025-08-13 16:27:33,691 - ERROR - Stack trace:
+NoneType: None
+2025-08-13 16:27:33,691 - ERROR - ==================================================
+2025-08-13 16:27:33,691 - INFO - === SIMULATION FAILED ===
+2025-08-13 16:27:33,691 - INFO - Error type: ZeroDuration
+2025-08-13 16:27:33,691 - INFO - Error message: read_input_timestep cannot be of length zero
+2025-08-13 16:27:33,691 - INFO - Check log above for full stack trace
+2025-08-13 16:27:47,947 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:27:47,947 - INFO - Log file: log.txt
+2025-08-13 16:27:47,947 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:27:47,947 - INFO - === SIMULATION START ===
+2025-08-13 16:27:47,947 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:27:47,947 - INFO - Python: 3.12.9
+2025-08-13 16:27:47,947 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:27:47,947 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:27:47,947 - INFO - Created 1 particle(s)
+2025-08-13 16:27:47,947 - INFO - Starting position: unknown
+2025-08-13 16:27:47,947 - INFO - Seeding method: 0 points
+2025-08-13 16:27:51,188 - INFO - Status: Initial Data Loaded
+2025-08-13 16:27:51,190 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 16:27:51,190 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:27:51,208 - INFO - Calculator compiled in 0.02 seconds
+2025-08-13 16:27:51,209 - INFO - Status: Warming Up Jit
+2025-08-13 16:27:53,036 - INFO - JIT warmed up in 1.83 seconds
+2025-08-13 16:33:47,870 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:33:47,870 - INFO - Log file: log.txt
+2025-08-13 16:33:47,870 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:33:47,870 - INFO - === SIMULATION START ===
+2025-08-13 16:33:47,872 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:33:47,872 - INFO - Python: 3.12.9
+2025-08-13 16:33:47,872 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:33:47,872 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:33:47,872 - INFO - Created 1 particle(s)
+2025-08-13 16:33:47,872 - INFO - Starting position: unknown
+2025-08-13 16:33:47,872 - INFO - Seeding method: 0 points
+2025-08-13 16:33:50,657 - INFO - Status: Initial Data Loaded
+2025-08-13 16:33:50,659 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 16:33:50,659 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:33:50,674 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 16:33:50,674 - INFO - Status: Warming Up Jit
+2025-08-13 16:33:52,586 - INFO - JIT warmed up in 1.91 seconds
+2025-08-13 16:34:00,070 - INFO - === SIMULATION COMPLETE ===
+2025-08-13 16:34:00,073 - INFO - Total steps: 86400
+2025-08-13 16:34:00,073 - INFO - Runtime: 9.41s
+2025-08-13 16:34:00,073 - INFO - Final position: (71000.00, 450200.00)
+2025-08-13 16:34:00,073 - ERROR - === ERROR: Global Exception Handler ===
+2025-08-13 16:34:00,073 - ERROR - Exception type: FileNotFoundError
+2025-08-13 16:34:00,073 - ERROR - Exception message: No .sim_buffer_*.nc files found to merge.
+2025-08-13 16:34:00,073 - ERROR - Stack trace:
+NoneType: None
+2025-08-13 16:34:00,073 - ERROR - ==================================================
+2025-08-13 16:34:00,073 - INFO - === SIMULATION FAILED ===
+2025-08-13 16:34:00,073 - INFO - Error type: FileNotFoundError
+2025-08-13 16:34:00,073 - INFO - Error message: No .sim_buffer_*.nc files found to merge.
+2025-08-13 16:34:00,073 - INFO - Check log above for full stack trace
+2025-08-13 16:34:17,476 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:34:17,476 - INFO - Log file: log.txt
+2025-08-13 16:34:17,476 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:34:17,476 - INFO - === SIMULATION START ===
+2025-08-13 16:34:17,476 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:34:17,476 - INFO - Python: 3.12.9
+2025-08-13 16:34:17,476 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:34:17,476 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:34:17,476 - INFO - Created 1 particle(s)
+2025-08-13 16:34:17,476 - INFO - Starting position: unknown
+2025-08-13 16:34:17,476 - INFO - Seeding method: 0 points
+2025-08-13 16:34:20,070 - INFO - Status: Initial Data Loaded
+2025-08-13 16:34:20,070 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 16:34:20,079 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:34:20,100 - INFO - Calculator compiled in 0.02 seconds
+2025-08-13 16:34:20,102 - INFO - Status: Warming Up Jit
+2025-08-13 16:34:21,961 - INFO - JIT warmed up in 1.85 seconds
+2025-08-13 16:34:55,878 - INFO - === SIMULATION COMPLETE ===
+2025-08-13 16:34:55,878 - INFO - Total steps: 86400
+2025-08-13 16:34:55,878 - INFO - Runtime: 35.8s
+2025-08-13 16:34:55,878 - INFO - Final position: (71000.00, 450200.00)
+2025-08-13 16:34:55,878 - ERROR - === ERROR: Global Exception Handler ===
+2025-08-13 16:34:55,878 - ERROR - Exception type: FileNotFoundError
+2025-08-13 16:34:55,878 - ERROR - Exception message: No .sim_buffer_*.nc files found to merge.
+2025-08-13 16:34:55,878 - ERROR - Stack trace:
+NoneType: None
+2025-08-13 16:34:55,878 - ERROR - ==================================================
+2025-08-13 16:34:55,878 - INFO - === SIMULATION FAILED ===
+2025-08-13 16:34:55,878 - INFO - Error type: FileNotFoundError
+2025-08-13 16:34:55,878 - INFO - Error message: No .sim_buffer_*.nc files found to merge.
+2025-08-13 16:34:55,878 - INFO - Check log above for full stack trace
+2025-08-13 16:35:06,455 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:35:06,455 - INFO - Log file: log.txt
+2025-08-13 16:35:06,455 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:35:06,455 - INFO - === SIMULATION START ===
+2025-08-13 16:35:06,455 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:35:06,455 - INFO - Python: 3.12.9
+2025-08-13 16:35:06,455 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:35:06,455 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:35:06,455 - INFO - Created 1 particle(s)
+2025-08-13 16:35:06,455 - INFO - Starting position: unknown
+2025-08-13 16:35:06,455 - INFO - Seeding method: 0 points
+2025-08-13 16:35:08,772 - INFO - Status: Initial Data Loaded
+2025-08-13 16:35:08,772 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 16:35:08,772 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:35:08,796 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 16:35:08,796 - INFO - Status: Warming Up Jit
+2025-08-13 16:35:10,406 - INFO - JIT warmed up in 1.61 seconds
+2025-08-13 16:35:57,064 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:35:57,064 - INFO - Log file: log.txt
+2025-08-13 16:35:57,064 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:35:57,064 - INFO - === SIMULATION START ===
+2025-08-13 16:35:57,064 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:35:57,064 - INFO - Python: 3.12.9
+2025-08-13 16:35:57,064 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:35:57,070 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:35:57,070 - INFO - Created 1 particle(s)
+2025-08-13 16:35:57,070 - INFO - Starting position: unknown
+2025-08-13 16:35:57,070 - INFO - Seeding method: 0 points
+2025-08-13 16:35:59,370 - INFO - Status: Initial Data Loaded
+2025-08-13 16:35:59,370 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 16:35:59,370 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:35:59,385 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 16:35:59,386 - INFO - Status: Warming Up Jit
+2025-08-13 16:36:00,899 - INFO - JIT warmed up in 1.51 seconds
+2025-08-13 16:36:21,891 - INFO - === SIMULATION COMPLETE ===
+2025-08-13 16:36:21,891 - INFO - Total steps: 86400
+2025-08-13 16:36:21,891 - INFO - Runtime: 22.52s
+2025-08-13 16:36:21,891 - INFO - Final position: (71491.35, 451002.88)
+2025-08-13 16:36:21,892 - ERROR - === ERROR: Global Exception Handler ===
+2025-08-13 16:36:21,892 - ERROR - Exception type: FileNotFoundError
+2025-08-13 16:36:21,893 - ERROR - Exception message: No .sim_buffer_*.nc files found to merge.
+2025-08-13 16:36:21,893 - ERROR - Stack trace:
+NoneType: None
+2025-08-13 16:36:21,893 - ERROR - ==================================================
+2025-08-13 16:36:21,893 - INFO - === SIMULATION FAILED ===
+2025-08-13 16:36:21,893 - INFO - Error type: FileNotFoundError
+2025-08-13 16:36:21,893 - INFO - Error message: No .sim_buffer_*.nc files found to merge.
+2025-08-13 16:36:21,894 - INFO - Check log above for full stack trace
+2025-08-13 16:36:45,127 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:36:45,127 - INFO - Log file: log.txt
+2025-08-13 16:36:45,127 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:36:45,127 - INFO - === SIMULATION START ===
+2025-08-13 16:36:45,127 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:36:45,127 - INFO - Python: 3.12.9
+2025-08-13 16:36:45,127 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:36:45,127 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:36:45,127 - INFO - Created 1 particle(s)
+2025-08-13 16:36:45,127 - INFO - Starting position: unknown
+2025-08-13 16:36:45,127 - INFO - Seeding method: 0 points
+2025-08-13 16:36:47,457 - INFO - Status: Initial Data Loaded
+2025-08-13 16:36:47,457 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 16:36:47,457 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:36:47,473 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 16:36:47,473 - INFO - Status: Warming Up Jit
+2025-08-13 16:36:49,010 - INFO - JIT warmed up in 1.54 seconds
+2025-08-13 16:37:10,020 - INFO - === SIMULATION COMPLETE ===
+2025-08-13 16:37:10,020 - INFO - Total steps: 86400
+2025-08-13 16:37:10,020 - INFO - Runtime: 22.56s
+2025-08-13 16:37:10,020 - INFO - Final position: (71491.35, 451002.88)
+2025-08-13 16:37:10,020 - ERROR - === ERROR: Global Exception Handler ===
+2025-08-13 16:37:10,020 - ERROR - Exception type: FileNotFoundError
+2025-08-13 16:37:10,035 - ERROR - Exception message: No .sim_buffer_*.nc files found to merge.
+2025-08-13 16:37:10,035 - ERROR - Stack trace:
+NoneType: None
+2025-08-13 16:37:10,035 - ERROR - ==================================================
+2025-08-13 16:37:10,035 - INFO - === SIMULATION FAILED ===
+2025-08-13 16:37:10,035 - INFO - Error type: FileNotFoundError
+2025-08-13 16:37:10,035 - INFO - Error message: No .sim_buffer_*.nc files found to merge.
+2025-08-13 16:37:10,036 - INFO - Check log above for full stack trace
+2025-08-13 16:37:21,020 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:37:21,020 - INFO - Log file: log.txt
+2025-08-13 16:37:21,020 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:37:21,020 - INFO - === SIMULATION START ===
+2025-08-13 16:37:21,020 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:37:21,020 - INFO - Python: 3.12.9
+2025-08-13 16:37:21,020 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:37:21,020 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:37:21,020 - INFO - Created 1 particle(s)
+2025-08-13 16:37:21,020 - INFO - Starting position: unknown
+2025-08-13 16:37:21,020 - INFO - Seeding method: 0 points
+2025-08-13 16:37:23,265 - INFO - Status: Initial Data Loaded
+2025-08-13 16:37:23,265 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 16:37:23,267 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:37:23,281 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 16:37:23,281 - INFO - Status: Warming Up Jit
+2025-08-13 16:37:24,855 - INFO - JIT warmed up in 1.57 seconds
+2025-08-13 16:38:17,070 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:38:17,070 - INFO - Log file: log.txt
+2025-08-13 16:38:17,070 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:38:17,070 - INFO - === SIMULATION START ===
+2025-08-13 16:38:17,070 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 16:38:17,070 - INFO - Python: 3.12.9
+2025-08-13 16:38:17,070 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:38:17,070 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:38:17,070 - INFO - Created 1 particle(s)
+2025-08-13 16:38:17,070 - INFO - Starting position: unknown
+2025-08-13 16:38:17,070 - INFO - Seeding method: 0 points
+2025-08-13 16:38:19,356 - INFO - Status: Initial Data Loaded
+2025-08-13 16:38:19,356 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 16:38:19,356 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:38:19,376 - INFO - Calculator compiled in 0.02 seconds
+2025-08-13 16:38:19,378 - INFO - Status: Warming Up Jit
+2025-08-13 16:38:20,936 - INFO - JIT warmed up in 1.56 seconds
+2025-08-13 16:49:21,306 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:49:21,306 - INFO - Log file: log.txt
+2025-08-13 16:49:21,306 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:49:21,320 - INFO - === SIMULATION START ===
+2025-08-13 16:49:21,320 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 16:49:21,321 - INFO - Python: 3.12.9
+2025-08-13 16:49:21,321 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:49:21,322 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:49:21,322 - INFO - Created 1 particle(s)
+2025-08-13 16:49:21,322 - INFO - Starting position: unknown
+2025-08-13 16:49:21,323 - INFO - Seeding method: 0 points
+2025-08-13 16:49:34,831 - INFO - Status: Initial Data Loaded
+2025-08-13 16:49:34,831 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 16:49:34,833 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:49:34,848 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 16:49:34,848 - INFO - Status: Warming Up Jit
+2025-08-13 16:49:38,520 - INFO - JIT warmed up in 3.67 seconds
+2025-08-13 16:51:42,319 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:51:42,320 - INFO - Log file: log.txt
+2025-08-13 16:51:42,320 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:51:42,320 - INFO - === SIMULATION START ===
+2025-08-13 16:51:42,320 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 16:51:42,320 - INFO - Python: 3.12.9
+2025-08-13 16:51:42,320 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:51:42,320 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:51:42,320 - INFO - Created 1 particle(s)
+2025-08-13 16:51:42,320 - INFO - Starting position: unknown
+2025-08-13 16:51:42,320 - INFO - Seeding method: 0 points
+2025-08-13 16:51:45,162 - INFO - Status: Initial Data Loaded
+2025-08-13 16:51:45,163 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 16:51:45,163 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:51:45,185 - INFO - Calculator compiled in 0.02 seconds
+2025-08-13 16:51:45,185 - INFO - Status: Warming Up Jit
+2025-08-13 16:51:49,020 - INFO - JIT warmed up in 3.83 seconds
+2025-08-13 16:54:07,120 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:54:07,120 - INFO - Log file: log.txt
+2025-08-13 16:54:07,120 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:54:07,120 - INFO - === SIMULATION START ===
+2025-08-13 16:54:07,120 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 16:54:07,120 - INFO - Python: 3.12.9
+2025-08-13 16:54:07,120 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:54:07,120 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:54:07,120 - INFO - Created 1 particle(s)
+2025-08-13 16:54:07,130 - INFO - Starting position: unknown
+2025-08-13 16:54:07,130 - INFO - Seeding method: 0 points
+2025-08-13 16:54:09,950 - INFO - Status: Initial Data Loaded
+2025-08-13 16:54:09,951 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 16:54:09,952 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:54:10,154 - INFO - Calculator compiled in 0.2 seconds
+2025-08-13 16:54:10,154 - INFO - Status: Warming Up Jit
+2025-08-13 16:54:13,709 - INFO - JIT warmed up in 3.56 seconds
+2025-08-13 16:56:08,128 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:56:08,128 - INFO - Log file: log.txt
+2025-08-13 16:56:08,128 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:56:08,128 - INFO - === SIMULATION START ===
+2025-08-13 16:56:08,128 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 16:56:08,128 - INFO - Python: 3.12.9
+2025-08-13 16:56:08,128 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:56:08,128 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:56:08,128 - INFO - Created 1 particle(s)
+2025-08-13 16:56:08,128 - INFO - Starting position: unknown
+2025-08-13 16:56:08,128 - INFO - Seeding method: 0 points
+2025-08-13 16:56:46,160 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 16:56:46,162 - INFO - Log file: log.txt
+2025-08-13 16:56:46,162 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 16:56:46,163 - INFO - === SIMULATION START ===
+2025-08-13 16:56:46,163 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 16:56:46,163 - INFO - Python: 3.12.9
+2025-08-13 16:56:46,163 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 16:56:46,164 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 16:56:46,164 - INFO - Created 1 particle(s)
+2025-08-13 16:56:46,164 - INFO - Starting position: unknown
+2025-08-13 16:56:46,164 - INFO - Seeding method: 0 points
+2025-08-13 16:56:48,813 - INFO - Status: Initial Data Loaded
+2025-08-13 16:56:48,813 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 16:56:48,815 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 16:56:48,829 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 16:56:48,830 - INFO - Status: Warming Up Jit
+2025-08-13 16:56:52,365 - INFO - JIT warmed up in 3.52 seconds
+2025-08-13 17:02:18,870 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 17:02:18,871 - INFO - Log file: log.txt
+2025-08-13 17:02:18,871 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 17:02:18,872 - INFO - === SIMULATION START ===
+2025-08-13 17:02:18,872 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 17:02:18,872 - INFO - Python: 3.12.9
+2025-08-13 17:02:18,872 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 17:02:18,873 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 17:02:18,873 - INFO - Created 1 particle(s)
+2025-08-13 17:02:18,873 - INFO - Starting position: unknown
+2025-08-13 17:02:18,874 - INFO - Seeding method: 0 points
+2025-08-13 17:02:22,084 - INFO - Status: Initial Data Loaded
+2025-08-13 17:02:22,086 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 17:02:22,088 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 17:02:22,308 - INFO - Calculator compiled in 0.22 seconds
+2025-08-13 17:02:22,308 - INFO - Status: Warming Up Jit
+2025-08-13 17:02:25,794 - INFO - JIT warmed up in 3.49 seconds
+2025-08-13 17:03:52,037 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 17:03:52,037 - INFO - Log file: log.txt
+2025-08-13 17:03:52,037 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 17:03:52,037 - INFO - === SIMULATION START ===
+2025-08-13 17:03:52,037 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 17:03:52,037 - INFO - Python: 3.12.9
+2025-08-13 17:03:52,037 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 17:03:52,037 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 17:03:52,037 - INFO - Created 1 particle(s)
+2025-08-13 17:03:52,037 - INFO - Starting position: unknown
+2025-08-13 17:03:52,037 - INFO - Seeding method: 0 points
+2025-08-13 17:03:54,795 - INFO - Status: Initial Data Loaded
+2025-08-13 17:03:54,795 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 17:03:54,795 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 17:03:54,805 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 17:03:54,805 - INFO - Status: Warming Up Jit
+2025-08-13 17:03:58,570 - INFO - JIT warmed up in 3.76 seconds
+2025-08-13 17:07:07,763 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 17:07:07,763 - INFO - Log file: log.txt
+2025-08-13 17:07:07,763 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 17:07:07,763 - INFO - === SIMULATION START ===
+2025-08-13 17:07:07,763 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 17:07:07,763 - INFO - Python: 3.12.9
+2025-08-13 17:07:07,763 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 17:07:07,763 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 17:07:07,763 - INFO - Created 1 particle(s)
+2025-08-13 17:07:07,763 - INFO - Starting position: unknown
+2025-08-13 17:07:07,770 - INFO - Seeding method: 0 points
+2025-08-13 17:07:10,774 - INFO - Status: Initial Data Loaded
+2025-08-13 17:07:10,774 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 17:07:10,775 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 17:07:10,920 - INFO - Calculator compiled in 0.15 seconds
+2025-08-13 17:07:10,920 - INFO - Status: Warming Up Jit
+2025-08-13 17:07:17,126 - INFO - JIT warmed up in 6.21 seconds
+2025-08-13 17:23:11,212 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 17:23:11,213 - INFO - Log file: log.txt
+2025-08-13 17:23:11,213 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 17:23:11,213 - INFO - === SIMULATION START ===
+2025-08-13 17:23:11,214 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-13 17:23:11,214 - INFO - Python: 3.12.9
+2025-08-13 17:23:11,214 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 17:23:11,214 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 17:23:11,215 - INFO - Created 1 particle(s)
+2025-08-13 17:23:11,215 - INFO - Starting position: unknown
+2025-08-13 17:23:11,216 - INFO - Seeding method: 0 points
+2025-08-13 17:31:36,916 - INFO - === LOGGING INITIALIZED ===
+2025-08-13 17:31:36,917 - INFO - Log file: log.txt
+2025-08-13 17:31:36,917 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-13 17:31:36,917 - INFO - === SIMULATION START ===
+2025-08-13 17:31:36,917 - INFO - Command: c:/Users/weste_bt/GitHub/sedtrails/src/sedtrails/simulation_bart.py
+2025-08-13 17:31:36,917 - INFO - Python: 3.12.9
+2025-08-13 17:31:36,918 - INFO - Config: examples/config.example_bart.yaml
+2025-08-13 17:31:36,918 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-13 17:31:36,918 - INFO - Created 1 particle(s)
+2025-08-13 17:31:36,918 - INFO - Starting position: unknown
+2025-08-13 17:31:36,918 - INFO - Seeding method: 0 points
+2025-08-13 17:31:39,869 - INFO - Status: Initial Data Loaded
+2025-08-13 17:31:39,869 - INFO -   num_timesteps: 2160, flow_field_name: suspended_velocity
+2025-08-13 17:31:39,870 - INFO - Compiling calculator for 4158x4158 grid
+2025-08-13 17:31:39,884 - INFO - Calculator compiled in 0.01 seconds
+2025-08-13 17:31:39,884 - INFO - Status: Warming Up Jit
+2025-08-13 17:31:41,802 - INFO - JIT warmed up in 1.92 seconds
+2025-08-13 17:32:08,292 - INFO - === SIMULATION COMPLETE ===
+2025-08-13 17:32:08,292 - INFO - Total steps: 43200
+2025-08-13 17:32:08,292 - INFO - Runtime: 28.42s
+2025-08-13 17:32:08,292 - INFO - Final position: (71648.98, 450763.64)
+2025-08-13 17:32:08,295 - ERROR - === ERROR: Global Exception Handler ===
+2025-08-13 17:32:08,295 - ERROR - Exception type: FileNotFoundError
+2025-08-13 17:32:08,295 - ERROR - Exception message: No .sim_buffer_*.nc files found to merge.
+2025-08-13 17:32:08,295 - ERROR - Stack trace:
+NoneType: None
+2025-08-13 17:32:08,296 - ERROR - ==================================================
+2025-08-13 17:32:08,296 - INFO - === SIMULATION FAILED ===
+2025-08-13 17:32:08,296 - INFO - Error type: FileNotFoundError
+2025-08-13 17:32:08,296 - INFO - Error message: No .sim_buffer_*.nc files found to merge.
+2025-08-13 17:32:08,296 - INFO - Check log above for full stack trace
+2025-08-14 10:44:38,798 - INFO - === LOGGING INITIALIZED ===
+2025-08-14 10:44:38,798 - INFO - Log file: log.txt
+2025-08-14 10:44:38,798 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-14 10:44:38,798 - INFO - === SIMULATION START ===
+2025-08-14 10:44:38,798 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-14 10:44:38,798 - INFO - Python: 3.12.9
+2025-08-14 10:44:38,798 - INFO - Config: examples/config.example_bart.yaml
+2025-08-14 10:44:38,798 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-14 10:44:38,798 - INFO - Created 1 particle(s)
+2025-08-14 10:44:38,798 - INFO - Starting position: unknown
+2025-08-14 10:44:38,798 - INFO - Seeding method: 0 points
+2025-08-14 10:48:37,985 - INFO - === LOGGING INITIALIZED ===
+2025-08-14 10:48:37,987 - INFO - Log file: log.txt
+2025-08-14 10:48:37,987 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-14 10:48:37,987 - INFO - === SIMULATION START ===
+2025-08-14 10:48:37,989 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-14 10:48:37,989 - INFO - Python: 3.12.9
+2025-08-14 10:48:37,989 - INFO - Config: examples/config.example_bart.yaml
+2025-08-14 10:48:37,989 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-14 10:48:37,989 - INFO - Created 1 particle(s)
+2025-08-14 10:48:37,989 - INFO - Starting position: unknown
+2025-08-14 10:48:37,989 - INFO - Seeding method: 0 points
+2025-08-14 10:49:19,802 - INFO - === LOGGING INITIALIZED ===
+2025-08-14 10:49:19,802 - INFO - Log file: log.txt
+2025-08-14 10:49:19,802 - INFO - Location: C:\Users\weste_bt\GitHub\sedtrails\results
+2025-08-14 10:49:19,802 - INFO - === SIMULATION START ===
+2025-08-14 10:49:19,802 - INFO - Command: c:\Users\weste_bt\GitHub\sedtrails\src\sedtrails\simulation_bart.py
+2025-08-14 10:49:19,802 - INFO - Python: 3.12.9
+2025-08-14 10:49:19,806 - INFO - Config: examples/config.example_bart.yaml
+2025-08-14 10:49:19,806 - INFO - Working directory: C:\Users\weste_bt\GitHub\sedtrails
+2025-08-14 10:49:19,806 - INFO - Created 1 particle(s)
+2025-08-14 10:49:19,806 - INFO - Starting position: unknown
+2025-08-14 10:49:19,806 - INFO - Seeding method: 0 points

@@ -28,7 +28,7 @@ class FormatConverter:
         config : dict
             Configuration dictionary containing settings for the converter.
             Must include 'input_file', 'input_format', optionally 'reference_date' (default
-            "1970-01-01" (Unix epoch))
+            "1970-01-01" (Unix epoch)) and 'morfac' (default 1.0)
         """
         self.config = config
         self._reference_date: Union[str, None] = None
@@ -36,6 +36,7 @@ class FormatConverter:
         self._format_plugin = None
         self._input_format: Union[str, None] = None
         self._input_file: Union[str, None] = None
+        self._morfac: Union[float, None] = None
 
     def __post_init__(self):
         """
@@ -69,7 +70,14 @@ class FormatConverter:
 
         if self._reference_date is None:
             self._reference_date = self.config.get('reference_date', '1970-01-01')
-        return self.reference_date  # Default to Unix epoch
+        return self._reference_date  # Default to Unix epoch
+
+    @property
+    def morfac(self) -> float:
+        """Get the morphological acceleration factor."""
+        if self._morfac is None:
+            self._morfac = self.config.get('morfac', 1.0)
+        return self._morfac
 
     @property
     def format_plugin(self):
@@ -90,20 +98,26 @@ class FormatConverter:
                     f'Ensure the module exists and is correctly named.'
                 ) from e
             else:
-                # Initialize the format plugin with the input file and type
-                self._format_plugin = plugin_module.FormatPlugin(self.input_file)
+                # Initialize the format plugin with the input file and morfac
+                self._format_plugin = plugin_module.FormatPlugin(self.input_file, morfac=self.morfac)
 
         return self._format_plugin
 
-    def convert_to_sedtrails(self) -> SedtrailsData:
+    def convert_to_sedtrails(self, current_time=None, reading_interval=None) -> SedtrailsData:
         """
-        Converts dataset to SedtrailsData format for all time steps.
+        Converts dataset to SedtrailsData format.
+
+        Parameters:
+        -----------
+        current_time : float, optional
+            Current simulation time in seconds
+        reading_interval : float, optional  
+            Reading interval in seconds
 
         Returns:
         --------
         SedtrailsData:
-            Data in SedtrailsData format with time as the first dimension for
-            time-dependent variables, with time in seconds since reference_date
+            Data in SedtrailsData format
         """
 
         if self._format_plugin is None:
@@ -111,10 +125,10 @@ class FormatConverter:
         else:
             plugin = self._format_plugin
 
-        print(f'Using {plugin.__class__.__name__} to convert data to SedtrailsData format...')
+        # print(f'Using {plugin.__class__.__name__} to convert data to SedtrailsData format...')
 
-        sedtrails_data = plugin.convert()
-        print('Successfully converted data to SedtrailsData format.')
+        sedtrails_data = plugin.convert(current_time, reading_interval)
+        # print('Successfully converted data to SedtrailsData format.')
         return sedtrails_data
 
 
@@ -125,6 +139,7 @@ if __name__ == '__main__':
         'input_file': 'sedtrails/sample-data/inlet_sedtrails.nc',
         'input_format': 'fm_netcdf',
         'reference_date': '1970-01-01',
+        'morfac': 1.0,
     }
 
     converter = FormatConverter(conf)

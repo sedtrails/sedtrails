@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Dict
 from dataclasses import dataclass
+from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 
 
 @dataclass
@@ -48,6 +49,8 @@ class SedtrailsData:
     nonlinear_wave_velocity: Dict[str, np.ndarray]
         Nonlinear wave velocity in m/s
         (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+    metadata: SedtrailsMetadata
+        Additional metadata for this dataset
 
     # === PHYSICS FIELDS (added by PhysicsConverter) ===
     # Note: All physics fields match the structure of transport data
@@ -82,96 +85,82 @@ class SedtrailsData:
     max_bed_shear_stress: np.ndarray
     sediment_concentration: np.ndarray
     nonlinear_wave_velocity: Dict[str, np.ndarray]
+    metadata: SedtrailsMetadata
 
     def __post_init__(self):
-        """Initialize container for dynamic physics fields."""
-        # Create a container for physics data that can be added later
-        self._physics_fields = {}
+        """Initialize container for dynamic physics fields and validate metadata."""
+        # Validate metadata field
+        self._validate_metadata()
+        # TODO: do we also need to check that min max values are sensible? i.e. min <= max
+
+        self._physics_fields: Dict[str, np.ndarray | Dict[str, np.ndarray]] = {}
+
+    def _validate_metadata(self):
+        """Validate that metadata field exists and is the correct type."""
+        # Only check that metadata is the right type
+        if not isinstance(self.metadata, SedtrailsMetadata):
+            raise TypeError(f'metadata must be an instance of SedtrailsMetadata, got {type(self.metadata).__name__}')
 
     def add_physics_field(self, name: str, data):
         """
         Add a physics field to the data structure.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         name : str
             Name of the physics field
         data : np.ndarray or dict
             Physics data (scalar array or dict with 'x', 'y', 'magnitude' for vectors)
         """
         self._physics_fields[name] = data
-        # Also set as attribute for direct access
         setattr(self, name, data)
 
     def has_physics_field(self, name: str) -> bool:
-        """
-        Check if a specific physics field exists.
-
-        Parameters:
-        -----------
-        name : str
-            Name of the physics field to check
-
-        Returns:
-        --------
-        bool
-            True if the field exists. False otherwise.
-        """
+        """Check if a specific physics field exists."""
         return name in self._physics_fields
 
     def get_physics_fields(self) -> list:
-        """
-        Get list of available physics field names.
-
-        Returns:
-        --------
-        list
-            List of physics field names
-        """
+        """Get list of available physics field names."""
         return list(self._physics_fields.keys())
 
     def has_physics_data(self) -> bool:
-        """
-        Check if any physics fields have been added.
-
-        Returns:
-        --------
-        bool
-            True if any physics fields exist
-        """
+        """Check if any physics fields have been added."""
         return len(self._physics_fields) > 0
 
+    # ------------------------------------------------------------------
+    # Time slicing
+    # ------------------------------------------------------------------
     def __getitem__(self, time_index: int) -> Dict:
         """
         Get data for a specific time index.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         time_index : int
             Time index to extract
 
-        Returns:
-        --------
+        Returns
+        -------
         Dict
             Dictionary containing all data for the specified time index
         """
         if time_index < 0 or time_index >= len(self.times):
             raise IndexError(f'Time index {time_index} out of bounds (0-{len(self.times) - 1})')
 
-        # Create a dictionary with time-specific data
+        # Core fields
         data = {
             'time': self.times[time_index],
             'reference_date': self.reference_date,
             'x': self.x,
             'y': self.y,
-            'bed_level': self.bed_level,  # Bed level is typically time-independent
+            'bed_level': self.bed_level,  # typically time-independent
             'fractions': self.fractions,
-            # Extract time slice from time-dependent variables
+            'min_resolution': self.min_resolution,
+            'outer_envelope': self.outer_envelope,
             'water_depth': self.water_depth[time_index],
             'mean_bed_shear_stress': self.mean_bed_shear_stress[time_index],
             'max_bed_shear_stress': self.max_bed_shear_stress[time_index],
             'sediment_concentration': self.sediment_concentration[time_index],
-            # Extract time slice from vector quantities
             'depth_avg_flow_velocity': {
                 'x': self.depth_avg_flow_velocity['x'][time_index],
                 'y': self.depth_avg_flow_velocity['y'][time_index],
@@ -194,31 +183,15 @@ class SedtrailsData:
             },
         }
 
-        # DYNAMIC PHYSICS FIELDS: Add any physics fields that have been dynamically added
-        physics_scalar_fields = [
-            'shields_number',
-            'bed_load_layer_thickness',
-            'suspended_layer_thickness',
-            'mixing_layer_thickness',
-        ]
-        physics_vector_fields = ['bed_load_velocity', 'suspended_velocity']
-
-        # Add scalar physics fields if they exist
-        for field_name in physics_scalar_fields:
-            if hasattr(self, field_name):
-                field_value = getattr(self, field_name)
-                if field_value is not None:
-                    data[field_name] = field_value[time_index]
-
-        # Add vector physics fields if they exist
-        for field_name in physics_vector_fields:
-            if hasattr(self, field_name):
-                field_value = getattr(self, field_name)
-                if field_value is not None:
-                    data[field_name] = {
-                        'x': field_value['x'][time_index],
-                        'y': field_value['y'][time_index],
-                        'magnitude': field_value['magnitude'][time_index],
-                    }
+        # Dynamic physics fields
+        for name, value in self._physics_fields.items():
+            if isinstance(value, dict):  # vector field
+                data[name] = {
+                    'x': value['x'][time_index],
+                    'y': value['y'][time_index],
+                    'magnitude': value['magnitude'][time_index],
+                }
+            else:  # scalar field
+                data[name] = value[time_index]
 
         return data

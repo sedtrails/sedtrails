@@ -42,22 +42,22 @@
               "default": 1,
               "description": "initial state of Freedom Factor (0 = trapped, 1 = free)"
             },
-            "soulsby_gamma_e": {
+            "gamma_e": {
               "type": "number",
               "default": 0.1,
               "description": "long-term equilibrium proportion of free particles"
             },
-            "soulsby_theta_s": {
+            "theta_s": {
               "type": "number",
               "default": 0.1,
               "description": "transition scale value"
             },
-            "soulsby_b_e": {
+            "b_e": {
               "type": "number",
               "default": 1.7e-07,
               "description": "maximum free-to-trapped transition probability per second [1/s]"
             },
-            "soulsby_mu_d": {
+            "mu_d": {
               "type": "number",
               "default": 0.5,
               "description": "dynamic friction coefficient (0.5-1.0)"
@@ -119,6 +119,11 @@
           "type": "string",
           "default": "1970-01-01",
           "description": "reference date used by the timeseries in the input data model, e.g., '2020-01-01 00'. If empty, then the reference is set to Unix epoch (1970-01-01 00:00:00)"
+        },
+        "morfac": {
+          "type": "number",
+          "default": 1,
+          "description": "morphological acceleration factor for time decompression (default: 1 = no decompression)"
         }
       }
     },
@@ -321,6 +326,16 @@
           "type": "string",
           "default": "30S",
           "description": "timestep for the simulation, e.g., '30S' for 30 seconds."
+        },
+        "read_input_timestep": {
+          "type": "string",
+          "default": "30D12H25M0S",
+          "description": "timestep for reading the input data (*.nc) in chunks, e.g., '30D12H25M0S' for 30 days, 12 hours, and 25 minutes."
+        },
+        "cfl_condition": {
+          "type": "number",
+          "default": 0.7,
+          "description": "CFL condition for adaptive timestep calculation. If 0, timestep is not adapted."
         }
       },
       "required": [

@@ -6,7 +6,7 @@
 title SedTRAILS: Component Diagram for Simulation Cache and Recovery Application
 scale 1.5
 
-Container(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Particle Tracer System")
+Container(dataManager, "Data Management Module", "Python", "An application that manages data and files produced by the SedTRAILS Particle Tracer System")
 
 Container(sedtrailsLogger, "SedTRAILS  Logger", "Python", "An application that logs simulation states, outputs, errors and computational performance metrics")
 

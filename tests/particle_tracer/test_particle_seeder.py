@@ -4,7 +4,7 @@ Unit tests for particle seeding strategies.
 
 import pytest
 from sedtrails.particle_tracer.particle_seeder import (
-    SeedingConfig,
+    PopulationConfig,
     PointStrategy,
     RandomStrategy,
     GridStrategy,
@@ -38,7 +38,7 @@ def transect_strategy():
 # Config fixtures
 @pytest.fixture
 def point_config_basic():
-    return SeedingConfig(
+    return PopulationConfig(
         {
             'population': {
                 'particle_type': 'sand',
@@ -54,7 +54,7 @@ def point_config_basic():
 
 @pytest.fixture
 def point_config_simple():
-    return SeedingConfig(
+    return PopulationConfig(
         {
             'population': {
                 'particle_type': 'sand',
@@ -70,7 +70,7 @@ def point_config_simple():
 
 @pytest.fixture
 def point_config_dual():
-    return SeedingConfig(
+    return PopulationConfig(
         {
             'population': {
                 'particle_type': 'sand',
@@ -86,12 +86,12 @@ def point_config_dual():
 
 @pytest.fixture
 def random_config():
-    return SeedingConfig(
+    return PopulationConfig(
         {
             'population': {
                 'particle_type': 'sand',
                 'seeding': {
-                    'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'seed': 42}},
+                    'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 2, 'seed': 42}},
                     'quantity': 5,
                     'release_start': '2025-06-18 13:00:00',
                 },
@@ -102,7 +102,7 @@ def random_config():
 
 @pytest.fixture
 def grid_config():
-    return SeedingConfig(
+    return PopulationConfig(
         {
             'population': {
                 'particle_type': 'sand',
@@ -123,7 +123,7 @@ def grid_config():
 
 @pytest.fixture
 def grid_config_single():
-    return SeedingConfig(
+    return PopulationConfig(
         {
             'population': {
                 'particle_type': 'mud',
@@ -144,7 +144,7 @@ def grid_config_single():
 
 @pytest.fixture
 def transect_config():
-    return SeedingConfig(
+    return PopulationConfig(
         {
             'population': {
                 'particle_type': 'sand',
@@ -165,7 +165,7 @@ def transect_config():
 
 @pytest.fixture
 def transect_config_multi():
-    return SeedingConfig(
+    return PopulationConfig(
         {
             'population': {
                 'particle_type': 'sand',
@@ -205,9 +205,9 @@ class TestPointStrategy:
 
     def test_point_strategy_missing_locations(self, point_strategy):
         """Test point strategy with missing locations."""
-        # Since SeedingConfig validates that strategy settings exist,
+        # Since PopulationConfig validates that strategy settings exist,
         # we need to create a config that passes validation but missing locations
-        config = SeedingConfig(
+        config = PopulationConfig(
             {
                 'population': {
                     'particle_type': 'sand',
@@ -225,7 +225,7 @@ class TestPointStrategy:
 
     def test_point_strategy_invalid_location_format(self, point_strategy):
         """Test point strategy with invalid location format."""
-        config = SeedingConfig(
+        config = PopulationConfig(
             {
                 'population': {
                     'particle_type': 'sand',
@@ -249,7 +249,7 @@ class TestRandomStrategy:
         """Test basic random strategy functionality."""
         result = random_strategy.seed(random_config)
 
-        assert len(result) == 5
+        assert len(result) == 2  # 2 nlocations
         # Check all particles have quantity 5 and coordinates within bounds
         for qty, x, y in result:
             assert qty == 5
@@ -258,14 +258,14 @@ class TestRandomStrategy:
 
     def test_random_strategy_missing_bbox(self, random_strategy):
         """Test random strategy with missing bounding box."""
-        # Since SeedingConfig validates that strategy settings exist,
+        # Since PopulationConfig validates that strategy settings exist,
         # we need to create a config that passes validation but missing bbox
-        config = SeedingConfig(
+        config = PopulationConfig(
             {
                 'population': {
                     'particle_type': 'sand',
                     'seeding': {
-                        'strategy': {'random': {'not_bbox': 'invalid'}},
+                        'strategy': {'random': {'not_bbox': 'invalid', 'nlocations': 1}},
                         'quantity': 5,
                         'release_start': '2025-06-18 13:00:00',
                     },
@@ -292,7 +292,7 @@ class TestGridStrategy:
 
     def test_grid_strategy_no_bbox(self, grid_strategy):
         """Test grid strategy without bounding box."""
-        config = SeedingConfig(
+        config = PopulationConfig(
             {
                 'population': {
                     'particle_type': 'sand',
@@ -314,7 +314,7 @@ class TestGridStrategy:
 
     def test_grid_strategy_missing_separation(self, grid_strategy):
         """Test grid strategy with missing separation parameters."""
-        config = SeedingConfig(
+        config = PopulationConfig(
             {
                 'population': {
                     'particle_type': 'sand',
@@ -364,7 +364,7 @@ class TestTransectStrategy:
 
     def test_transect_strategy_missing_segments(self, transect_strategy):
         """Test transect strategy with missing segments."""
-        config = SeedingConfig(
+        config = PopulationConfig(
             {
                 'population': {
                     'particle_type': 'sand',
@@ -382,7 +382,7 @@ class TestTransectStrategy:
 
     def test_transect_strategy_invalid_segment_format(self, transect_strategy):
         """Test transect strategy with invalid segment format."""
-        config = SeedingConfig(
+        config = PopulationConfig(
             {
                 'population': {
                     'particle_type': 'sand',
@@ -411,7 +411,7 @@ class TestParticleFactory:
         """Test particle creation with PointStrategy."""
         Sand = particle_classes['Sand']
 
-        config = SeedingConfig(
+        config = PopulationConfig(
             {
                 'population': {
                     'particle_type': 'sand',
@@ -441,7 +441,7 @@ class TestParticleFactory:
         """Test particle creation with GridStrategy."""
         Mud = particle_classes['Mud']
 
-        config = SeedingConfig(
+        config = PopulationConfig(
             {
                 'population': {
                     'particle_type': 'mud',
@@ -461,7 +461,7 @@ class TestParticleFactory:
 
         particles = ParticleFactory.create_particles(config)
 
-        # Should create 4 particles (2x2 grid)
+        # Should create 4 particles (2x2 grid), each at corners of the bbox
         assert len(particles) == 4
         # Check all particles are Mud type
         assert all(isinstance(p, Mud) for p in particles)
@@ -470,12 +470,41 @@ class TestParticleFactory:
         assert (0.0, 0.0) in positions
         assert (1.0, 1.0) in positions
 
+    def test_create_particles_random_strategy(self, particle_classes):
+        """Test particle creation with RandomStrategy."""
+        Sand = particle_classes['Sand']
+
+        config = PopulationConfig(
+            {
+                'population': {
+                    'particle_type': 'sand',
+                    'seeding': {
+                        'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 2, 'seed': 42}},
+                        'quantity': 5,
+                        'release_start': '2025-06-18 13:00:00',
+                    },
+                }
+            }
+        )
+
+        particles = ParticleFactory.create_particles(config)
+
+        # Should create 10 particles (2 locations * 5 quantity)
+        assert len(particles) == 10
+        # Check all particles are Sand type
+        assert all(isinstance(p, Sand) for p in particles)
+        # Check positions are within bbox
+        positions = [(p.x, p.y) for p in particles]
+        for x, y in positions:
+            assert 1.0 <= x <= 3.0
+            assert 2.0 <= y <= 4.0
+
     def test_create_particles_different_particle_types(self, particle_classes):
         """Test creating different particle types."""
         Sand, Mud, Passive = particle_classes['Sand'], particle_classes['Mud'], particle_classes['Passive']
 
         # Test Sand particles
-        sand_config = SeedingConfig(
+        sand_config = PopulationConfig(
             {
                 'population': {
                     'particle_type': 'sand',
@@ -492,7 +521,7 @@ class TestParticleFactory:
         assert isinstance(sand_particles[0], Sand)
 
         # Test Mud particles
-        mud_config = SeedingConfig(
+        mud_config = PopulationConfig(
             {
                 'population': {
                     'particle_type': 'mud',
@@ -509,7 +538,7 @@ class TestParticleFactory:
         assert isinstance(mud_particles[0], Mud)
 
         # Test Passive particles
-        passive_config = SeedingConfig(
+        passive_config = PopulationConfig(
             {
                 'population': {
                     'particle_type': 'passive',
@@ -527,7 +556,7 @@ class TestParticleFactory:
 
     def test_create_particles_invalid_particle_type(self):
         """Test error handling for invalid particle type."""
-        config = SeedingConfig(
+        config = PopulationConfig(
             {
                 'population': {
                     'particle_type': 'invalid_type',
@@ -545,7 +574,7 @@ class TestParticleFactory:
 
     def test_create_particles_release_time_set(self):
         """Test that release time is set correctly."""
-        config = SeedingConfig(
+        config = PopulationConfig(
             {
                 'population': {
                     'particle_type': 'sand',

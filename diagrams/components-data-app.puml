@@ -12,7 +12,7 @@ Container(pathwayVisualizer, "Pathway Visualizer", "Python", "An application to 
 
 Container(cache, "Simulation Cache and Recovery", "Python", "Provides functionality to recover simulation output, allow restarts, and reusing simulation inputs and outputs")
 
-Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a costal system")
+Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a coastal system")
 
 Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
 

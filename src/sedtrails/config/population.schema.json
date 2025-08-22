@@ -98,10 +98,12 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "alpha": {
-                    "type": "number",
-                    "default": 0.1,
-                    "description": "alpha parameter for van Westen method"
+                "flow_field_name": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "flow field name for van Westen method used in particle computation"
                 },
                 "beta": {
                     "type": "number",
@@ -111,23 +113,6 @@
             },
             "description": "van Westen method for particle tracking"
         },
-        "van_westen_bl_method": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "gamma": {
-                    "type": "number",
-                    "default": 0.5,
-                    "description": "gamma parameter for van Westen method"
-                },
-                "delta": {
-                    "type": "number",
-                    "default": 0.4,
-                    "description": "delta parameter for van Westen method"
-                }
-            },
-            "description": "van Westen BL method for particle tracking"
-        },
         "soulsby_method": {
             "type": "object",
             "additionalProperties": false,
@@ -135,12 +120,12 @@
                 "f": {
                     "type": "number",
                     "default": 0.1,
-                    "description": "f parameter for van Westen method"
+                    "description": "f parameter for Soulsby method"
                 },
                 "r": {
                     "type": "number",
                     "default": 0.8,
-                    "description": "r parameter for van Westen method"
+                    "description": "r parameter for Soulsby method"
                 }
             },
             "description": "Soulsby method for particle tracking"
@@ -190,6 +175,16 @@
                 }
             },
             "description": "At least one tracer method must be specified"
+        },
+        "transport_probability": {
+            "type": "string",
+            "enum": [
+                "no_probability",
+                "stochastic_transport",
+                "reduced_velocity"
+            ],
+            "default": "no_probability",
+            "description": "Method for applying transport probability: 'no_probability' (passive/always transport), 'stochastic_transport' (probabilistic transport per timestep), 'reduced_velocity' (velocity field reduced by probability)"
         },
         "seeding": {
             "type": "object",
@@ -327,9 +322,14 @@
                                     "type": "string",
                                     "description": "bounding box for random point generation, as 'xmin,ymin xmax,ymax'"
                                 },
+                                "nlocations": {
+                                    "type": "integer",
+                                    "default": 1,
+                                    "description": "number of random points to generate within the bounding box or polygon"
+                                },
                                 "seed": {
                                     "type": "number",
-                                    "default": 1,
+                                    "default": 42,
                                     "description": "seed for random number generator"
                                 },
                                 "show_check_plots": {
@@ -343,6 +343,9 @@
                                     "description": "Do you want to save cluster check plots?"
                                 }
                             },
+                            "required": [
+                                "nlocations"
+                            ],
                             "oneOf": [
                                 {
                                     "required": [

@@ -152,6 +152,9 @@ class Time:
         The simulation time step as a Duration object. Defaults to Duration('1H').
     duration : Duration
         The simulation duration as a Duration object. Defaults to Duration('3D 2H1M3S').
+    read_input_timestep : Duration
+        The timestep for reading input data in chunks as a Duration object. 
+        Defaults to Duration('30D12H25M0S').
     reference_date : str
         The reference date as string in format 'YYYY-MM-DD hh:mm:ss'.
         Defaults to UTC epoch '1970-01-01 00:00:00'.
@@ -164,17 +167,18 @@ class Time:
     _start: str
     time_step: Duration = field(default_factory=lambda: Duration('1H'), init=True)
     duration: Duration = field(default_factory=lambda: Duration('3D 2H1M3S'), init=True)
+    read_input_timestep: Duration = field(default_factory=lambda: Duration('30D12H25M0S'), init=True)
     reference_date: str = field(default='1970-01-01 00:00:00')
     _start_time_np: np.datetime64 = field(init=False)
 
     def __post_init__(self):
         """
-        Validates time_step and duration aren't zero and initializes internal datetime representation.
+        Validates time_step, duration, and read_input_timestep aren't zero and initializes internal datetime representation.
 
         Raises
         ------
         ZeroDuration
-            If time_step or duration is zero length.
+            If time_step, duration, or read_input_timestep is zero length.
         DateFormatError
             If the start time string format is invalid.
         """
@@ -182,6 +186,8 @@ class Time:
             raise ZeroDuration('time_step cannot be of length zero')
         if self.duration.seconds == 0:
             raise ZeroDuration('duration cannot be of length zero')
+        if self.read_input_timestep.seconds == 0:
+            raise ZeroDuration('read_input_timestep cannot be of length zero')
 
         # Convert start time to numpy.datetime64
         self._start_time_np = convert_datetime_string_to_datetime64(self._start)
@@ -230,10 +236,10 @@ class Time:
 @dataclass
 class Timer:
     """
-    Class representing a timer for simulation time management.
+    Class representing a timer for simulation time management with variable timestep support.
 
     Manages the current simulation time and provides methods to advance
-    through the simulation timeline.
+    through the simulation timeline with adaptive timesteps.
 
     Attributes
     ----------
@@ -241,40 +247,42 @@ class Timer:
         The Time object containing simulation time parameters.
     _current : int | float
         Current time in seconds since reference date (internal field).
-    _start_time_np : np.datetime64
-        Internal numpy datetime64 representation (unused, kept for compatibility).
-    _time_step_np : np.timedelta64
-        Internal numpy timedelta64 representation (unused, kept for compatibility).
+    _current_timestep : int | float
+        Current adaptive timestep in seconds.
 
     Properties
     ----------
     current : int | float
         Returns/sets the current time in seconds since reference time.
+    current_timestep : int | float
+        Returns/sets the current adaptive timestep in seconds.
     next : int | float
-        Returns the next time step as current + time_step.
-    steps : int
-        Returns the total number of time steps in the simulation.
+        Returns the next time step as current + current_timestep.
 
     Methods
     -------
     advance()
-        Advance the current time by one time step.
+        Advance the current time by current timestep.
+    set_timestep(timestep)
+        Set the current adaptive timestep.
+    compute_cfl_timestep(flow_data, sedtrails_data, cfl_condition)
+        Compute CFL-based timestep and update current timestep.
     """
 
     simulation_time: Time
     _current: int | float = field(init=False)  # in seconds
-    _start_time_np: np.datetime64 = field(init=False)
-    _time_step_np: np.timedelta64 = field(init=False)
+    _current_timestep: int | float = field(init=False)  # adaptive timestep in seconds
     stop: bool = False
 
     def __post_init__(self):
         """
-        Initialize current time from the simulation start time.
+        Initialize current time from the simulation start time and set initial timestep.
 
         Sets the current time to the simulation start time in seconds
-        since the reference date.
+        since the reference date and initializes the adaptive timestep.
         """
         self._current = self.simulation_time.start
+        self._current_timestep = self.simulation_time.time_step.seconds
 
     @property
     def current(self) -> int | float:
@@ -303,41 +311,90 @@ class Timer:
         self._current = value
 
     @property
+    def current_timestep(self) -> int | float:
+        """
+        Returns the current adaptive timestep in seconds.
+        """
+        return self._current_timestep
+
+    @current_timestep.setter
+    def current_timestep(self, value: int | float) -> None:
+        """
+        Sets the current adaptive timestep.
+
+        Parameters
+        ----------
+        value : int | float
+            The new timestep in seconds.
+        """
+        self._current_timestep = value
+
+    @property
     def next(self) -> int | float:
         """
-        Returns the next time as current + time_step in seconds.
+        Returns the next time as current + current_timestep in seconds.
 
         Returns
         -------
         int | float
             The next time step value in seconds since reference date.
         """
-        return self._current + self.simulation_time.time_step.seconds
+        return self._current + self._current_timestep
 
-    @property
-    def steps(self) -> int:
+    def set_timestep(self, timestep: float) -> None:
         """
-        Returns the number of time steps in the simulation.
+        Set the current adaptive timestep.
 
-        Calculates the total number of time steps by dividing the simulation
-        duration by the time step size, rounded down to the nearest integer.
+        Parameters
+        ----------
+        timestep : float
+            The new timestep in seconds.
+        """
+        self._current_timestep = timestep
 
+    def compute_cfl_timestep(self, flow_data_list: list, sedtrails_data, cfl_condition: float) -> float:
+        """
+        Compute CFL-based timestep from multiple flow fields and update current timestep.
+        
+        Parameters
+        ----------
+        flow_data_list : list
+            List of flow field data dictionaries, each with 'magnitude' key
+        sedtrails_data : SedtrailsData
+            SedTRAILS data containing min_resolution
+        cfl_condition : float
+            CFL condition factor
+            
         Returns
         -------
-        int
-            The total number of time steps in the simulation.
+        float
+            Computed timestep in seconds
         """
-        import math
-
-        duration_seconds = self.simulation_time.duration.seconds
-        time_step_seconds = self.simulation_time.time_step.seconds
-        return math.floor(duration_seconds / time_step_seconds)
+        # Find maximum velocity across all flow fields
+        max_velocity = 0.0
+        for flow_data in flow_data_list:
+            magnitude = flow_data['magnitude']
+            # Handle NaNs by setting them to 0
+            magnitude_clean = np.nan_to_num(magnitude, nan=0.0)
+            max_velocity = max(max_velocity, np.max(magnitude_clean))
+            max_velocity = max(max_velocity, 1e-12)
+        
+        min_resolution = sedtrails_data.min_resolution
+        cfl_timestep = cfl_condition * min_resolution / max_velocity
+        
+        # Ensure CFL timestep doesn't exceed sedtrails data timestep
+        sedtrails_timestep = np.median(np.diff(sedtrails_data.times))
+        cfl_timestep = min(cfl_timestep, sedtrails_timestep)
+        
+        self.set_timestep(cfl_timestep)
+        return cfl_timestep
+    
 
     def advance(self) -> None:
         """
-        Advance the current time by one time step.
+        Advance the current time by current timestep.
 
-        Moves the current time forward by one time step if it doesn't
+        Moves the current time forward by the current adaptive timestep if it doesn't
         exceed the simulation end time.
 
         Raises

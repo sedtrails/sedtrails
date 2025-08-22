@@ -16,7 +16,7 @@ Container_Boundary(connectivityNet, "Connectivity Network Application"){
     
 }
     
-Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "An application that computes the position of sand particles (x,y,t) in a costal system")
+Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "An application that computes the position of sand particles (x,y,t) in a coastal system")
 
 
 SHOW_LEGEND()

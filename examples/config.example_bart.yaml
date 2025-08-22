@@ -1,0 +1,37 @@
+general:
+  input_model: 
+    format: fm_netcdf
+    reference_date: 1970-01-01  # Default reference date for the input model
+    morfac: 1  # Morphological acceleration factor for time decompression
+folder_settings:
+  input_data: ./sample-data/dfm_sedtrails.nc
+  output_dir: ./results
+time:
+  start: 2011-08-01 00:00:00
+  timestep: 60S
+  read_input_timestep: 30D
+  duration: 365D
+  cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
+particles:
+  population:
+    name: my_population
+    particle_type: sand
+    characteristics:
+      grain_size: 0.00025 
+      density: 2650.0  
+    tracer_methods:
+      vanwesten:
+        flow_field_name: 
+          - bed_load_velocity
+          - suspended_velocity
+    transport_probability: reduced_velocity  # Options: no_probability, stochastic_transport, reduced_velocity
+    seeding:
+      release_start: 2011-08-01 00:00:00
+      quantity: 1
+      strategy: 
+        point:
+          locations: 
+            - "71000,450200"
+            - "71000,450300"
+output:
+  store_tracks: true

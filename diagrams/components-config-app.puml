@@ -6,8 +6,8 @@
 title SedTRAILS: Component Diagram for Simulation Configuration Interface
 scale 1.5
 
-Person(modeler, "Modeler", "wants to track sand particles in a costal system")
-Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a costal system")
+Person(modeler, "Modeler", "wants to track sand particles in a coastal system")
+Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a coastal system")
 Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
 
 Container_Boundary(configInterface, "Simulation Configuration Interface", "Python", "An application that reads and interprets simulation configuration files"){

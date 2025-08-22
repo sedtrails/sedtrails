@@ -156,5 +156,6 @@ def plot_particle_trajectory(
     # Save figure if path is provided
     if save_path:
         fig.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)  # Close figure to free memory
 
     return fig, ax

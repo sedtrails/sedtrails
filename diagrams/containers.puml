@@ -5,17 +5,17 @@ title sedTRAILS Container Diagram
 scale 1.5
 ' LAYOUT_LANDSCAPE()
 
-Person(modeler, "Modeler", "Tracks sand particles in a costal system")
+Person(modeler, "Modeler", "Tracks sand particles in a coastal system")
 Person(analyst, "Analyst", "Processes and visualizes simulation outputs")
 
 System_Boundary(sedtrailsSystem, "SedTRAILS Particle Tracking System"){ 
-    Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "A parallel processing application that computes the current and future position of sand particles (x,y,t) in a costal system")
+    Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "A parallel processing application that computes the current and future position of sand particles (x,y,t) in a coastal system")
     Container(configInterface, "Simulation Configuration Interface", "Python", "An application that reads and interprets simulation configuration files")
     Container(sedtrailsLogger, "SedTRAILS  Logger", "Python", "An application that logs simulation states, outputs, errors and computational performance metrics")
     Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
     Container(pathwayVisualizer, "Pathway Visualizer", "Python", "An application to generate plots and animations of sand particle pathways.")
     Container(cache, "Simulation Cache and Recovery", "Python", "Provides functionality to recover simulation output, allow restarts, and reusing simulation inputs and outputs")
-    Container(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Particle Tracer System")
+    Container(dataManager, "Data Management Module", "Python", "An application that manages data and files produced by the SedTRAILS Particle Tracer System")
     Container(analystApp, "Simulation Analysis Application", "Python", "An application to post-process simulation outputs and conduct statistical and connectivity network analyses")
 
     Rel(sedtrailsLogger, transportConverter, "access start/end processing times for", "Python object")
