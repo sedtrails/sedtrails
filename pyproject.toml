@@ -1,0 +1,75 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sedtrails"
+dynamic = ["version"]
+description = "Sediment TRAnsport vIsualization and Lagrangian Simulator."
+dependencies = [
+  "jsonschema",
+  "numpy<2.2,>=1.24",
+  "pyyaml",
+  "pandas",
+  "matplotlib",
+  "xarray",
+  "typer >=0.15.0,<1.0",
+  "xugrid",
+  "numba",
+  "tqdm",
+  "referencing>=0.36.2",
+]
+requires-python = ">=3.10, <3.14"
+authors = [
+  { name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl" },
+  { name = "Natascia Pannozzo", email = "n.pannozzo@tudelft.nl" },
+  { name = "Johan Reyns", email = "johan.reyns@deltares.nl" },
+  # Add more authors as needed
+]
+maintainers = [
+  { name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl" },
+  { name = "Johan Reyns", email = "johan.reyns@deltares.nl" },
+]
+readme = "README.md"
+license = "MIT"
+license-files = ["LICEN[CS]E.*"]
+keywords = ["sediment", "analysis"]
+classifiers = [
+  "Development Status :: 1 - Planning",
+  "Programming Language :: Python",
+]
+
+[project.optional-dependencies]
+cli = ["typer>=0.15.0,<1.0"]
+dev = [
+  "pytest",
+  "ruff",
+  "sphinx==8.2.0",
+  "myst-parser==4.0.1",
+  "sphinx-rtd-theme",
+]
+
+[tool.hatch.version]
+path = "src/sedtrails/__version__.py"
+[tool.hatch.build]
+include = ["src/sedtrails/config/schema.json"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sedtrails"]
+
+[project.urls]
+Homepage = "https://github.com/sedtrails/sedtrails"
+Documentation = "https://sedtrails.github.io/sedtrails"
+Repository = "https://github.com/sedtrails/sedtrails.git"
+"Bug Tracker" = "https://github.com/sedtrails/sedtrails/issues"
+Changelog = "https://github.com/sedtrails/sedtrails/blob/main/CHANGELOG.md"
+
+[project.scripts]
+sedtrails = "sedtrails.configuration_interface.cli:app"
+
+[tool.pytest.ini_options]
+pythonpath = "src"
+addopts = ["--import-mode=importlib"]
+markers = [
+    "integration: mark a test as an integration test."
+]
