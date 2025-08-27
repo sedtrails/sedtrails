@@ -1,0 +1,42 @@
+general:
+  input_model: 
+    format: fm_netcdf
+    reference_date: 1970-01-01  # Default reference date for the input model
+    morfac: 1  # Morphological acceleration factor for time decompression
+folder_settings:
+  input_data: ./sample-data/inlet_sedtrails.nc
+  output_dir: ./results
+time:
+  start: 2011-08-01 00:00:00
+  timestep: 60S
+  read_input_timestep: 1D
+  duration: 1D
+  cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
+particles:
+  populations:
+    - name: my_population
+      particle_type: sand
+      characteristics:
+        grain_size: 0.00025 
+        density: 2650.0  
+      tracer_methods:
+        vanwesten:
+          flow_field_name: 
+            - bed_load_velocity
+            - suspended_velocity
+      transport_probability: stochastic_transport  # Options: no_probability, stochastic_transport, reduced_velocity
+      seeding:
+        burial_depth: 
+          constant: 0
+        release_start: 2016-09-21 19:30:00
+        quantity: 1
+        strategy: 
+          random:
+            bbox: "39400,16800 40600,17800"
+            seed: 42
+            nlocations: 10
+            
+output:
+  store_tracks: true
+  save_interval: 1H
+  plot_interval: 1D
