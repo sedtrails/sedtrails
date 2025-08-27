@@ -190,6 +190,38 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+                "burial_depth": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "burial depth configuration for particles. If not used, then burial depth compuations are not considered.",
+                    "default": {
+                        "constant": 0
+                    },
+                    "properties": {
+                        "random": {
+                            "type": "number",
+                            "default": 1.0,
+                            "description": "maximum depth from bed level (surface) for random burial depth in meters."
+                        },
+                        "constant": {
+                            "type": "number",
+                            "default": 1.0,
+                            "description": "constant burial depth in meters."
+                        }
+                    },
+                    "Oneof": [
+                        {
+                            "required": [
+                                "random"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "constant"
+                            ]
+                        }
+                    ]
+                },
                 "class": {
                     "type": "string",
                     "default": "clusters",
@@ -428,6 +460,11 @@
                         },
                         {
                             "required": [
+                                "random"
+                            ]
+                        },
+                        {
+                            "required": [
                                 "grid"
                             ]
                         }
@@ -532,6 +569,7 @@
         }
     ],
     "required": [
+        "name",
         "particle_type",
         "characteristics",
         "tracer_methods",

@@ -55,7 +55,12 @@ class ParticlePopulation:
 
         # generate particles based on the configuration
         _particles = ParticleFactory.create_particles(self.population_config)
-        self.particles = {'x': np.array([p.x for p in _particles]), 'y': np.array([p.y for p in _particles])}
+        self.particles = {
+            'x': np.array([p.x for p in _particles]),
+            'y': np.array([p.y for p in _particles]),
+            'release_time': np.array([p.release_time for p in _particles]),
+            'burial_depth': np.array([p.burial_depth for p in _particles]),
+        }
 
         # store the outer envelope of the domain
         coords = np.column_stack((self.field_x, self.field_y))
@@ -101,10 +106,9 @@ class ParticlePopulation:
         Currently, it does not perform any operations.
         """
 
-        # FIXME: 'z' (or vertical particle position) needs to be initialized by the seeder
-        # Placeholder: Initialize 'z' position based on bed level
+        # Initialize vertical position ('z') based on bed level and burial depth
         if 'z' not in self.particles:
-            self.particles['z'] = self.particles['bed_level'] - np.random.rand(len(self.particles['x'])) * 0.1
+            self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
 
         # Make sure particles can never be higher than the bed level
         i_above_bed = self.particles['z'] > self.particles['bed_level']
