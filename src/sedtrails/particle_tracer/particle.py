@@ -41,6 +41,7 @@ class Particle(ABC):
     _x: float = field(init=False)  # initial position
     _y: float = field(init=False)  # initial position
     _release_time: str = field(init=False)  # release time of the particle
+    _burial_depth: float = field(init=False)  # release time of the particle
     _is_mobile: bool = field(default=True)  # whether the particle is mobile or not
     name: Optional[str] = field(default='')  # name of the particle
     trace: Dict = field(default_factory=dict)  # trace of the particle
@@ -77,6 +78,18 @@ class Particle(ABC):
         if not isinstance(value, (int, float)):
             raise TypeError(f"Expected 'x' to be an integer or float, got {type(value).__name__}")
         self._x = value
+
+    @property
+    def burial_depth(self) -> float:
+        return self._burial_depth
+
+    @burial_depth.setter
+    def burial_depth(self, value: float) -> None:
+        if not isinstance(value, (int, float)):
+            raise TypeError(f"Expected 'burial_depth' to be an integer or float, got {type(value).__name__}")
+        if value < 0:
+            raise ValueError('Burial depth must be non-negative')
+        self._burial_depth = value
 
     @property
     def y(self) -> float:

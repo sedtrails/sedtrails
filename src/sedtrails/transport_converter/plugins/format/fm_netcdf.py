@@ -3,8 +3,6 @@
 import xugrid as xu
 import xarray as xr
 import numpy as np
-from scipy.spatial.distance import pdist
-from scipy.spatial import ConvexHull
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
@@ -62,36 +60,6 @@ class FormatPlugin(BaseFormatPlugin):
                 print(f'Variables in {self.input_file}:')
 
         return self._input_variables
-
-    def _compute_grid_metadata(self, x: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
-        """
-        Compute grid metadata: minimum resolution and outer envelope.
-
-        Parameters:
-        -----------
-        x : np.ndarray
-            X-coordinates of grid points
-        y : np.ndarray
-            Y-coordinates of grid points
-
-        Returns:
-        --------
-        Dict
-            Dictionary containing 'min_resolution' and 'outer_envelope'
-        """
-        # Stack coordinates for distance calculations
-        coords = np.column_stack((x.flatten(), y.flatten()))
-
-        # Compute minimum resolution (minimum distance between any two points)
-        distances = pdist(coords)
-        min_resolution = np.min(distances)
-
-        # FIXME: temporary solution!
-        # Compute outer envelope using convex hull
-        hull = ConvexHull(coords)
-        outer_envelope = coords[hull.vertices]
-
-        return {'min_resolution': min_resolution, 'outer_envelope': outer_envelope}
 
     def _decompress_time(self, time_info: Dict) -> Dict:
         """
@@ -161,9 +129,6 @@ class FormatPlugin(BaseFormatPlugin):
         mapped_data = self._map_dfm_variables(time_info, time_start_idx, time_end_idx)
         seconds_since_ref = time_info['seconds_since_reference']
         self.reference_date = time_info['reference_date']
-
-        # Compute grid metadata
-        grid_metadata = self._compute_grid_metadata(mapped_data['x'], mapped_data['y'])
 
         # Calculate magnitudes for vector quantities
         # Flow velocity magnitude

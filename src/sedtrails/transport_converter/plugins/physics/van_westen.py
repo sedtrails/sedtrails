@@ -16,7 +16,9 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         super().__init__()
         self.config = config
 
-    def add_physics(self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float], transport_probability_method: str) -> None:
+    def add_physics(
+        self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float], transport_probability_method: str
+    ) -> None:
         """
         Add physics to SedtrailsData object using van Westen et al. (2025) approach.
 
@@ -47,9 +49,6 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         suspended_transport_y = sedtrails_data.suspended_transport['y']
         suspended_transport_magnitude = sedtrails_data.suspended_transport['magnitude']
 
-        bed_level = sedtrails_data.bed_level
-        time_step = sedtrails_data.times[2] - sedtrails_data.times[1]  # Assuming uniform time step
-
         # Detect number of fractions from data shape (assuming shape is [time, fractions, spatial])
         detected_fractions = bed_load_transport_magnitude.shape[1] if len(bed_load_transport_magnitude.shape) > 2 else 1
 
@@ -64,7 +63,6 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # For physics calculations, we need to work with squeezed data (no fraction dimension)
         # but we'll add the dimension back to velocities at the end
         if len(bed_load_transport_magnitude.shape) > 2:
-
             bed_load_transport_x_calc = bed_load_transport_x.squeeze(axis=1)
             bed_load_transport_y_calc = bed_load_transport_y.squeeze(axis=1)
             bed_load_transport_magnitude_calc = bed_load_transport_magnitude.squeeze(axis=1)
@@ -167,16 +165,15 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # Compute transport probabilities
         with np.errstate(divide='ignore', invalid='ignore'):
             bed_load_probability = np.where(
-                mixing_layer_thickness > 0,
-                bed_load_layer_thickness / mixing_layer_thickness, 0.0)   
-                     
+                mixing_layer_thickness > 0, bed_load_layer_thickness / mixing_layer_thickness, 0.0
+            )
+
             suspended_probability = np.where(
-                mixing_layer_thickness > 0,
-                suspended_layer_thickness / mixing_layer_thickness, 0.0)
+                mixing_layer_thickness > 0, suspended_layer_thickness / mixing_layer_thickness, 0.0
+            )
 
         # Depending on transport_probability_method; apply transport probabilities
         if transport_probability_method == 'reduced_velocity':
-            
             # Apply reduced velocity to bed load velocity
             bed_load_velocity_x *= bed_load_probability
             bed_load_velocity_y *= bed_load_probability
@@ -188,12 +185,10 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             suspended_velocity *= suspended_probability
 
         if transport_probability_method == 'reduced_velocity' or transport_probability_method == 'no_probability':
-
             # Reset probabilities to one
             bed_load_probability[:] = 1.0
             suspended_probability[:] = 1.0
 
-        
         # Add physics fields to SedtrailsData
 
         # Physics parameters (scalar fields)

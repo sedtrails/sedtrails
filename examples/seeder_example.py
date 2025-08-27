@@ -4,14 +4,16 @@ import numpy as np
 # Example usage of the ParticleFactory  to create population of particles
 config_random = PopulationConfig(
     {
-        'population': {
-            'particle_type': 'sand',
-            'seeding': {
-                'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 1, 'seed': 42}},
-                'quantity': 2,
-                'release_start': '2025-06-18 13:00:00',
-            },
-        }
+        'name': 'my_population1',
+        'particle_type': 'sand',
+        'characteristics': {'grain_size': 0.01, 'density': 2650.0},
+        'tracer_methods': {'vanwesten': {'beta': 0.3}},
+        'seeding': {
+            'burial_depth': {'constant': 3.0},  # constant burial depth in meters
+            'release_start': '2025-06-18 13:00:00',
+            'quantity': 1,
+            'strategy': {'point': {'locations': ['40000,17000']}},
+        },
     }
 )
 

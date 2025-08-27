@@ -21,16 +21,12 @@ Seeding strategies for positions include:
     constrained by a bounding box (xmin, xmax, ymin, ymax).
 """
 
+import random
 from abc import ABC, abstractmethod
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.exceptions import MissingConfigurationParameter
 from typing import List, Tuple, Dict
-from sedtrails.particle_tracer.particle import Particle
-from sedtrails.exceptions import MissingConfigurationParameter
-from typing import List, Tuple, Dict
-import random
 from dataclasses import dataclass, field
-from sedtrails.configuration_interface.find import find_value
 from sedtrails.configuration_interface.find import find_value
 
 
@@ -76,50 +72,31 @@ class PopulationConfig:
     particle_type: str = field(init=False)
     release_start: str = field(init=False)  # particle for a given population are released at this time
     quantity: int = field(init=False)  # number of particles to release per release location
-    strategy_settings: Dict = field(init=False, default_factory=dict)
-    strategy: str = field(init=False)
-    particle_type: str = field(init=False)
-    release_start: str = field(init=False)  # particle for a given population are released at this time
-    quantity: int = field(init=False)  # number of particles to release per release location
+    burial_depth: float = field(init=False, default=0.0)  # burial depth of the particles
     strategy_settings: Dict = field(init=False, default_factory=dict)
 
     def __post_init__(self):
-        _strategy = find_value(self.population_config, 'population.seeding.strategy', {}).keys()
+        _strategy = find_value(self.population_config, 'seeding.strategy', {}).keys()
         if not _strategy:
             raise MissingConfigurationParameter('"strategy" is not defined as seeding parameter.')
         self.strategy = next(iter(_strategy))
-        self.strategy_settings = find_value(self.population_config, f'population.seeding.strategy.{self.strategy}', {})
+        self.strategy_settings = find_value(self.population_config, f'seeding.strategy.{self.strategy}', {})
         if not self.strategy_settings:
             raise MissingConfigurationParameter(f'"{self.strategy}" settings are not defined in the configuration.')
-        _quantity = find_value(self.population_config, 'population.seeding.quantity', {})
+        _quantity = find_value(self.population_config, 'seeding.quantity', {})
         if not _quantity:
             raise MissingConfigurationParameter('"quantity" is not defined as seeding parameter.')
         self.quantity = _quantity
-        _release_start = find_value(self.population_config, 'population.seeding.release_start', {})
+        _release_start = find_value(self.population_config, 'seeding.release_start', {})
         if not _release_start:
             raise MissingConfigurationParameter('"release_start" is not defined in the population configuration.')
         self.release_start = _release_start
-        self.particle_type = find_value(self.population_config, 'population.particle_type', '')
+        self.particle_type = find_value(self.population_config, 'particle_type', '')
         if not self.particle_type:
             raise MissingConfigurationParameter('"particle_type" is not defined in the population configuration.')
-        _strategy = find_value(self.population_config, 'population.seeding.strategy', {}).keys()
-        if not _strategy:
-            raise MissingConfigurationParameter('"strategy" is not defined as seeding parameter.')
-        self.strategy = next(iter(_strategy))
-        self.strategy_settings = find_value(self.population_config, f'population.seeding.strategy.{self.strategy}', {})
-        if not self.strategy_settings:
-            raise MissingConfigurationParameter(f'"{self.strategy}" settings are not defined in the configuration.')
-        _quantity = find_value(self.population_config, 'population.seeding.quantity', {})
-        if not _quantity:
-            raise MissingConfigurationParameter('"quantity" is not defined as seeding parameter.')
-        self.quantity = _quantity
-        _release_start = find_value(self.population_config, 'population.seeding.release_start', {})
-        if not _release_start:
-            raise MissingConfigurationParameter('"release_start" is not defined in the population configuration.')
-        self.release_start = _release_start
-        self.particle_type = find_value(self.population_config, 'population.particle_type', '')
-        if not self.particle_type:
-            raise MissingConfigurationParameter('"particle_type" is not defined in the population configuration.')
+        _burial_depth = find_value(self.population_config, 'seeding.burial_depth', {})
+        if not _burial_depth:
+            raise MissingConfigurationParameter('"burial_depth" is not defined in the population configuration.')
 
 
 class SeedingStrategy(ABC):
@@ -350,6 +327,7 @@ class ParticleFactory:
         }
 
         # computes seeding positions using the strategy in config
+        burial_depth = getattr(config, 'burial_depth', None)
         positions = StrategyClass.seed(config)
         particles = []
         for qty, x, y in positions:
@@ -357,7 +335,7 @@ class ParticleFactory:
                 p = ParticleClass()
                 p.x = x
                 p.y = y
-
+                p.burial_depth = burial_depth
                 p.release_time = getattr(config, 'release_start', None)
 
                 particles.append(p)

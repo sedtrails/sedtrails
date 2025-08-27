@@ -70,16 +70,6 @@ class MissingConfigurationParameter(SedtrailsException):
     pass
 
 
-class MissingConfigurationParameter(SedtrailsException):
-    """
-    Exception raised when a required configuration parameter is missing.
-    This can occur if a necessary parameter is not provided in the configuration file,
-    or an operation fails to fetch a required configuration value.
-    """
-
-    pass
-
-
 class ZeroDuration(SedtrailsException):
     """
     Exception raised when a time representing a duration is zero.
