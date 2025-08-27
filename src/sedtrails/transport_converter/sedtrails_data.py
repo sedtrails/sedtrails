@@ -106,6 +106,7 @@ class SedtrailsData:
             timestep = None
         else:
             # Calculate median timestep, this helps ignore the weird startup timesteps
+            all_timesteps = np.diff(self.times)
             timestep = float(np.median(np.diff(self.times)))
 
             # Optional: Add validation
@@ -114,7 +115,7 @@ class SedtrailsData:
 
             # Check if we have timesteps deviating from the median
             tolerance = 1e-6
-            deviations = np.abs(self.times - timestep)
+            deviations = np.abs(all_timesteps - timestep)
             deviating_indices = np.where(deviations > tolerance)[0]
 
             if len(deviating_indices) > 0:
