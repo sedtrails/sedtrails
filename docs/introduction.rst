@@ -1,8 +1,5 @@
-Introduction to SedTRAILS
-=========================
-
 What is SedTRAILS?
-^^^^^^^^^^^^^^^^^^
+====================
 
 SedTRAILS (Sediment TRAnsport vIsualization & Lagrangian Simulator) is a sediment transport model that uses Lagrangian particle tracking to simulate sediment pathways in coastal and estuarine environments. 
 

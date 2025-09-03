@@ -21,29 +21,31 @@ sys.path.insert(0, str(Path('..', 'src').resolve()))
 
 extensions = [
     'myst_parser',
-    "sphinx_rtd_theme",
-    "sphinx.ext.autodoc",
-    ]
+    'sphinx_rtd_theme',
+    'autodoc2',
+]
+
+autodoc2_packages = ['../src/sedtrails']
 
 myst_enable_extensions = [
-    "amsmath",
-    "attrs_inline",
-    "colon_fence",
-    "deflist",
-    "dollarmath",
-    "fieldlist",
-    "html_image",
-    "replacements",
-    "smartquotes",
-    "substitution",
-    "tasklist",
+    'amsmath',
+    'attrs_inline',
+    'colon_fence',
+    'deflist',
+    'dollarmath',
+    'fieldlist',
+    'html_image',
+    'replacements',
+    'smartquotes',
+    'substitution',
+    'tasklist',
 ]
 
 templates_path = ['_templates']
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', 'notes']
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = "sphinx_rtd_theme"
+html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']

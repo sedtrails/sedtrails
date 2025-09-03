@@ -10,49 +10,53 @@ Add your content using ``reStructuredText`` syntax. See the
 `reStructuredText <https://www.sphinx-doc.org/en/master/usage/restructuredtext/index.html>`_
 documentation for details.
 
-
 .. toctree::
    :maxdepth: 2
 
-   README
+
    quickstart
    introduction
 
 .. toctree::
    :maxdepth: 3
-   :caption: USER DOCUMENTATION
+   :caption: User Documentation
 
    user/installation
-.. 
-   user/jan2023/old_ch01_intro.md
-   user/jan2023/old_ch03_methods.md
-   user/jan2023/old_ch04_userManual.md
-   user/jan2023/old_overview.md
-   user/nov2023/old_sedtrailsPaperDraft.md
+   user/simulations
+   user/outputs
+   user/dashboard
+   user/seeding
 
 .. toctree::
    :maxdepth: 2
-   :caption: DEVELOPER DOCUMENTATION
+   :caption: Tutorials
 
+   tutorials/tutorial1
+   tutorials/tutorial2
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Developer Documentation
+
+   developer/dev-environment
    developer/contribution
-   developer/architecture/software-diagrams.md
+   developer/architecture
+   developer/principles
 
 .. toctree::
-   :maxdepth: 2
-   :caption: API DOCUMENTATION
+   :maxdepth: 1
+   :caption: References
 
-   api-refs
-
-.. toctree::
-   :maxdepth: 2
-   :caption: SOURCE CODE
+   references/simulation-params
+   apidocs/index
 
 
-   sourcecode/transport-converter
-   sourcecode/particle-tracer
+Indices and tables
+==================
 
-   
-
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
 
 ACKNOWLEDGEMENTS
 ================

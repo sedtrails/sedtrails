@@ -11,6 +11,9 @@ __pycache__/
 # C extensions
 *.so
 
+# Code Agents
+CLAUDE.md
+
 # Mac OS X metadata files
 **/.DS_Store
 
