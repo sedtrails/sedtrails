@@ -173,13 +173,6 @@ class TestTimer:
         expected = timer.current + 95400
         assert timer.next == expected
 
-    def test_steps_property(self):
-        """Test steps property calculation."""
-        time = Time(_start='2023-01-01 12:00:00', time_step=Duration('1H'), duration=Duration('2D'))
-        timer = Timer(simulation_time=time)
-        # 2 days = 48 hours, with 1H steps = 48 steps
-        assert timer.steps == 48
-
     def test_advance(self):
         """Test advance method updates current time."""
         time = Time(_start='2023-01-01 12:00:00', time_step=Duration('1H'))

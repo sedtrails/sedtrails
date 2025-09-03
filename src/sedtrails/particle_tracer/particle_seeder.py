@@ -24,10 +24,16 @@ Seeding strategies for positions include:
 import random
 from abc import ABC, abstractmethod
 from sedtrails.particle_tracer.particle import Particle
+from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.exceptions import MissingConfigurationParameter
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Any
 from dataclasses import dataclass, field
 from sedtrails.configuration_interface.find import find_value
+from numpy import ndarray
+from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
+import numpy as np
+from matplotlib.path import Path
+from scipy.spatial import ConvexHull
 
 
 @dataclass
@@ -39,7 +45,7 @@ class PopulationConfig:
     Attributes
     ----------
     population_config : Dict
-        The configuration dictionary containing the seeding parameters.
+        The configuration dictionary containing the seeding paraameters for a population.
     particle_type : str
         The type of particles to be seeded (e.g., 'sand', 'mud', 'passive').
     release_start : str
@@ -52,22 +58,9 @@ class PopulationConfig:
     A class to represent the seeding parameters of a population of particle.
     A population is a group of particles that share the same type and seeding strategy.
 
-    Attributes
-    ----------
-    population_config : Dict
-        The configuration dictionary containing the seeding parameters.
-    particle_type : str
-        The type of particles to be seeded (e.g., 'sand', 'mud', 'passive').
-    release_start : str
-        The time at which the particles for a given population are released.
-    quantity : int
-        The number of particles to release per release location.
-    strategy_settings : Dict
-        The settings for the seeding strategy, extracted from the configuration.
-        These are any key-value pairs defined under the specific strategy in the configuration.
     """
 
-    population_config: Dict
+    population_config: Dict  # configuration for a single population
     strategy: str = field(init=False)
     particle_type: str = field(init=False)
     release_start: str = field(init=False)  # particle for a given population are released at this time
@@ -97,6 +90,7 @@ class PopulationConfig:
         _burial_depth = find_value(self.population_config, 'seeding.burial_depth', {})
         if not _burial_depth:
             raise MissingConfigurationParameter('"burial_depth" is not defined in the population configuration.')
+        self.burial_depth = _burial_depth.get('constant', 0.0)  # TODO: support other types of burial depth
 
 
 class SeedingStrategy(ABC):
@@ -193,41 +187,41 @@ class GridStrategy(SeedingStrategy):
     """
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
-        bbox = getattr(config, 'strategy_settings', {}).get('bbox', None)
+        bbox = config.strategy_settings.get('bbox')
         if not bbox:
-            raise RuntimeError('Bounding box must be provided for GridStrategy.')
+            raise MissingConfigurationParameter('"bbox" must be provided for GridStrategy.')
 
-        grid = find_value(config.population_config, 'population.seeding.strategy.grid', {})
+        separation = config.strategy_settings.get('separation')
+        if not separation or 'dx' not in separation or 'dy' not in separation:
+            raise MissingConfigurationParameter('"separation" with "dx" and "dy" must be provided for GridStrategy.')
 
-        if not grid or not all(k in grid.get('separation', {}) for k in ['dx', 'dy']):
-            raise MissingConfigurationParameter('"grid" must be provided for GridStrategy.')
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for GridStrategy.')
+
         quantity = int(config.quantity)
+        dx = separation['dx']
+        dy = separation['dy']
+
+        # Handle both dict and string bbox formats
+        if isinstance(bbox, str):
+            _bbox = bbox.replace(',', ' ').split()
+            if len(_bbox) != 4:
+                raise ValueError(f"Invalid bbox format. Expected 'xmin,ymin xmax,ymax', got: {bbox}")
+            xmin, ymin, xmax, ymax = map(float, _bbox)
+        else:
+            xmin, ymin, xmax, ymax = bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']
+
         seed_locations = []
-        dx = find_value(grid, 'separation.dx')
-        dy = find_value(grid, 'separation.dy')
-        xvals = []
-        yvals = []
-        x = bbox['xmin']
-        while x <= bbox['xmax']:
-            if x > bbox['xmax']:
-                break
-            xvals.append(x)
-            x += dx
-        if xvals and xvals[-1] > bbox['xmax']:
-            xvals.pop()
-        y = bbox['ymin']
-        while y <= bbox['ymax']:
-            if y > bbox['ymax']:
-                break
-            yvals.append(y)
-            y += dy
-        if yvals and yvals[-1] > bbox['ymax']:
-            yvals.pop()
-        for x in xvals:
-            for y in yvals:
+
+        # Generate grid points
+        x = xmin
+        while x <= xmax:
+            y = ymin
+            while y <= ymax:
                 seed_locations.append((quantity, x, y))
+                y += dy
+            x += dx
+
         return seed_locations
 
 
@@ -343,56 +337,253 @@ class ParticleFactory:
         return particles
 
 
-# TODO:  save the final positions of particles to a vector based files (e.g., shapefile?, GeoJSON?)
+@dataclass
+class ParticlePopulation:
+    """
+    Class handle operations for population of particles.
+    A population is a group of particles that share the same type and seeding strategy.
 
+    Attributes
+    ----------
+    field_x : ndarray
+        The x-coordinates of the flow field data where particles are seeded.
+    field_y : ndarray
+        The y-coordinates of the flow field data where particles are seeded.
+    population_config : PopulationConfig
+        Configuration for the particle population, including seeding strategy and parameters.
+    particles : Dict
+        A dictionary containing particle attributes such as positions and status.
+    _field_interpolator : Dict
+        A dictionary containing Numba functions for interpolating field data.
+    _position_calculator : Dict
+        A dictionary containing Numba functions for calculating particle positions.
+    _current_time : ndarray
+        The current time in the simulation, used for updating particle positions.
+    _field_mixing_depth : ndarray
+        The mixing depth of the flow field, used to determine particle behavior.
+    _field_transport_probability : ndarray
+        The probability of particle transport in the flow field, used to determine if particles are picked up.
+    """
 
-if __name__ == '__main__':
-    # Example usage
-    config_point = PopulationConfig(
-        {
-            'population': {
-                'particle_type': 'sand',
-                'seeding': {
-                    'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
-                    'quantity': 1,
-                    'release_start': '2025-06-18 13:00:00',
-                },
-            }
+    field_x: ndarray
+    field_y: ndarray
+    population_config: PopulationConfig
+    particles: Dict = field(init=False, default_factory=dict)  # a dictionary with arrays
+    _field_interpolator: Any = field(init=False)  # holds a Numba function
+    _position_calculator: Any = field(init=False)  # holds a Numba function
+    _current_time: ndarray = field(init=False)
+    _field_mixing_depth: ndarray = field(init=False)  # TODO: we're not using this field yet
+    _field_transport_probability: ndarray = field(init=False)  # TODO: we're not using this field yet
+
+    def __post_init__(self):
+        # Create a Numba calculator for particle operations
+        numba_functions = create_numba_particle_calculator(grid_x=self.field_x, grid_y=self.field_y)
+
+        self._field_interpolator = numba_functions['interpolate_field']
+        self._position_calculator = numba_functions['update_particles']
+
+        # generate particles based on the configuration
+        _particles = ParticleFactory.create_particles(self.population_config)
+        self.particles = {
+            'x': np.array([p.x for p in _particles]),
+            'y': np.array([p.y for p in _particles]),
+            'release_time': np.array([p.release_time for p in _particles]),
+            'burial_depth': np.array([p.burial_depth for p in _particles]),
         }
-    )
 
-    config_transect = PopulationConfig(
-        {
-            'population': {
-                'particle_type': 'sand',
-                'seeding': {
-                    'strategy': {
-                        'transect': {
-                            'segments': ['0,0 2,0'],
-                            'k': 3,
-                        }
-                    },
-                    'quantity': 5,
-                    'release_start': '2025-06-18 13:00:00',
-                },
-            }
-        }
-    )
+        # store the outer envelope of the domain
+        coords = np.column_stack((self.field_x, self.field_y))
+        hull = ConvexHull(coords)
+        self._outer_envelope = Path(coords[hull.vertices])
 
-    config_random = PopulationConfig(
-        {
-            'population': {
-                'particle_type': 'sand',
-                'seeding': {
-                    'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 2, 'seed': 42}},
-                    'quantity': 5,
-                    'release_start': '2025-06-18 13:00:00',
-                },
-            }
-        }
-    )
+    def update_information(
+        self, current_time: ndarray, mixing_depth: ndarray, transport_probability: ndarray, bed_level: ndarray
+    ) -> None:
+        """
+        Updates field data information for particles in the population.
+        Parameters
+        ----------
+        current_time : ndarray
+            The current time in the simulation.
+        mixing_depth : ndarray
+            The mixing depth of the flow field.
+        transport_probability : ndarray
+            The probability of particle transport in the flow field.
+        bed_level : ndarray
+            The bed level of the flow field.
+        """
 
-    particles = ParticleFactory.create_particles(config_random)
-    print(
-        'Created particles:', len(particles)
-    )  # Should print the created particles with their positions and release times
+        self._current_time = current_time
+
+        if not np.isnan(mixing_depth).all():
+            self.particles['mixing_depth'] = self._field_interpolator(
+                mixing_depth, self.particles['x'], self.particles['y']
+            )
+
+        if not np.isnan(transport_probability).all():
+            """values between 0 and 1"""
+            self.particles['transport_probability'] = self._field_interpolator(
+                transport_probability, self.particles['x'], self.particles['y']
+            )
+
+        if not np.isnan(bed_level).all():
+            self.particles['bed_level'] = self._field_interpolator(bed_level, self.particles['x'], self.particles['y'])
+
+    def update_burial_depth(self) -> None:
+        """Updates the burial depth of particles in the population.
+        This method is a placeholder and should be implemented with the actual logic for updating burial depth.
+        Currently, it does not perform any operations.
+        """
+
+        # Initialize vertical position ('z') based on bed level and burial depth
+        if 'z' not in self.particles:
+            self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
+
+        # Make sure particles can never be higher than the bed level
+        i_above_bed = self.particles['z'] > self.particles['bed_level']
+        self.particles['z'][i_above_bed] = self.particles['bed_level'][i_above_bed]
+
+        # Update burial depth (is always a positive value)
+        self.particles['burial_depth'] = self.particles['bed_level'] - self.particles['z']
+
+    def update_status(self) -> None:
+        """
+        updates status of particles in the population.
+        """
+        n_particles = len(self.particles['x'])
+
+        # Compute whether particles are picked up (or trapped) based on transport probability
+        # Note: If "reduced_velocity" is chosen, "transport_probability" always equals one.
+        self.particles['is_picked_up'] = np.random.rand(n_particles) < self.particles['transport_probability']
+
+        # Compute whether particles are inside (or outside) the domain envelope
+        self.particles['is_inside'] = self._outer_envelope.contains_points(
+            np.column_stack((self.particles['x'], self.particles['y']))
+        )
+
+        # Compute whether particles are exposed (or buried)
+        self.particles['is_exposed'] = self.particles['burial_depth'] < self.particles['mixing_depth']
+
+        # Compute whether particles are released (or retained)
+        # FIXME: Temporary implementation
+        self.particles['release_time'] = np.zeros_like(self.particles['x'])
+        self.particles['is_released'] = self._current_time >= self.particles['release_time']
+
+        # Compute whether particles are alive (or dead) (still TODO)
+        self.particles['is_alive'] = np.ones(n_particles, dtype=bool)
+
+        # Compute whether particles are mobile (or static) - combination of all status flags
+        self.particles['is_mobile'] = (
+            self.particles['is_inside']
+            & self.particles['is_alive']
+            & self.particles['is_exposed']
+            & self.particles['is_released']
+            & self.particles['is_picked_up']
+        )
+
+    def update_position(self, flow_field: Dict, current_timestep: float) -> None:
+        """
+        Update the position of particles in the population based on the flow field.
+
+        Parameters
+        ----------
+        flow_field : Dict
+            A dictionary containing the flow field information.
+        current_timestep : float
+            The current time step in the simulation in seconds.
+        """
+
+        ix = self.particles['is_mobile']  # Get indices of mobile particles
+
+        n_particles = len(self.particles['x'])
+        dx = np.zeros(n_particles)
+        dy = np.zeros(n_particles)
+
+        new_x, new_y = self._position_calculator(
+            self.particles['x'][ix],
+            self.particles['y'][ix],
+            flow_field['u'],
+            flow_field['v'],
+            current_timestep,
+        )
+
+        dx[ix] = new_x - self.particles['x'][ix]
+        dy[ix] = new_y - self.particles['y'][ix]
+
+        self.particles['x'][ix] = new_x
+        self.particles['y'][ix] = new_y
+
+
+class ParticleSeeder:
+    """
+    High-level interface for particle seeding operations.
+
+    This class provides a clean, modular interface for creating particles
+    from configuration dictionaries.
+    """
+
+    def __init__(self, population_configs: List[Dict[str, Any]] | Dict[str, Any]):
+        """
+        Attributes
+        ----------
+        population_configs : List[Dict[str, Any]] | Dict[str, Any]
+            A dictionary containing configuration for a single population,
+            or a
+            List of dictionaries, each containing configuration for one population.
+
+        """
+
+        self.population_configs = population_configs
+
+    def seed(self, sedtrails_data: SedtrailsData) -> List[ParticlePopulation]:
+        """
+        Create particles from a list of population configuration dictionaries.
+
+        Parameters
+        ----------
+         sedtrails_data : SedtrailsData
+            The SedtrailsData object containing the field data (x, y coordinates).
+
+        Returns
+        -------
+        List[ParticlePopulation]
+            A list of ParticlePopulation objects, each containing the particles
+            created for a specific population configuration.
+        """
+
+        if isinstance(self.population_configs, dict):
+            # If a single dictionary is provided, convert it to a list for uniform processing
+            self.population_configs = [self.population_configs]
+
+        if not self.population_configs:
+            raise ValueError('No population configurations provided for seeding.')
+
+        populations = []
+        for pop_config in self.population_configs:
+            config = PopulationConfig(population_config=pop_config)
+            pop = ParticlePopulation(field_x=sedtrails_data.x, field_y=sedtrails_data.y, population_config=config)
+            populations.append(pop)
+        return populations
+
+
+# if __name__ == '__main__':
+#     data = SedtrailsData()
+
+#     config_random = {
+#         'population': {
+#             'particle_type': 'sand',
+#             'seeding': {
+#                 'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 2, 'seed': 42}},
+#                 'quantity': 500,
+#                 'release_start': '2025-06-18 13:00:00',
+#                 'burial_depth': {
+#                     'constant': 1.0,
+#                 },
+#             },
+#         }
+#     }
+
+#     seeder = ParticleSeeder()
+#     particles = seeder.seed(config_random)
+#     print(f'Created {len(particles)} particles using random strategy.')
+#     print(particles[:5])  # Print first 5 particles for inspection

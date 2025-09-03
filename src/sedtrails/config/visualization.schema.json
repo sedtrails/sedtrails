@@ -183,6 +183,17 @@
                     "description": "settings for validation plots"
                 }
             }
+        },
+        "dashboard": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "enable": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable real-time dashboard? true/false"
+                }
+            }
         }
     }
 }

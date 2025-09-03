@@ -3,6 +3,7 @@ import xugrid as xu
 import numpy as np
 from pathlib import Path
 
+
 class SimulationDataBuffer:
     """
     Temporarily stores chunks of simulation data in memory, while they wait to be written to a simulation file.
@@ -136,10 +137,9 @@ class SimulationDataBuffer:
             Name of the merged output file.
         """
         output_dir = Path(output_dir)
-        print("Output dir:", output_dir)
+        print('Output dir:', output_dir)
         files = sorted(
-            output_dir / f for f in os.listdir(output_dir)
-            if f.startswith('.sim_buffer_') and f.endswith('.nc')
+            output_dir / f for f in os.listdir(output_dir) if f.startswith('.sim_buffer_') and f.endswith('.nc')
         )
         if not files:
             raise FileNotFoundError('No .sim_buffer_*.nc files found to merge.')

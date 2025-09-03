@@ -382,7 +382,7 @@ class Timer:
         else:
             self.stop = True
 
-    def compute_cfl_timestep(self, flow_data_list: list, sedtrails_data) -> float:
+    def compute_cfl_timestep(self, flow_data_list: list, sedtrails_data) -> None:
         """
         Compute CFL-based timestep from multiple flow fields and update current timestep.
 
