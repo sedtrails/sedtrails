@@ -30,9 +30,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         This method follows the workflow from MacDonald et al. (2006):
         2D mode:
             1. Compute shear velocities and Shields number
-            2. Compute bed load velocity (Soulsby equation)
-            3. Compute suspended velocity using complex ratio formula
-            4. Compute layer thicknesses and mixing layer
+            2. 
+            3. 
 
         Parameters:
         -----------
@@ -102,6 +101,13 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         max_shear_velocity = physics_lib.compute_shear_velocity(max_bed_shear_stress, self.config.water_density)
 
         # Compute Shields number
+        mean_shields_number = physics_lib.compute_shields(
+            mean_bed_shear_stress,
+            self.config.gravity,
+            self.config.particle_density,
+            self.config.water_density,
+            self.config.grain_diameter,
+        )
         max_shields_number = physics_lib.compute_shields(
             max_bed_shear_stress,
             self.config.gravity,
@@ -113,113 +119,51 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # Compute transport velocities (these will have shape [time, spatial])
         critical_shields = grain_properties.get('critical_shields')
         if critical_shields is None:
-            raise ValueError("Missing required 'critical_shields' value in grain_prperties.")
+            raise ValueError("Missing required 'critical_shields' value in grain_properties.")
         
+        # Bed roughness (MacDonald et al., 2006, equations 12-13)
+        # Questions Vassia: here we should be passing the background sediment grain size right (not sure if config.grain_diameter is correct)? That could also in the future be spatially varying
+        #                   also, should we be passing the maximum shields number or the mean shields number?
+        k_s_skin = self.calculate_macdonald_skin_roughness(self.config.grain_diameter)
+        k_s_form = self.calculate_macdonald_form_roughness(max_shields_number, critical_shields, self.config.grain_diameter, water_depth)
+        # TO DO: Note that k_s_form is the equilibrium bedform height eta_b from MacDonald et al. (2006) Eq. 12 - we should implement the rate of change also (eq. 14-15) in future
 
+        # Potential transport rates (MacDonald et al., 2006, equations 16-20)
+        s = self.config.particle_density / self.config.water_density   # relative density ratio
+        dstar = grain_properties.get('dimensionless_grain_size')        
 
-        # vanwesten -----------------------------------------------------------------------------------------
-        suspended_velocity = physics_lib.compute_suspended_velocity(
-            flow_velocity_magnitude,
-            bed_load_velocity,
-            settling_velocity,
-            self.config.von_karman_constant,
-            max_shear_velocity,
-            max_shields_number,
-            critical_shields,
-            method=physics_lib.SuspendedVelocityMethod.SOULSBY_2011,
-        )
-
-        # Compute layer thicknesses using squeezed transport data
-        bed_load_layer_thickness = physics_lib.compute_transport_layer_thickness(
-            bed_load_transport_magnitude_calc, bed_load_velocity, self.config.particle_density, self.config.porosity
-        )
-
-        suspended_layer_thickness = physics_lib.compute_transport_layer_thickness(
-            suspended_transport_magnitude_calc, suspended_velocity, self.config.particle_density, self.config.porosity
-        )
-
-       
-        # Compute mixing layer thickness using Bertin et al. (2008) method
-
-        critical_shear_stress = grain_properties.get('critical_shear_stress')
-        if critical_shear_stress is None:
-            raise ValueError("Missing required 'critical_shear_stress' value in grain_prperties.")
-        mixing_layer_thickness = physics_lib.compute_mixing_layer_thickness(
-            max_bed_shear_stress,
-            critical_shear_stress,
-            method=physics_lib.MixingLayerMethod.BERTIN_2008,
-        )
-        # vanwesten -----------------------------------------------------------------------------------------
-
-        # macdonald -----------------------------------------------------------------------------------------
-        
-        # relative density ratio
-        s = self.config.particle_density / self.config.water_density 
-        
-        # get dstar and gravity from compute_grain_properties 
-                
         # question: is it worth coding up the Soulsby-vanRijn transport equations that they have hear so that 
         # we can go directly from a hydrodynamic-only model, in the same way that soulsby is, 
         # or do we remain dependent on having a sediment transport model output?
         
         # soulsby-vanRijn factors (MacDonald et al., 2006, equations 16-18)
-        A_sb = ( (0.005 * water_depth * (grain_size / water_depth) ** 1.2)
-                / (self.config.gravity * (s - 1) * grain_size) ** 1.2
+        A_s, C_d, U_cr, q_t_soulsbyVanRijn = self.calculate_soulsby_vanrijn_potential_transport(water_depth=water_depth,
+                                                                                    flow_velocity_magnitude=flow_velocity_magnitude,
+                                                                                    U_rms=sedtrails_data.nonlinear_wave_velocity['magnitude'],
+                                                                                    dstar=dstar,
+                                                                                    s=s,
+                                                                                    k_s_skin=k_s_skin,
+                                                                                    k_s_form=k_s_form,
+                                                                                    )
+        # settling velocity - very similar to physics_lib.compute_settling_velocity, differs only for dstar < 0.672 (very fine grains)
+        settling_velocity = self.compute_settling_velocity_macdonald(dstar) # gives very similar results to physics_lib.compute_settling_velocity
+
+        rouse_number = self.compute_rouse_number(
+            settling_velocity=settling_velocity,
+            mean_shear_velocity=mean_shear_velocity
         )
-        
-        A_ss = ( (0.012 * grain_size * dstar ** -0.6)
-                / (self.config.gravity * (s - 1) * grain_size) ** 1.2
-        )
-        
-        A_s = A_sb + A_ss
-        
-        # drag coefficient (MacDonald et al., 2006, equation 19)
-        
-        # critical velocity (MacDonald et al., 2006, equation 20)
-        
-        # potential sediment transport rate (IF WE DON'T COMPUTE TRANSPORT IN EULERIAN MODEL)
-        U_rms = 0 # RMS wave orbital velocity???
-        
-        q_t_soulsbyVanRijn = (A_s * flow_velocity_magnitude * 
-                              (np.sqrt(flow_velocity_magnitude ** 2 + 0.018 / C_d * U_rms ** 2)
-                               - U_cr)
-            
-        )
-        
-        # macdonald 2D model
-        
-        # bed roughness (MacDonald et al., 2006, equations 12-13)
-        k_s_skin, k_s_form = self.calculate_macdonald_bed_roughness(theta_max, theta_cr, grain_size, water_depth)
-        
+
         # suspended load height (MacDonald et al., 2006, equation 27)
         z_s = self.calculate_macdonald_susp_load_height(rouse_number, water_depth)
         
-        # settling velocity (MacDonald et al., 2006, equation 28)
-        # for now use default settling velocity, can add MacDonald method later
-        settling_velocity = grain_properties.get('settling_velocity')
-        if settling_velocity is None:
-            raise ValueError("Missing required 'settling_velocity' value in grain_prperties.")
-        
-        # suspended load velocity (MacDonald et al., 2006, equation 29)
-        suspended_velocity = self.calculate_macdonald_suspended_load_velocity(max_shear_velocity, z_s, k_s_form)
+        # suspended load velocity (MacDonald et al., 2006, equation 29) 
+        # Note Vassia: here we sum skin and form roughness for total roughness - eq. 29 says k_s'' indicating bedform roughness
+        # Question Vassia: should we be using max or mean shear velocity here?
+        suspended_velocity = self.calculate_macdonald_suspended_load_velocity(mean_shear_velocity, z_s, k_s_form+k_s_skin)
         
         # bed load velocity (MacDonald et al., 2006, equation 30) - Engelund & Fredsoe (1976), same as Soulsby et al (2011)
         bed_load_velocity = physics_lib.compute_bed_load_velocity(
             max_shields_number, critical_shields, mean_shear_velocity)
-
-         # Compute directions from magnitudes using squeezed transport data
-        suspended_velocity_x, suspended_velocity_y = physics_lib.compute_directions_from_magnitude(
-            suspended_velocity,
-            suspended_transport_x_calc,
-            suspended_transport_y_calc,
-            suspended_transport_magnitude_calc,
-        )
-        bed_load_velocity_x, bed_load_velocity_y = physics_lib.compute_directions_from_magnitude(
-            bed_load_velocity, 
-            bed_load_transport_x_calc, 
-            bed_load_transport_y_calc, 
-            bed_load_transport_magnitude_calc
-        )
 
         # suspended load transport fraction 
         qs_qt = suspended_transport_magnitude_calc / (suspended_transport_magnitude_calc + bed_load_transport_magnitude_calc)
@@ -229,11 +173,15 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         u_c = qs_qt * suspended_velocity + (1 - qs_qt) * bed_load_velocity
         
         # total transport centroid elevation (MacDonald et al., 2006, equation 34)
+        # Question Vassia: should we be using mean or max shear velocity here?
         z_c = k_s_form * 10 ** (0.1739 * (u_c / max_shear_velocity) - 1.47826)
         
         # horizontal mean particle advection velocity (u_a) (MacDonald et al., 2006, equation 35)
-        mean_particle_velocity = max_shear_velocity * (5.75 * np.log10(z_c / k_s) + 8.5)
-        # calculate_macdonald_particle_velocity_at_zp(max_shear_velocity, z_c, k_s) 
+        # Question Vassia: should we be using mean or max shear velocity here?
+        # Note Vassia: here we sum skin and form roughness for total roughness - eq. 35 says k_s'' indicating bedform roughness
+        mean_particle_velocity= np.zeros_like(max_shear_velocity) * np.nan
+        mask = (z_c / (k_s_skin + k_s_form)) > 1 
+        mean_particle_velocity[mask] = max_shear_velocity[mask]  * (5.75 * np.log10(z_c[mask]  / (k_s_skin+k_s_form[mask])) + 8.5)
         
         # calculate x and y components of mean particle velocity
         mean_particle_velocity_x, mean_particle_velocity_y = physics_lib.compute_directions_from_magnitude(
@@ -386,53 +334,219 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         sedtrails_data.add_physics_field('bed_load_probability', bed_load_probability)
         sedtrails_data.add_physics_field('suspended_probability', suspended_probability)
 
-def calculate_macdonald_bed_roughness(self, theta_max, theta_cr, grain_size, water_depth):
-        """Calculate bed roughness using MacDonald et al. (2006) Eq. 12"""
-        
-        # calculate equilibrium bedform height (eq 12)
-        # Initialize eta_b as zeros with same shape as theta_max
+
+    def calculate_macdonald_skin_roughness(self, grain_size):
+        """
+        Skin-friction roughness (MacDonald Eq. 13).
+        Typically approximated as 3*d for uniform sediments.
+        """
+        return 3.0 * grain_size
+
+    def calculate_macdonald_form_roughness(self, theta_max, theta_cr, grain_size, water_depth):
+        """
+        Form roughness (bedform height) from MacDonald et al. (2006), Eq. 12.
+        Returns k_s_form with same shape as theta_max.
+        """
+        # initialize bedform height array
         eta_b = np.zeros_like(theta_max)
-        
-        # Compute theta ratio
+
+        # ratio of Shields parameter to critical Shields
         theta_ratio = theta_max / theta_cr
-        
-        # Apply conditions using np.where for vectorized operations
-        # Condition 1: 1 < theta_ratio < 24
-        mask_middle = (theta_ratio > 1) & (theta_ratio < 24)
-        eta_b[mask_middle] = (
-            0.11 * water_depth[mask_middle] 
-            * (grain_size / water_depth[mask_middle])**0.3 
-            * (1 - np.exp(-0.5 * (theta_ratio[mask_middle] - 1))) 
-            * (24 - theta_ratio[mask_middle])
+
+        # apply the valid range for Eq. 12: 1 < theta/theta_cr < 24
+        mask = (theta_ratio > 1) & (theta_ratio < 24)
+
+        eta_b[mask] = (
+            0.11 * water_depth[mask]
+            * (grain_size / water_depth[mask]) ** 0.3
+            * (1 - np.exp(-0.5 * (theta_ratio[mask] - 1)))
+            * (24 - theta_ratio[mask])
         )
-        # Note: eta_b remains 0 for theta_ratio <= 1 or theta_ratio >= 24
-        
-        # skin friction roughness (eq 13) - NB should be d90 but here we assume uniform grain size
-        k_s_skin = 3 * grain_size
-        
-        k_s_form = eta_b
-        
-        # MAKE THIS A SEPARATE FUNCTION FOR SKIN AND FORM ROUGHNESS!!!
-        
-        return k_s_skin, k_s_form
 
-def calculate_macdonald_susp_load_height(self, rouse_number, water_depth):
-    """Calculate height of centroid of suspended load using MacDonald et al. (2006) Eq. 27"""
-    log_arg = np.log(rouse_number) - 0.4
-    tanh_arg = 1.2 * log_arg
-    
-    # Calculate MacDonald height
-    z_s = water_depth * 0.0398 * (10 ** (-1.08 * np.tanh(tanh_arg)))
-    return z_s
+        # form roughness is the bedform height
+        return eta_b
 
-def calculate_macdonald_suspended_load_velocity(self, max_shear_velocity, z_s, k_s):
-    """Calculate suspended load velocity using MacDonald et al. (2006) Eq. 29"""
-    suspended_load_velocity = 2.5 * max_shear_velocity * np.log(30 * z_s / k_s)
-    
-    return suspended_load_velocity
+    def calculate_soulsby_vanrijn_potential_transport(self, water_depth, flow_velocity_magnitude,
+                                        U_rms, dstar, s, k_s_skin, k_s_form):
+        """
+        Compute the Soulsby–van Rijn potential transport components
+        as described in MacDonald et al. (2006), eq. 16–20.
 
-def calculate_macdonald_particle_velocity_at_zp(self, max_shear_velocity, z_p, k_s):
-    """Calculate particle velocity at height z_p using MacDonald et al. (2006) Eq. 33"""
-    u_a_zp = max_shear_velocity * (5.75 * np.log10(z_p / k_s) + 8.5) 
+        Parameters
+        ----------
+        water_depth : array
+            Local water depth [m].
+        flow_velocity_magnitude : array
+            Depth-averaged current velocity magnitude [m/s].
+        U_rms : array
+            RMS wave orbital velocity near bed [m/s].
+        dstar : float
+            Dimensionless grain parameter.
+        s : float
+            Relative density = rho_s / rho.
+        k_s_skin : float or array
+            Skin roughness height [m].
+        k_s_form : float or array
+            Form roughness height (bedforms) [m].
+
+        Returns
+        -------
+        A_s : array
+            Combined transport factor A_s.
+        C_d : array
+            Drag coefficient.
+        U_cr : array
+            Critical depth-mean velocity.
+        q_t : array
+            Soulsby–van Rijn potential sediment transport rate.
+        """
+
+        d = self.config.grain_diameter
+        g = self.config.gravity
+
+        # ------------------------------
+        # A_sb (bedload factor)
+        # ------------------------------
+        A_sb = np.full_like(water_depth, np.nan)
+        mask = water_depth > 0
+
+        A_sb[mask] = (
+            0.005 * water_depth[mask] *
+            (d / water_depth[mask]) ** 1.2
+            / (g * (s - 1) * d) ** 1.2
+        )
+
+        # ------------------------------
+        # A_ss (suspended load factor)
+        # ------------------------------
+        A_ss = (
+            0.012 * d * dstar ** -0.6
+            / (g * (s - 1) * d) ** 1.2
+        )
+
+        # Combined factor
+        A_s = A_sb + A_ss
+
+        # ------------------------------
+        # drag coefficient C_d
+        # ------------------------------
+        z_0 = (k_s_skin + k_s_form) / 30.0
+        C_d = np.full_like(water_depth, np.nan)
+
+        C_d[mask] = 0.4 / (np.log(water_depth[mask] / z_0[mask]) - 1.0) ** 2
+
+        # ------------------------------
+        # Critical velocity U_cr
+        # ------------------------------
+        U_cr = np.full_like(water_depth, np.nan)
+
+        arg = 4.0 * water_depth / d
+        mask_cr = arg > 1.0  # Safe domain for log10
+
+        if d < 0.0005:
+            U_cr[mask_cr] = 0.19 * d ** 0.1 * np.log10(arg[mask_cr])
+        else:
+            U_cr[mask_cr] = 8.5 * d ** 0.6 * np.log10(arg[mask_cr])
+
+        # ------------------------------
+        # potential Soulsby–van Rijn total transport
+        # ------------------------------
+        U_comb = np.sqrt(flow_velocity_magnitude ** 2 + (0.018 / C_d) * U_rms ** 2)
+
+        # positive excess only
+        excess = np.maximum(U_comb - U_cr, 0.0)
+
+        q_t = A_s * flow_velocity_magnitude * excess ** 2.4
+
+        return A_s, C_d, U_cr, q_t
     
-    return u_a_zp
+    def compute_rouse_number(self, settling_velocity, mean_shear_velocity):
+        """
+        Compute the Rouse number:
+        
+            P = w_s / (kappa * u_*)
+        
+        where:
+            w_s  = settling velocity [m/s]
+            u_*  = shear velocity [m/s]
+            kappa = von Kármán constant (≈0.4)
+
+        Parameters
+        ----------
+        settling_velocity : float
+            Particle settling velocity [m/s].
+        mean_shear_velocity : array
+            Shear velocity field [m/s].
+
+        Returns
+        -------
+        rouse_number : array
+            Rouse number (same shape as mean_shear_velocity),
+            NaN where u_* <= 0.
+        """
+
+        kappa = self.config.von_karman_constant
+        # initialize result
+        rouse_number = np.full_like(mean_shear_velocity, np.nan)
+        # mask where shear velocity is positive
+        mask = mean_shear_velocity > 0
+        # compute only where valid
+        rouse_number[mask] = (
+            settling_velocity / (kappa * mean_shear_velocity[mask])
+        )
+        return rouse_number
+
+    def compute_settling_velocity_macdonald(self, dstar):
+        """
+        Compute settling velocity using the MacDonald et al. (2006) formulation:
+
+            (w_s * D_*) / nu = sqrt(107.33 + 1.049 D_*^3) - 10.36     for D_* >= 0.672
+            (w_s * D_*) / nu = 0.0077 D_*^2                           for D_* < 0.672
+
+        Parameters
+        ----------
+        dstar : float
+            Dimensionless grain size D_*.
+
+        Returns
+        -------
+        w_s : float
+            Settling velocity [m/s].
+        """
+
+        nu = self.config.kinematic_viscosity
+        d = self.config.grain_diameter
+
+        if dstar >= 0.672:
+            # Large-grain formula
+            term = np.sqrt(107.33 + 1.049 * dstar**3) - 10.36
+            w_s = (nu / d) * term
+        else:
+            # Small-grain formula (simplified)
+            w_s = 0.0077 * nu * d
+
+        return float(w_s)
+
+
+    def calculate_macdonald_susp_load_height(self, rouse_number, water_depth):
+        """Calculate height of centroid of suspended load using MacDonald et al. (2006) Eq. 27"""
+        log_arg = np.log(rouse_number) - 0.4
+        tanh_arg = 1.2 * log_arg
+        
+        # Calculate MacDonald height
+        z_s = water_depth * 0.0398 * (10 ** (-1.08 * np.tanh(tanh_arg)))
+        return z_s
+
+    def calculate_macdonald_suspended_load_velocity(self, max_shear_velocity, z_s, k_s):
+        """Calculate suspended load velocity using MacDonald et al. (2006) Eq. 29"""
+        suspended_load_velocity = np.zeros_like(z_s)*np.nan
+        mask = (30 * z_s / k_s) > 1  # ensure log argument is positive
+        suspended_load_velocity[mask] = 2.5 * max_shear_velocity[mask] * np.log(30 * z_s[mask] / k_s[mask])
+        
+        return suspended_load_velocity
+
+    def calculate_macdonald_particle_velocity_at_zp(self, max_shear_velocity, z_p, k_s):
+        """Calculate particle velocity at height z_p using MacDonald et al. (2006) Eq. 33"""
+        u_a_zp = max_shear_velocity * (5.75 * np.log10(z_p / k_s) + 8.5) 
+        
+        return u_a_zp

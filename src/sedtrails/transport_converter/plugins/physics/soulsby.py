@@ -168,7 +168,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                     Rb[i][j] = bed_load_velocity[i][j] / flow_velocity_magnitude[i][j]
                     if Rb[i][j] > 1:
                         Rb[i][j] = 1  # apply velocity limiter (grain velocity cannot exceed flow velocity)
-                    else:
+                    elif np.isnan(Rb[i][j]):
                         Rb[i][j] = 0
 
         # VECTORIZE THESE LOOPS!
