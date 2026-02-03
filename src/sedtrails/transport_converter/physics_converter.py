@@ -118,6 +118,15 @@ class PhysicsConverter:
                 self.config.water_density,
                 self.config.kinematic_viscosity,
             )
+        elif self.config.tracer_method == 'macdonald':
+            self._grain_properties = physics_lib.compute_grain_properties(
+                self.config.grain_diameter,
+                self.config.gravity,
+                self.config.particle_density,
+                self.config.water_density,
+                self.config.kinematic_viscosity,
+                settling_velocity_method="macdonald2006"
+            )
         else:
             self._grain_properties = physics_lib.compute_grain_properties(
                 self.config.grain_diameter,

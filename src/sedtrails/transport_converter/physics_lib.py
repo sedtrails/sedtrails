@@ -198,6 +198,49 @@ def compute_transport_layer_thickness(
         return np.where(velocity_magnitude > 0, transport_flux / velocity_magnitude, 0.0)
 
 
+def calculate_rouse_number(
+    settling_velocity,
+    shear_velocity,
+    von_karman_constant: float = 0.4,
+):
+    """
+    Compute the Rouse number P.
+
+        P = w_s / (kappa * u_*)
+
+    where:
+        w_s   = settling velocity [m/s]
+        u_*   = shear velocity [m/s]
+        kappa = von Kármán constant (≈ 0.4)
+
+    Parameters
+    ----------
+    settling_velocity : float or array-like
+        Particle settling velocity [m/s].
+    shear_velocity : array-like
+        Shear velocity u_* [m/s]. Must be broadcastable to settling_velocity.
+    von_karman_constant : float, optional
+        von Kármán constant κ [-]. Default is 0.4.
+
+    Returns
+    -------
+    array-like
+        Rouse number P [-], same shape as shear_velocity.
+        Values are NaN where u_* ≤ 0.
+
+    """
+    shear_velocity = np.asarray(shear_velocity)
+
+    rouse_number = np.full_like(shear_velocity, np.nan, dtype=float)
+    mask = shear_velocity > 0.0
+
+    rouse_number[mask] = settling_velocity / (
+        von_karman_constant * shear_velocity[mask]
+    )
+
+    return rouse_number
+
+
 def compute_suspended_velocity(
     flow_velocity_magnitude: np.ndarray,
     bed_load_velocity: np.ndarray,
@@ -255,7 +298,7 @@ def compute_suspended_velocity(
             critical_conditions = shields_number > critical_shields
 
             # Compute Rouse parameter internally
-            rouse_parameter = settling_velocity / (von_karman_constant * max_shear_velocity)
+            rouse_parameter = calculate_rouse_number(settling_velocity, max_shear_velocity, von_karman_constant)
 
             # Compute bed load ratio
             bed_load_ratio = bed_load_velocity / flow_velocity_magnitude
@@ -365,10 +408,19 @@ def compute_mixing_layer_thickness(
 
 # Convenience function for getting all grain properties at once
 def compute_grain_properties(
-    grain_diameter: float, gravity: float, sediment_density: float, water_density: float, kinematic_viscosity: float
+    grain_diameter: float, 
+    gravity: float, 
+    sediment_density: float, 
+    water_density: float, 
+    kinematic_viscosity: float,
+    settling_velocity_method: str = "soulsby1997",  # or "macdonald2006"
+
 ) -> dict[str, float]:
     """
     Compute all grain-related properties.
+    Settling velocity can be computed using:
+    - "soulsby1997" (default)
+    - "macdonald2006" (MacDonald et al., 2006, equation 28)
 
     Parameters:
     -----------
@@ -401,6 +453,11 @@ def compute_grain_properties(
     Soulsby, R. L., & Whitehouse, R. (1997). Threshold of sediment motion in coastal environments.
     Pacific Coasts and Ports '97: Proceedings of the 13th Australasian Coastal and Ocean
     Engineering Conference and the 6th Australasian Port and Harbour Conference; Volume 1. Equation 14
+
+    MacDonald, N., Davies, M., Zundel, A., Howlett, J., Demirbilek, Z.,
+    Gailani, J., Lackey, T., & Smith, J. (2006). *PTM: Particle Tracking Model. 
+    Report 1: Model Theory, Implementation, and Example Applications*.      '
+    U.S. Army Corps of Engineers. Equation 28
     """
     # Dimensionless grain size, D* (Soulsby 1997, Equation 75, p. 104)
     dstar = (gravity * (sediment_density / water_density - 1) / kinematic_viscosity**2) ** (1 / 3) * grain_diameter
@@ -408,9 +465,22 @@ def compute_grain_properties(
     # Critical Shields number, θ_cr (Soulsby 1997, Equation 77, p. 106)
     theta_cr = 0.3 / (1 + 1.2 * dstar) + 0.055 * (1 - np.exp(-0.020 * dstar))
 
-    # Settling velocity, w_s (Soulsby 1997, Equation 102, p. 134)
-    settling_velocity = (kinematic_viscosity / grain_diameter) * (np.sqrt(10.36**2 + 1.049 * dstar**3) - 10.36)
-
+    # Settling velocity, w_s 
+    if settling_velocity_method.lower() in ["soulsby1997", "soulsby", "soulsby_1997"]: #(default is Soulsby 1997, Equation 102, p. 134)
+        settling_velocity = (kinematic_viscosity / grain_diameter) * (
+            np.sqrt(10.36**2 + 1.049 * dstar**3) - 10.36
+        )
+    elif settling_velocity_method.lower() in ["macdonald2006", "macdonald", "ptm"]: # (MacDonald et al., 2006, Equation 28)
+        settling_velocity = compute_settling_velocity_macdonald(
+            dstar=dstar,
+            grain_diameter=grain_diameter,
+            kinematic_viscosity=kinematic_viscosity,
+        )
+    else:
+        raise ValueError(
+            f"Unknown settling_velocity_method='{settling_velocity_method}'. "
+            "Use 'soulsby1997' or 'macdonald2006'."
+        )
     # Critical shear stress, τ_cr
     critical_shear_stress = (sediment_density - water_density) * gravity * grain_diameter * theta_cr
 
@@ -420,3 +490,149 @@ def compute_grain_properties(
         'settling_velocity': settling_velocity,
         'critical_shear_stress': critical_shear_stress,
     }
+
+def compute_settling_velocity_macdonald(
+    dstar,
+    grain_diameter,
+    kinematic_viscosity,
+):
+    """
+    Settling velocity w_s following MacDonald et al. (2006) (PTM report).
+
+    Piecewise formulation (as commonly reported in PTM documentation):
+
+        (w_s * d) / nu = sqrt(107.33 + 1.049 * D_*^3) - 10.36     for D_* >= 0.672
+        (w_s * d) / nu = 0.0077 * D_*^2                            for D_* < 0.672
+
+    Parameters
+    ----------
+    dstar : float or array-like
+        Dimensionless grain size D_* [-].
+    grain_diameter : float or array-like
+        Grain diameter d [m].
+    kinematic_viscosity : float or array-like
+        Kinematic viscosity nu [m^2/s].
+
+    Returns
+    -------
+    w_s : float or array-like
+        Settling velocity [m/s].
+
+    Reference
+    ---------
+    MacDonald, N. et al. (2006). PTM: Particle Tracking Model. Report 1: Model Theory,
+    Implementation, and Example Applications. U.S. Army Corps of Engineers. Equation 28.    
+    """
+    nu = kinematic_viscosity
+    d = grain_diameter
+
+    term_large = np.sqrt(107.33 + 1.049 * dstar**3) - 10.36
+    ws_large = (nu / d) * term_large
+
+    ws_small = (nu / d) * (0.0077 * dstar**2)
+
+    return np.where(dstar >= 0.672, ws_large, ws_small)
+
+def calculate_skin_roughness(grain_diameter):
+    """
+    Skin-friction roughness following MacDonald et al. (2006).
+
+    Commonly approximated as:
+        k_s = 3 * d90
+
+    Parameters
+    ----------
+    grain_diameter : float
+        Representative grain size [m], typically d90.
+
+    Returns
+    -------
+    float
+        Skin-friction roughness length k_s [m].
+
+    Reference
+    ---------
+    MacDonald, N., Davies, M., Zundel, A., Howlett, J., Demirbilek, Z.,
+    Gailani, J., Lackey, T., & Smith, J. (2006). *PTM: Particle Tracking Model. 
+    Report 1: Model Theory, Implementation, and Example Applications*. 
+    U.S. Army Corps of Engineers. Equation 13
+    """
+    return 3.0 * grain_diameter
+
+
+
+def calculate_equilibrium_bedform_height(theta_max, theta_cr, grain_diameter, water_depth):
+    """
+    Equilibrium bedform height (η_b) following MacDonald et al. (2006), Eq. 12.
+
+    This computes the *form-scale* roughness contribution via an equilibrium
+    bedform height as a function of the Shields parameter exceedance above
+    threshold. The equation is defined only for a limited mobility range:
+
+        1 < (θ_max / θ_cr) < 24
+
+    Outside this range, η_b is set to 0 (i.e., no bedforms / equation not applicable).
+
+    Parameters
+    ----------
+    theta_max : array-like
+        Maximum Shields parameter θ over the period of interest (dimensionless).
+        Can be a scalar, NumPy array, or xarray.DataArray.
+    theta_cr : float or array-like
+        Critical Shields parameter θ_cr for initiation of motion (dimensionless).
+    grain_diameter : float or array-like
+        Representative grain diameter d50 [m].
+    water_depth : float or array-like
+        Water depth h [m].
+
+    Returns
+    -------
+    array-like
+        Equilibrium bedform height η_b [m], same shape as theta_max.
+
+
+    Reference
+    ---------
+    MacDonald, N., Davies, M., Zundel, A., Howlett, J., Demirbilek, Z.,
+    Gailani, J., Lackey, T., & Smith, J. (2006).
+    PTM: Particle Tracking Model. Report 1: Model Theory, Implementation,
+    and Example Applications. U.S. Army Corps of Engineers. Eq. 12.
+    """
+
+    # initialize bedform height array
+    eta_b = np.zeros_like(theta_max)
+
+    # ratio of Shields parameter to critical Shields
+    theta_ratio = theta_max / theta_cr
+
+    # apply the valid range for Eq. 12: 1 < theta/theta_cr < 24
+    mask = (theta_ratio > 1) & (theta_ratio < 24)
+
+    eta_b[mask] = (
+        0.11 * water_depth[mask]
+        * (grain_diameter / water_depth[mask]) ** 0.3
+        * (1 - np.exp(-0.5 * (theta_ratio[mask] - 1)))
+        * (24 - theta_ratio[mask])
+    )
+
+    # form roughness is the bedform height
+    return eta_b
+
+
+def calculate_relative_density_ratio(sediment_density, water_density):
+    """
+    Compute the relative density ratio s = ρ_s / ρ_w.
+
+    Parameters
+    ----------
+    sediment_density : float or array-like
+        Particle (sediment) density ρ_s [kg m⁻³].
+    water_density : float or array-like
+        Water density ρ_w [kg m⁻³].
+
+    Returns
+    -------
+    float or array-like
+        Relative density ratio s (dimensionless).
+    """
+    return sediment_density / water_density

@@ -159,7 +159,7 @@ class NetCDFWriter:
             name_strlen=name_strlen,
         )
 
-    def add_metadata(self, dataset, populations, flow_field_names, simulation_metadata=None):
+    def add_metadata(self, dataset, populations, flow_field_names, use_transport_fields='D3D', simulation_metadata=None):
         """
         Add metadata to the xarray dataset.
 
@@ -183,6 +183,10 @@ class NetCDFWriter:
         populate_population_metadata(dataset, populations)
         if flow_field_names:
             populate_flowfield_metadata(dataset, flow_field_names)
+        
+        if use_transport_fields:
+            padded = use_transport_fields.ljust(dataset.sizes["name_strlen"])[:dataset.sizes["name_strlen"]]
+            dataset["use_transport_fields"].values[:] = np.frombuffer(padded.encode("ascii"), dtype="S1")
 
         # Add simulation metadata as global attributes if provided
         if simulation_metadata:

@@ -127,15 +127,16 @@
                 "computationType": {
                     "type": "string",
                     "default": "2D",
-                    "description": "type of computation used in MacDonald method (2D,, Q3D, or 3D)"
+                    "description": "type of computation used in MacDonald method (2D, Q3D, or 3D)"
                 },
-                "beta": {
-                    "type": "number",
-                    "default": 0.2,
-                    "description": "beta parameter for van Westen method"
-                }
+				"use_transport_fields": {
+				  "type": "string",
+				  "enum": ["D3D", "SoulsbyvanRijn1997"],
+				  "default": "D3D",
+				  "description": "Select which transport fields are used for particle transport. 'D3D' uses transport velocity fields from Delft3D-FM; 'SoulsbyvanRijn1997' computes Soulsby-vanRijn transports."
+				}
             },
-            "description": "van Westen method for particle tracking"
+            "description": "Macdonald method for particle tracking"
         },
         "soulsby_method": {
             "type": "object",
