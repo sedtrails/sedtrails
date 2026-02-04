@@ -2,6 +2,7 @@
 
 import os
 import numpy as np
+from sympy import arg
 import xarray as xr
 from random import random
 from sedtrails.transport_converter import physics_lib
@@ -86,7 +87,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         
         # Bed roughness (MacDonald et al., 2006, equations 12-13)
         k_s_skin = physics_lib.calculate_skin_roughness(self.config.grain_diameter) #Consider here passing the background grain diameter instead of the particle grain diameter.
-        k_s_form = physics_lib.calculate_equilibrium_bedform_height(max_shields_number, critical_shields, self.config.grain_diameter, water_depth)
+        k_s_form = physics_lib.calculate_equilibrium_bedform_height(mean_shields_number, critical_shields, self.config.grain_diameter, water_depth)
         k_s_total = k_s_form + k_s_skin  
         # TO DO: Note that k_s_form is the equilibrium bedform height eta_b from MacDonald et al. (2006) Eq. 12 - we should implement the rate of change also (eq. 14-15) in future
 
@@ -161,20 +162,21 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                                                                                         k_s_form=k_s_form,
                                                                                         )
 
-            # suspended load height (MacDonald et al., 2006, equation 27)
-            z_s = PhysicsPlugin.calculate_macdonald_susp_load_height(rouse_number, water_depth)
-           
+
             # suspended load transport fraction, equation 31 MacDonald et al. (2006)
             qs_qt = np.full_like(max_shear_velocity, np.nan, dtype=float)
             mask = (max_shear_velocity > 0) & (settling_velocity > 0) & np.isfinite(max_shear_velocity) & np.isfinite(settling_velocity)
             qs_qt[mask] = (0.5 * np.tanh(1.3 * np.log(max_shear_velocity[mask] / settling_velocity[mask]) - 0.3) + 0.5)            
 
+        # suspended load height (MacDonald et al., 2006, equation 27)
+        z_s = PhysicsPlugin.calculate_macdonald_susp_load_height(rouse_number, water_depth)
+           
         # suspended load velocity (MacDonald et al., 2006, equation 29) 
         # Note Vassia: here we sum skin and form roughness for total roughness - eq. 29 says k_s'' indicating bedform roughness
         suspended_velocity = PhysicsPlugin.calculate_macdonald_suspended_load_velocity(max_shear_velocity, z_s, k_s_total)
         
         # bed load velocity (MacDonald et al., 2006, equation 30) - Engelund & Fredsoe (1976), same as Soulsby et al (2011)
-        bed_load_velocity = physics_lib.compute_bed_load_velocity(max_shields_number, critical_shields, max_shear_velocity)
+        bed_load_velocity = physics_lib.compute_bed_load_velocity(max_shields_number, critical_shields, mean_shear_velocity)
 
         # Compute transport probabilities (placeholders for now)
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -314,6 +316,22 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         sedtrails_data.add_physics_field('mixing_layer_thickness', mixing_layer_thickness)
         sedtrails_data.add_physics_field('bed_load_probability', bed_load_probability)
         sedtrails_data.add_physics_field('suspended_probability', suspended_probability)
+        sedtrails_data.add_physics_field('suspended_velocity', suspended_velocity) # this is for debugging purposes
+        sedtrails_data.add_physics_field('bedload_velocity', bed_load_velocity) # this is for debugging purposes
+        sedtrails_data.add_physics_field('suspended_transport_centroid_elevation', z_s) # this is for debugging purposes
+        sedtrails_data.add_physics_field('suspended_transport_centroid_elevation_over_depth', z_s/water_depth) # this is for debugging purposes
+        sedtrails_data.add_physics_field('total_transport_centroid_elevation', z_c) # this is for debugging purposes
+        sedtrails_data.add_physics_field('total_transport_centroid_elevation_over_depth', z_c/water_depth) # this is for debugging purposes
+        sedtrails_data.add_physics_field('particle_advection_velocity', u_c) # this is for debugging purposes
+        sedtrails_data.add_physics_field('rouse_number', rouse_number) # this is for debugging purposes
+        sedtrails_data.add_physics_field('bedform_roughness_height', k_s_form) # this is for debugging purposes
+        sedtrails_data.add_physics_field('total_roughness_height', k_s_total) # this is for debugging purposes
+        sedtrails_data.add_physics_field('shear_velocity_ratio', max_shear_velocity/mean_shear_velocity) # this is for debugging purposes
+        sedtrails_data.add_physics_field('suspended_transport_ratio', qs_qt) # this is for debugging purposes
+        sedtrails_data.add_physics_field('suspended_velocity_over_da_velocity', suspended_velocity/flow_velocity_magnitude) # this is for debugging purposes
+        sedtrails_data.add_physics_field('30z_s_over_k_s_total', 30 * z_s / k_s_total) # this is for debugging purposes
+        sedtrails_data.add_physics_field('max_shear_velocity', max_shear_velocity) # this is for debugging purposes
+        sedtrails_data.add_physics_field('mean_shear_velocity', mean_shear_velocity) # this is for debugging purposes
 
         # Sediment velocities (vector fields)
         sedtrails_data.add_physics_field(
@@ -435,7 +453,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         the equation numerically for a range of Rouse numbers, then saving the results in a NetCDF file for 
         fast loading and interpolation. This approach is much faster than solving the equation numerically 
         for each input during runtime, while still providing accurate results across the relevant range of 
-        Rouse numbers (see create_lookuptable_zs_over_h_rouse.py in transport_converter\plugins\physics\)
+        Rouse numbers (see create_lookuptable_zs_over_h_rouse.py in transport_converter/plugins/physics/)
         """
         # ----------------------------
         # Constants
@@ -550,12 +568,18 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
     @staticmethod
     def calculate_macdonald_suspended_load_velocity(max_shear_velocity, z_s, k_s):
         """Calculate suspended load velocity using MacDonald et al. (2006) Eq. 29"""
-        suspended_load_velocity = np.zeros_like(z_s)*np.nan
-        mask = (30 * z_s / k_s) > 1  # ensure log argument is positive
-        suspended_load_velocity[mask] = 2.5 * max_shear_velocity[mask] * np.log(30 * z_s[mask] / k_s[mask])
-        
-        return suspended_load_velocity
+        suspended_load_velocity = np.zeros_like(z_s, dtype=float)
 
+        # Log-law argument
+        arg = 30.0 * z_s / k_s
+
+        # Validity mask: above roughness sublayer and finite u*
+        mask = (arg > 1.0) & np.isfinite(max_shear_velocity) & (max_shear_velocity > 0)
+
+        # Apply log-law only where physically valid
+        suspended_load_velocity[mask] = 2.5 * max_shear_velocity[mask] * np.log(arg[mask])
+        # Elsewhere u_sus remains zero (no suspended-load advection)
+        return suspended_load_velocity
 
     
     @staticmethod
