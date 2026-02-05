@@ -428,13 +428,13 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # ------------------------------
         U_cr = np.full_like(water_depth, np.nan)
 
-        arg = 4.0 * water_depth / d
-        mask_cr = arg > 1.0  # Safe domain for log10
+        argument = 4.0 * water_depth / d
+        mask_cr = argument > 1.0  # Safe domain for log10
 
         if d < 0.0005:
-            U_cr[mask_cr] = 0.19 * d ** 0.1 * np.log10(arg[mask_cr])
+            U_cr[mask_cr] = 0.19 * d ** 0.1 * np.log10(argument[mask_cr])
         else:
-            U_cr[mask_cr] = 8.5 * d ** 0.6 * np.log10(arg[mask_cr])
+            U_cr[mask_cr] = 8.5 * d ** 0.6 * np.log10(argument[mask_cr])
 
         # ------------------------------
         # potential Soulsby–van Rijn total transport
