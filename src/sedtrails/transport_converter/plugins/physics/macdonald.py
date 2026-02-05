@@ -99,13 +99,13 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         if self.config.use_transport_fields=='D3D':
             
             # bed load transport
-            bed_load_transport_x = sedtrails_data.bed_load_transport['x']
-            bed_load_transport_y = sedtrails_data.bed_load_transport['y']
+            # bed_load_transport_x = sedtrails_data.bed_load_transport['x']
+            # bed_load_transport_y = sedtrails_data.bed_load_transport['y']
             bed_load_transport_magnitude = sedtrails_data.bed_load_transport['magnitude']
 
             # suspended transport
-            suspended_transport_x = sedtrails_data.suspended_transport['x']
-            suspended_transport_y = sedtrails_data.suspended_transport['y']
+            # suspended_transport_x = sedtrails_data.suspended_transport['x']
+            # suspended_transport_y = sedtrails_data.suspended_transport['y']
             suspended_transport_magnitude = sedtrails_data.suspended_transport['magnitude']
             
             # Detect number of fractions from data shape (assuming shape is [time, fractions, spatial])
