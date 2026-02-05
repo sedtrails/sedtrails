@@ -173,7 +173,13 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
            
         # suspended load velocity (MacDonald et al., 2006, equation 29) 
         # Note Vassia: here we sum skin and form roughness for total roughness - eq. 29 says k_s'' indicating bedform roughness
-        suspended_velocity = PhysicsPlugin.calculate_macdonald_suspended_load_velocity(max_shear_velocity, z_s, k_s_total)
+        suspended_velocity = PhysicsPlugin.calculate_macdonald_suspended_load_velocity(
+            max_shear_velocity, 
+            z_s, 
+            k_s_total, 
+            flow_velocity_magnitude, 
+            max_suspended_velocity_factor=self.config.max_suspended_velocity_factor)
+        #Question Vassia: should the max_suspended_velocity_factor be used here or in the final step - on the mean_particle_velocity?
         
         # bed load velocity (MacDonald et al., 2006, equation 30) - Engelund & Fredsoe (1976), same as Soulsby et al (2011)
         bed_load_velocity = physics_lib.compute_bed_load_velocity(max_shields_number, critical_shields, mean_shear_velocity)
@@ -199,10 +205,10 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # sediment advection velocity (MacDonald et al., 2006, equation 32)
         u_c = qs_qt * suspended_velocity + (1 - qs_qt) * bed_load_velocity
         # total transport centroid elevation (MacDonald et al., 2006, equation 34)
-        z_c = k_s_form * 10 ** (0.1739 * (u_c / max_shear_velocity) - 1.47826)
+        z_c = k_s_total * 10 ** (0.1739 * (u_c / max_shear_velocity) - 1.47826)
         
         # horizontal mean particle advection velocity (u_a) (MacDonald et al., 2006, equation 35)
-        mean_particle_velocity=PhysicsPlugin.calculate_mean_particle_advection_velocity(max_shear_velocity, z_c, k_s_total)
+        mean_particle_velocity = u_c #no need to calculate it again, previously PhysicsPlugin.calculate_mean_particle_advection_velocity(max_shear_velocity, z_c, k_s_total)
         
         # calculate x and y components of mean particle velocity
         mean_particle_velocity_x, mean_particle_velocity_y = physics_lib.compute_directions_from_magnitude(
@@ -211,7 +217,10 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             flow_velocity_y,
             flow_velocity_magnitude,
         )
-        
+        # Note Vassia: we could consider getting particle velocity direction from bedload and suspended load velocities instead of flow velocity
+        # In that way the effect of slopes which are considered in D3D might be included better. 
+
+
         # # ----------------------------------------------------------------------------------------
         # # MacDonald probabilistic bed-particle interaction model
         
@@ -332,6 +341,9 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         sedtrails_data.add_physics_field('30z_s_over_k_s_total', 30 * z_s / k_s_total) # this is for debugging purposes
         sedtrails_data.add_physics_field('max_shear_velocity', max_shear_velocity) # this is for debugging purposes
         sedtrails_data.add_physics_field('mean_shear_velocity', mean_shear_velocity) # this is for debugging purposes
+        sedtrails_data.add_physics_field('suspended_load_velocity_lnpart', np.log(30 * z_s / k_s_total)) # this is for debugging purposes
+        sedtrails_data.add_physics_field('particle_velocity_over_da_velocity', mean_particle_velocity/flow_velocity_magnitude) # this is for debugging purposes
+
 
         # Sediment velocities (vector fields)
         sedtrails_data.add_physics_field(
@@ -566,7 +578,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         return float(z_s) if scalar_out else z_s
     
     @staticmethod
-    def calculate_macdonald_suspended_load_velocity(max_shear_velocity, z_s, k_s):
+    def calculate_macdonald_suspended_load_velocity(max_shear_velocity, z_s, k_s, flow_velocity_magnitude, max_suspended_velocity_factor=None):
         """Calculate suspended load velocity using MacDonald et al. (2006) Eq. 29"""
         suspended_load_velocity = np.zeros_like(z_s, dtype=float)
 
@@ -578,7 +590,13 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
 
         # Apply log-law only where physically valid
         suspended_load_velocity[mask] = 2.5 * max_shear_velocity[mask] * np.log(arg[mask])
+        
         # Elsewhere u_sus remains zero (no suspended-load advection)
+
+        # Cap suspended load velocity to a fraction of flow velocity if specified
+        if max_suspended_velocity_factor is not None:
+            suspended_load_velocity = np.minimum(suspended_load_velocity, max_suspended_velocity_factor * flow_velocity_magnitude)
+
         return suspended_load_velocity
 
     

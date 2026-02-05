@@ -34,6 +34,7 @@ def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfiel
             ),
             'flowfield_name': (('n_flowfields', 'name_strlen'), np.empty((N_flowfields, name_strlen), dtype='S1')),
             'use_transport_fields': ('name_strlen', np.empty((name_strlen), dtype='S1')),
+            'max_suspended_velocity_factor': ((), np.nan),
         },
         coords={
             'n_particles': np.arange(N_particles),
