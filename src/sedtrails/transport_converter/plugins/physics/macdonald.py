@@ -2,9 +2,8 @@
 
 import os
 import numpy as np
-from sympy import arg
 import xarray as xr
-from random import random
+# from random import random
 from sedtrails.transport_converter import physics_lib
 from sedtrails.transport_converter.plugins import BasePhysicsPlugin
 from sedtrails.transport_converter import SedtrailsData
@@ -123,24 +122,24 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             # For physics calculations, we need to work with squeezed data (no fraction dimension)
             # but we'll add the dimension back to velocities at the end
             if len(bed_load_transport_magnitude.shape) > 2:
-                bed_load_transport_x_calc = bed_load_transport_x.squeeze(axis=1)
-                bed_load_transport_y_calc = bed_load_transport_y.squeeze(axis=1)
+                # bed_load_transport_x_calc = bed_load_transport_x.squeeze(axis=1)
+                # bed_load_transport_y_calc = bed_load_transport_y.squeeze(axis=1)
                 bed_load_transport_magnitude_calc = bed_load_transport_magnitude.squeeze(axis=1)
 
-                suspended_transport_x_calc = suspended_transport_x.squeeze(axis=1)
-                suspended_transport_y_calc = suspended_transport_y.squeeze(axis=1)
+                # suspended_transport_x_calc = suspended_transport_x.squeeze(axis=1)
+                # suspended_transport_y_calc = suspended_transport_y.squeeze(axis=1)
                 suspended_transport_magnitude_calc = suspended_transport_magnitude.squeeze(axis=1)
-                has_fraction_dim = True
+                # has_fraction_dim = True
             else:
                 # Data already doesn't have fraction dimension
-                bed_load_transport_x_calc = bed_load_transport_x
-                bed_load_transport_y_calc = bed_load_transport_y
+                # bed_load_transport_x_calc = bed_load_transport_x
+                # bed_load_transport_y_calc = bed_load_transport_y
                 bed_load_transport_magnitude_calc = bed_load_transport_magnitude
 
-                suspended_transport_x_calc = suspended_transport_x
-                suspended_transport_y_calc = suspended_transport_y
+                # suspended_transport_x_calc = suspended_transport_x
+                # suspended_transport_y_calc = suspended_transport_y
                 suspended_transport_magnitude_calc = suspended_transport_magnitude
-                has_fraction_dim = False
+                # has_fraction_dim = False
             
             # suspended load transport fraction 
             den = suspended_transport_magnitude_calc + bed_load_transport_magnitude_calc
@@ -583,13 +582,13 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         suspended_load_velocity = np.zeros_like(z_s, dtype=float)
 
         # Log-law argument
-        arg = 30.0 * z_s / k_s
+        argument = 30.0 * z_s / k_s
 
         # Validity mask: above roughness sublayer and finite u*
-        mask = (arg > 1.0) & np.isfinite(max_shear_velocity) & (max_shear_velocity > 0)
+        mask = (argument > 1.0) & np.isfinite(max_shear_velocity) & (max_shear_velocity > 0)
 
         # Apply log-law only where physically valid
-        suspended_load_velocity[mask] = 2.5 * max_shear_velocity[mask] * np.log(arg[mask])
+        suspended_load_velocity[mask] = 2.5 * max_shear_velocity[mask] * np.log(argument[mask])
         
         # Elsewhere u_sus remains zero (no suspended-load advection)
 
@@ -633,17 +632,17 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             max_shear_velocity, np.nan, dtype=float
         )
 
-        arg = reference_height / total_roughness
+        argument = reference_height / total_roughness
         mask = (
-            np.isfinite(arg)
+            np.isfinite(argument)
             & np.isfinite(max_shear_velocity)
             & (total_roughness > 0)
-            & (arg > 1)
+            & (argument > 1)
         )
 
         mean_particle_velocity[mask] = (
             max_shear_velocity[mask]
-            * (5.75 * np.log10(arg[mask]) + 8.5)
+            * (5.75 * np.log10(argument[mask]) + 8.5)
         )
 
         return mean_particle_velocity
