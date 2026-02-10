@@ -173,7 +173,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # suspended load velocity (MacDonald et al., 2006, equation 29) 
         # Note Vassia: here we sum skin and form roughness for total roughness - eq. 29 says k_s'' indicating bedform roughness
         suspended_velocity = PhysicsPlugin.calculate_macdonald_suspended_load_velocity(
-            max_shear_velocity, 
+            mean_shear_velocity, 
             z_s, 
             k_s_total, 
             flow_velocity_magnitude, 
@@ -336,6 +336,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         sedtrails_data.add_physics_field('total_roughness_height', k_s_total) # this is for debugging purposes
         sedtrails_data.add_physics_field('shear_velocity_ratio', max_shear_velocity/mean_shear_velocity) # this is for debugging purposes
         sedtrails_data.add_physics_field('suspended_transport_ratio', qs_qt) # this is for debugging purposes
+        sedtrails_data.add_physics_field('bed_load_transport_ratio', 1-qs_qt) # this is for debugging purposes
         sedtrails_data.add_physics_field('suspended_velocity_over_da_velocity', suspended_velocity/flow_velocity_magnitude) # this is for debugging purposes
         sedtrails_data.add_physics_field('30z_s_over_k_s_total', 30 * z_s / k_s_total) # this is for debugging purposes
         sedtrails_data.add_physics_field('max_shear_velocity', max_shear_velocity) # this is for debugging purposes

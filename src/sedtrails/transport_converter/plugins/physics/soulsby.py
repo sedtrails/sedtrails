@@ -199,7 +199,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                     soulsby_R[i][j] = Rb[i][j]
 
         # Compute grain velocities
-        grain_velocity_magnitude = np.multiply(soulsby_P, soulsby_R, flow_velocity_magnitude)  # (Equation 1)
+        grain_velocity_magnitude = np.multiply(np.multiply(soulsby_P, soulsby_R), flow_velocity_magnitude)  # (Equation 1)
         grain_velocity_x = np.multiply((flow_velocity_x / flow_velocity_magnitude), grain_velocity_magnitude)
         grain_velocity_y = np.multiply((flow_velocity_y / flow_velocity_magnitude), grain_velocity_magnitude)
 
@@ -224,3 +224,11 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         sedtrails_data.add_physics_field('soulsby_a', soulsby_a)
         sedtrails_data.add_physics_field('soulsby_b', soulsby_b)
         sedtrails_data.add_physics_field('mixing_layer_thickness', mixing_layer_thickness)
+        sedtrails_data.add_physics_field('suspended_velocity', Rs*flow_velocity_magnitude) # this is for debugging purposes
+        sedtrails_data.add_physics_field('bedload_velocity', bed_load_velocity) # this is for debugging purposes
+        sedtrails_data.add_physics_field('rouse_number', rouse_number) # this is for debugging purposes
+        sedtrails_data.add_physics_field('shear_velocity_ratio', max_shear_velocity/mean_shear_velocity) # this is for debugging purposes
+        sedtrails_data.add_physics_field('suspended_velocity_over_da_velocity', Rs) # this is for debugging purposes
+        sedtrails_data.add_physics_field('max_shear_velocity', max_shear_velocity) # this is for debugging purposes
+        sedtrails_data.add_physics_field('mean_shear_velocity', mean_shear_velocity) # this is for debugging purposes
+        sedtrails_data.add_physics_field('particle_velocity_over_da_velocity', grain_velocity_magnitude/flow_velocity_magnitude) # this is for debugging purposes
