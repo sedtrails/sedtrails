@@ -17,18 +17,29 @@ Random: Release particles at random locations (x,y) within an area
 import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Protocol, Tuple, Union
 
 import numpy as np
 from matplotlib.path import Path
 from numpy import ndarray
-from scipy.spatial import ConvexHull
 
 from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.particle_tracer.particle import Particle
-from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
-from sedtrails.transport_converter.sedtrails_data import SedtrailsData
+from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry
+
+
+class HasFieldCoordinates(Protocol):
+    x: ndarray
+    y: ndarray
+
+
+def _is_temporal_field(field_value: Any) -> bool:
+    return isinstance(field_value, dict) and {'lower', 'upper', 'weight'}.issubset(field_value)
+
+
+def _is_temporal_flow_field(flow_field: Dict) -> bool:
+    return _is_temporal_field(flow_field) and isinstance(flow_field.get('lower'), dict)
 
 
 @dataclass
@@ -270,6 +281,7 @@ class TransectStrategy(SeedingStrategy):
 
         return seed_locations
 
+
 class FilePointsStrategy(SeedingStrategy):
     """
     Seeding strategy to read (x, y) locations from a file.
@@ -288,6 +300,7 @@ class FilePointsStrategy(SeedingStrategy):
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
         import os
+
         import pandas as pd
 
         settings = getattr(config, 'strategy_settings', {})
@@ -333,11 +346,7 @@ class FilePointsStrategy(SeedingStrategy):
 
         # --- Read file, auto-delimiter handling via pandas (engine="python" allows sep=None sniffing)
         try:
-            df = pd.read_csv(
-                path,
-                sep=None, engine="python",
-                header=0 if has_header else None
-            )
+            df = pd.read_csv(path, sep=None, engine='python', header=0 if has_header else None)
         except Exception:
             # Fallback: whitespace-delimited
             df = pd.read_csv(path, delim_whitespace=True, header=0 if has_header else None)
@@ -348,6 +357,7 @@ class FilePointsStrategy(SeedingStrategy):
                 # Convert positional index to actual column name
                 return df.columns[col]
             return col  # assume str
+
         x_name = _resolve_col(x_col, df)
         y_name = _resolve_col(y_col, df)
 
@@ -374,8 +384,11 @@ class FilePointsStrategy(SeedingStrategy):
             raise ValueError('No valid (x, y) points found after filtering.')
 
         # Build seed locations
-        seed_locations = [(quantity, float(x), float(y)) for x, y in zip(df['x'].to_numpy(), df['y'].to_numpy(), strict=True)]
+        seed_locations = [
+            (quantity, float(x), float(y)) for x, y in zip(df['x'].to_numpy(), df['y'].to_numpy(), strict=True)
+        ]
         return seed_locations
+
 
 class ParticleFactory:
     @staticmethod
@@ -413,16 +426,6 @@ class ParticleFactory:
         if strategy_name.lower() not in STRATEGY_MAP:
             raise ValueError(f'Unknown seeding strategy: {strategy_name}')
         StrategyClass = STRATEGY_MAP[strategy_name.lower()]
-        from sedtrails.particle_tracer.particle import Mud, Passive, Sand
-
-        PARTICLE_MAP = {'sand': Sand, 'mud': Mud, 'passive': Passive}
-        STRATEGY_MAP = {
-            'point': PointStrategy(),
-            'random': RandomStrategy(),
-            'grid': GridStrategy(),
-            'transect': TransectStrategy(),
-            'file_points': FilePointsStrategy(),
-        }
 
         # computes seeding positions using the strategy in config
         burial_depth = getattr(config, 'burial_depth', None)
@@ -457,34 +460,47 @@ class ParticlePopulation:
         Configuration for the particle population, including seeding strategy and parameters.
     particles : Dict
         A dictionary containing particle attributes such as positions and status.
-    _field_interpolator : Dict
-        A dictionary containing Numba functions for interpolating field data.
-    _position_calculator : Dict
-        A dictionary containing Numba functions for calculating particle positions.
+    _field_interpolator : Any
+        Bound method for interpolating one nodal field to particle positions.
+    _field_interpolator_multi : Any
+        Bound method for interpolating multiple nodal fields with one point-location pass.
+    _position_calculator_with_simplex : Any
+        Bound method for advancing particles while reusing cached simplex ids.
+    _position_calculator_temporal_with_simplex : Any
+        Bound method for temporal particle updates while reusing cached simplex ids.
+    _particle_simplices : ndarray
+        Cached containing-triangle ids for each particle, used to avoid global point location on every update.
     _current_time : ndarray
         The current time in the simulation, used for updating particle positions.
     _field_mixing_depth : ndarray
-        The mixing depth of the flow field, used to determine particle behavior.
+        The mixing depth of the flow field, reserved for later particle-behavior logic.
     _field_transport_probability : ndarray
-        The probability of particle transport in the flow field, used to determine if particles are picked up.
+        The probability of particle transport in the flow field, reserved for later pickup logic.
     """
 
     field_x: ndarray
     field_y: ndarray
     population_config: PopulationConfig
+    grid_geometry: Any = None
     particles: Dict = field(init=False, default_factory=dict)  # a dictionary with arrays
-    _field_interpolator: Any = field(init=False)  # holds a Numba function
-    _position_calculator: Any = field(init=False)  # holds a Numba function
+    _field_interpolator: Any = field(init=False)
+    _field_interpolator_multi: Any = field(init=False)
+    _position_calculator_with_simplex: Any = field(init=False)
+    _position_calculator_temporal_with_simplex: Any = field(init=False)
+    _particle_simplices: ndarray = field(init=False)
     _current_time: float = field(init=False)
-    _field_mixing_depth: ndarray = field(init=False)  # TODO: we're not using this field yet
-    _field_transport_probability: ndarray = field(init=False)  # TODO: we're not using this field yet
+    _field_mixing_depth: ndarray = field(init=False)  # TODO: reserved for later particle-behavior logic
+    _field_transport_probability: ndarray = field(init=False)  # TODO: reserved for later pickup logic
 
     def __post_init__(self):
-        # Create a Numba calculator for particle operations
-        numba_functions = create_numba_particle_calculator(grid_x=self.field_x, grid_y=self.field_y)
+        if self.grid_geometry is None:
+            self.grid_geometry = create_grid_geometry(self.field_x, self.field_y)
 
-        self._field_interpolator = numba_functions['interpolate_field']
-        self._position_calculator = numba_functions['update_particles']
+        # Reuse methods bound to the shared grid geometry.
+        self._field_interpolator = self.grid_geometry.interpolate_field
+        self._field_interpolator_multi = self.grid_geometry.interpolate_fields
+        self._position_calculator_with_simplex = self.grid_geometry.update_particles_with_simplex
+        self._position_calculator_temporal_with_simplex = self.grid_geometry.update_particles_temporal_with_simplex
 
         # generate particles based on the configuration
         _particles = ParticleFactory.create_particles(self.population_config)
@@ -494,14 +510,13 @@ class ParticlePopulation:
             'release_time': np.array([p.release_time for p in _particles]),
             'burial_depth': np.array([p.burial_depth for p in _particles]),
         }
+        self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
 
-        # store the outer envelope of the domain
-        coords = np.column_stack((self.field_x, self.field_y))
-        hull = ConvexHull(coords)
-        self._outer_envelope = Path(coords[hull.vertices])
+        # Store the outer envelope of the domain using shared grid geometry.
+        self._outer_envelope = Path(self.grid_geometry.outer_envelope)
 
     def update_information(
-        self, current_time: Union[int, float], mixing_depth: ndarray, transport_probability: ndarray, bed_level: ndarray
+        self, current_time: Union[int, float], mixing_depth: Any, transport_probability: Any, bed_level: Any
     ) -> None:
         """
         Updates field data information for particles in the population.
@@ -520,19 +535,51 @@ class ParticlePopulation:
 
         self._current_time = current_time
 
-        if not np.isnan(mixing_depth).all():
-            self.particles['mixing_depth'] = self._field_interpolator(
-                mixing_depth, self.particles['x'], self.particles['y']
-            )
+        self._update_particle_field('mixing_depth', mixing_depth)
+        self._update_particle_field('transport_probability', transport_probability)
+        self._update_particle_field('bed_level', bed_level)
 
-        if not np.isnan(transport_probability).all():
-            """values between 0 and 1"""
-            self.particles['transport_probability'] = self._field_interpolator(
-                transport_probability, self.particles['x'], self.particles['y']
-            )
+    def _update_particle_field(self, name: str, field_value) -> None:
+        if field_value is None:
+            return
 
-        if not np.isnan(bed_level).all():
-            self.particles['bed_level'] = self._field_interpolator(bed_level, self.particles['x'], self.particles['y'])
+        if _is_temporal_field(field_value):
+            lower_values = np.asarray(field_value['lower'])
+            upper_values = np.asarray(field_value['upper'])
+            if lower_values.size == 0:
+                return
+
+            weight = field_value['weight']
+            if weight <= 0.0 or lower_values is upper_values:
+                lower_particle_values = self._field_interpolator(lower_values, self.particles['x'], self.particles['y'])
+                if np.isnan(lower_particle_values).all():
+                    return
+                self.particles[name] = lower_particle_values
+                return
+
+            lower_particle_values, upper_particle_values = self._field_interpolator_multi(
+                (lower_values, upper_values),
+                self.particles['x'],
+                self.particles['y'],
+            )
+            if np.isnan(lower_particle_values).all() and np.isnan(upper_particle_values).all():
+                return
+            self.particles[name] = lower_particle_values + weight * (upper_particle_values - lower_particle_values)
+            return
+
+        if np.isscalar(field_value):
+            self.particles[name] = np.full(len(self.particles['x']), field_value, dtype=float)
+            return
+
+        field_array = np.asarray(field_value)
+        if field_array.size == 0:
+            return
+
+        particle_values = self._field_interpolator(field_array, self.particles['x'], self.particles['y'])
+        if np.isnan(particle_values).all():
+            return
+
+        self.particles[name] = particle_values
 
     def update_burial_depth(self) -> None:
         """Updates the burial depth of particles in the population.
@@ -566,18 +613,18 @@ class ParticlePopulation:
         self.particles['is_inside'] = self._outer_envelope.contains_points(
             np.column_stack((self.particles['x'], self.particles['y']))
         )
-                
+
         # New conditional logic based on transport_probability_method
         if self.population_config.population_config['transport_probability'] == 'no_probability':
             # For no_probability method, all particles are considered exposed (always mobile)
             self.particles['is_exposed'] = np.ones(n_particles, dtype=bool)
         else:
             # For stochastic_transport and reduced_velocity methods, use burial_depth vs mixing_depth
-            
+
             # if van westen method:
             # a particle is considered exposed if it is buried at a shallower depth compared to the mixing depth
             self.particles['is_exposed'] = self.particles['burial_depth'] < self.particles['mixing_depth']
-            
+
             # if soulsby method:
             # self.particles['is_exposed'] = (this is where we implement Soulsby's F based on a and b)
 
@@ -612,26 +659,37 @@ class ParticlePopulation:
         """
 
         ix = self.particles['is_mobile']  # Get indices of mobile particles
+        particle_indices = np.flatnonzero(ix)
+        if particle_indices.size == 0:
+            return
 
-        n_particles = len(self.particles['x'])
-        dx = np.zeros(n_particles)
-        dy = np.zeros(n_particles)
-
-        new_x, new_y = self._position_calculator(
-            self.particles['x'][ix],
-            self.particles['y'][ix],
-            flow_field['u'],
-            flow_field['v'],
-            current_timestep,
-        )
-
-        dx[ix] = new_x - self.particles['x'][ix]  # TODO: this should be stored in the netcdf, as part of the flow field
-        dy[ix] = new_y - self.particles['y'][ix]
+        if _is_temporal_flow_field(flow_field):
+            new_x, new_y, new_simplices = self._position_calculator_temporal_with_simplex(
+                self.particles['x'][ix],
+                self.particles['y'][ix],
+                flow_field['lower']['u'],
+                flow_field['lower']['v'],
+                flow_field['upper']['u'],
+                flow_field['upper']['v'],
+                flow_field['weight'],
+                current_timestep,
+                simplex_ids=self._particle_simplices[particle_indices],
+            )
+        else:
+            new_x, new_y, new_simplices = self._position_calculator_with_simplex(
+                self.particles['x'][ix],
+                self.particles['y'][ix],
+                flow_field['u'],
+                flow_field['v'],
+                current_timestep,
+                simplex_ids=self._particle_simplices[particle_indices],
+            )
 
         # TODO: implement Bart's solution for gross/net values here. Add
 
         self.particles['x'][ix] = new_x
         self.particles['y'][ix] = new_y
+        self._particle_simplices[particle_indices] = new_simplices
 
 
 class ParticleSeeder:
@@ -653,14 +711,14 @@ class ParticleSeeder:
     def __init__(self, population_configs: List[Dict[str, Any]] | Dict[str, Any]):
         self.population_configs = population_configs
 
-    def seed(self, sedtrails_data: SedtrailsData) -> List[ParticlePopulation]:
+    def seed(self, sedtrails_data: HasFieldCoordinates) -> List[ParticlePopulation]:
         """
         Create particles from a list of population configuration dictionaries.
 
         Parameters
         ----------
-         sedtrails_data : SedtrailsData
-            The SedtrailsData object containing the field data (x, y coordinates).
+         sedtrails_data : HasFieldCoordinates
+            Any object exposing `x` and `y` field coordinate arrays.
 
         Returns
         -------
@@ -678,9 +736,15 @@ class ParticleSeeder:
             raise ValueError('No population configurations provided for seeding.')
 
         populations = []
+        grid_geometry = create_grid_geometry(sedtrails_data.x, sedtrails_data.y)
         for pop_config in self.population_configs:
             config = PopulationConfig(population_config=pop_config)
-            pop = ParticlePopulation(field_x=sedtrails_data.x, field_y=sedtrails_data.y, population_config=config)
+            pop = ParticlePopulation(
+                field_x=sedtrails_data.x,
+                field_y=sedtrails_data.y,
+                population_config=config,
+                grid_geometry=grid_geometry,
+            )
             populations.append(pop)
         return populations
 

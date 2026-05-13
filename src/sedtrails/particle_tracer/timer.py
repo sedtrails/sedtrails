@@ -2,9 +2,10 @@
 Time related classes used internally to represent simulation time.
 """
 
-from dataclasses import dataclass, field
-import numpy as np
 import re
+from dataclasses import dataclass, field
+
+import numpy as np
 
 from sedtrails.exceptions.exceptions import DateFormatError, DurationFormatError, ZeroDuration
 
@@ -62,9 +63,20 @@ def convert_datetime_string_to_datetime64(datetime_str: str) -> np.datetime64:
     DateFormatError
         If the input string does not match the required format.
     """
+    datetime_str = str(datetime_str)
     if not re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', datetime_str):
         raise DateFormatError(f"date string '{datetime_str}' does not match required format 'YYYY-MM-DD hh:mm:ss'")
     return np.datetime64(datetime_str, 's')
+
+
+def convert_reference_date_to_datetime64(reference_date: str) -> np.datetime64:
+    """
+    Convert a reference date to numpy.datetime64, accepting date-only strings as midnight.
+    """
+    reference_date = str(reference_date)
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', reference_date):
+        reference_date = f'{reference_date} 00:00:00'
+    return convert_datetime_string_to_datetime64(reference_date)
 
 
 class Duration:
@@ -200,7 +212,7 @@ class Time:
     def start(self) -> int:
         """Returns the simulation start time as an integer representing seconds since the reference date."""
         start_datetime = convert_datetime_string_to_datetime64(self._start)
-        reference_datetime = convert_datetime_string_to_datetime64(self.reference_date)
+        reference_datetime = convert_reference_date_to_datetime64(self.reference_date)
         # Calculate the difference in seconds
         delta_seconds = (start_datetime - reference_datetime).astype('timedelta64[s]').astype(int)
         return delta_seconds
@@ -405,15 +417,28 @@ class Timer:
             for flow_data in flow_data_list:
                 magnitude = flow_data['magnitude']
 
-                # Handle NaNs by setting them to 0
-                magnitude_clean = np.nan_to_num(magnitude, nan=0.0)
-                max_velocity = max(max_velocity, np.max(magnitude_clean))
-                max_velocity = max(max_velocity, 1e-12)
+                if np.isnan(magnitude).all():
+                    continue
+
+                max_velocity = max(max_velocity, np.nanmax(magnitude))
+
+            max_velocity = max(max_velocity, 1e-12)
 
             min_resolution = sedtrails_data.metadata.min_resolution
+            self.compute_cfl_timestep_from_max_velocity(max_velocity, min_resolution, sedtrails_data.metadata.timestep)
+
+    def compute_cfl_timestep_from_max_velocity(
+        self, max_velocity: float, min_resolution: float | None, data_timestep: float | None
+    ) -> None:
+        """Compute CFL timestep from a precomputed maximum velocity."""
+        if self.cfl_condition > 0:
+            if min_resolution is None or min_resolution <= 0:
+                return
+            max_velocity = max(max_velocity, 1e-4)
             cfl_timestep = self.cfl_condition * min_resolution / max_velocity
 
-            # Ensure CFL timestep doesn't exceed sedtrails data timestep
-            cfl_timestep = min(cfl_timestep, sedtrails_data.metadata.timestep)
+            # Ensure CFL timestep doesn't exceed sedtrails data timestep when valid
+            if data_timestep is not None and data_timestep > 0:
+                cfl_timestep = min(cfl_timestep, data_timestep)
 
             self.set_timestep(cfl_timestep)

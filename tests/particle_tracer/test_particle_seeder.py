@@ -1110,3 +1110,66 @@ class TestParticlePopulation:
         assert population is not None
         assert len(population.particles['x']) == 10  # 2 nlocations * 5 quantity
         assert len(population.particles['y']) == 10  # 2 nlocations * 5 quantity
+
+    def test_update_information_accepts_scalar_transport_probability(self, point_config_simple):
+        """Scalar fields should update particles without allocating full grid fields."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=point_config_simple,
+        )
+        bed_level = np.array([0.0, 1.0, 2.0, 1.0])
+
+        population.update_information(
+            current_time=0.0,
+            mixing_depth=None,
+            transport_probability=1.0,
+            bed_level=bed_level,
+        )
+
+        np.testing.assert_allclose(population.particles['transport_probability'], 1.0)
+        np.testing.assert_allclose(population.particles['bed_level'], 0.0)
+        assert 'mixing_depth' not in population.particles
+
+    def test_update_information_accepts_temporal_scalar_bounds(self, point_config_simple):
+        """Temporal scalar bounds should match preblended-grid interpolation."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=point_config_simple,
+        )
+        lower = np.array([0.0, 1.0, 2.0, 1.0])
+        upper = np.array([2.0, 3.0, 4.0, 3.0])
+
+        population.update_information(
+            current_time=0.0,
+            mixing_depth=None,
+            transport_probability=1.0,
+            bed_level={'lower': lower, 'upper': upper, 'weight': 0.25},
+        )
+
+        np.testing.assert_allclose(population.particles['bed_level'], 0.5)
+
+    def test_update_position_carries_cached_simplex_ids(self, point_config_simple):
+        """Position updates should reuse and refresh particle simplex ids."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=point_config_simple,
+        )
+        old_simplices = population._particle_simplices.copy()
+        population.particles['is_mobile'] = np.ones(len(population.particles['x']), dtype=bool)
+
+        population.update_position(
+            flow_field={'u': np.ones(4), 'v': np.zeros(4)},
+            current_timestep=0.1,
+        )
+
+        np.testing.assert_allclose(population.particles['x'], [0.1])
+        np.testing.assert_allclose(population.particles['y'], [0.0])
+        expected_simplices = population.grid_geometry.locate_points(
+            population.particles['x'],
+            population.particles['y'],
+            old_simplices,
+        )
+        np.testing.assert_array_equal(population._particle_simplices, expected_simplices)

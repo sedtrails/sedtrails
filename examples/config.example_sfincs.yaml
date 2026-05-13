@@ -1,0 +1,40 @@
+general:
+  input_model: 
+    format: sfincs
+    reference_date: 2024-05-01  # Default reference date for the input model
+    morfac: 1  # Morphological acceleration factor for time decompression
+inputs:
+  data: ./sample-data/sfincs_map.nc
+  read_interval: 30M  # Time chunk size for reading input data
+time:
+  start:  2024-05-01 00:00:00
+  timestep: 60S
+  duration: 6H
+  cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
+particles:
+  populations:
+    - name: FineSand
+      particle_type: passive
+      tracer_methods: 
+         passive_tracer:
+            flow_field_name: ["depth_avg_flow_velocity"]
+      characteristics:
+        diffusion_coefficient: 0.0
+      transport_probability: no_probability  # Options: no_probability, stochastic_transport, reduced_velocity
+      seeding:
+        release_start: 2024-05-01 00:00:00
+        burial_depth: 
+           constant: 0.0
+        quantity: 1
+        strategy:
+           point: 
+             locations: 
+                - "3.0870e+05,5.8620e+04"
+outputs:
+  #directory: .\results
+  store_tracks: true
+  save_interval: 30S
+visualization:
+  dashboard:
+    enable: true
+    update_interval: 1200S

@@ -1,11 +1,12 @@
+import json
+from importlib.resources import files
+from pathlib import Path
+from typing import Any, Dict, Optional
+
 import jsonschema
 import yaml
-import json
-from typing import Any, Dict, Optional
-from sedtrails.exceptions import YamlParsingError, YamlOutputError, YamlValidationError
-from pathlib import Path
-from importlib.resources import files
 
+from sedtrails.exceptions import YamlOutputError, YamlParsingError, YamlValidationError
 
 # Schema file names (will be resolved using importlib.resources or pkg_resources)
 ROOT_SCHEMA = 'main.schema.json'
@@ -20,7 +21,7 @@ class SedtrailsYamlLoader(yaml.SafeLoader):
     """
     Custom YAML loader that avoids converting datetime strings to datetime objects.
     A custom YAML loader is necessary because default loader always converts datetime strings to datetime objects
-    We want to keey datetime as strings, for convenience convertions are handled internally
+    We want to keep datetime as strings, for convenience conversions are handled internally
     by the SedTRAILS configuration interface"""
 
     pass

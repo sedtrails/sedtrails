@@ -153,7 +153,7 @@ def collect_timestep_data(ds, populations, timestep, current_time):
             'status_released', np.ones(num_particles, dtype=int)
         )
         ds['status_mobile'][particle_slice, timestep] = population.particles.get(
-            'status_mobile', np.zeros(num_particles, dtype=int)
+            'is_mobile', population.particles.get('status_mobile', np.zeros(num_particles, dtype=int))
         )
 
         particle_offset += num_particles

@@ -2,6 +2,8 @@
 Unit tests for the Timer class in the timer.py module of the sedtrails package.
 """
 
+import datetime as dt
+
 import pytest
 import numpy as np
 from sedtrails.particle_tracer.timer import Duration, Timer, Time
@@ -227,6 +229,31 @@ class TestTimer:
         with pytest.raises(RuntimeWarning):
             timer.advance()
 
+    def test_compute_cfl_timestep_skips_all_nan_flow_fields(self):
+        """All-NaN velocity fields should not require a full nan_to_num grid copy."""
+
+        class Metadata:
+            min_resolution = 2.0
+            timestep = 10.0
+
+        class SedtrailsData:
+            metadata = Metadata()
+
+        time = Time(_start='2023-01-01 12:00:00', time_step=Duration('1H'))
+        timer = Timer(simulation_time=time, cfl_condition=0.5)
+
+        timer.compute_cfl_timestep([{'magnitude': np.array([np.nan, np.nan])}], SedtrailsData())
+
+        assert timer.current_timestep == 10.0
+
+    def test_compute_cfl_timestep_from_precomputed_max_velocity(self):
+        time = Time(_start='2023-01-01 12:00:00', time_step=Duration('1H'))
+        timer = Timer(simulation_time=time, cfl_condition=0.5)
+
+        timer.compute_cfl_timestep_from_max_velocity(max_velocity=2.0, min_resolution=4.0, data_timestep=10.0)
+
+        assert timer.current_timestep == 1.0
+
 
 class TestTime:
     """Test cases for the Time class."""
@@ -250,6 +277,18 @@ class TestTime:
         time = Time(_start='2023-01-01 12:00:00', reference_date='2023-01-01 00:00:00')
         # 12 hours = 12 * 3600 = 43200 seconds
         assert time.start == 43200
+
+    def test_start_property_accepts_date_only_reference(self):
+        """Date-only reference dates should mean midnight of that date."""
+        time = Time(_start='2024-05-01 00:00:00', reference_date='2024-05-01')
+
+        assert time.start == 0
+
+    def test_start_property_accepts_datetime_like_config_values(self):
+        """YAML loaders may return datetime/date objects instead of strings."""
+        time = Time(_start=dt.datetime(2024, 5, 1), reference_date=dt.date(2024, 5, 1))
+
+        assert time.start == 0
 
     def test_end_property(self):
         """Test end property calculation."""

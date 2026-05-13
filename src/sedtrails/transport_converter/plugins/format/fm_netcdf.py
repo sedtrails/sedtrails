@@ -1,13 +1,15 @@
 """A plugin for converting Delft3D Flexible Mesh NetCDF to SedTRAILS format."""
 
-import xugrid as xu
-import xarray as xr
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
 import numpy as np
+import xarray as xr
+import xugrid as xu
+
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
-from pathlib import Path
-from typing import Dict, Any, List, Union, Optional
 
 
 class FormatPlugin(BaseFormatPlugin):
@@ -93,7 +95,9 @@ class FormatPlugin(BaseFormatPlugin):
 
         return decompressed_info
 
-    def convert(self, current_time=None, reading_interval=None) -> SedtrailsData:
+    def convert(
+        self, current_time=None, reading_interval=None, reference_date: Optional[np.datetime64] = None
+    ) -> SedtrailsData:
         """
         Delft3D from Flexible Mesh NetCDF.
 
@@ -110,9 +114,12 @@ class FormatPlugin(BaseFormatPlugin):
             The converted SedtrailsData object.
         """
 
+        if reference_date is None:
+            reference_date = np.datetime64('1970-01-01T00:00:00')
+
         # Read the NetCDF file
         self.load()
-        time_info = self._get_time_info(self.input_data, reference_date=np.datetime64('1970-01-01T00:00:00'))
+        time_info = self._get_time_info(self.input_data, reference_date=reference_date)
 
         # Apply morfac decompression to time before time slicing
         time_info = self._decompress_time(time_info)
@@ -204,6 +211,17 @@ class FormatPlugin(BaseFormatPlugin):
 
         return sedtrails_data
 
+    def get_seeding_coordinates(self):
+        """
+        Return only the spatial coordinates required for particle seeding.
+        """
+        self.load()
+
+        if 'net_xcc' not in self.input_data or 'net_ycc' not in self.input_data:
+            raise KeyError("Required variables 'net_xcc' and/or 'net_ycc' not found in dataset")
+
+        return self.input_data['net_xcc'].values, self.input_data['net_ycc'].values
+
     def _calculate_time_slice(self, current_time, reading_interval, time_info):
         """Calculate time slice indices based on current time and reading interval."""
 
@@ -248,7 +266,7 @@ class FormatPlugin(BaseFormatPlugin):
                     raise IOError(f'Failed to open NetCDF file: {e}') from e
 
                 else:
-                    print(f'Sucessfully loaded (Xarray): {self.input_file}')
+                    print(f'Successfully loaded (Xarray): {self.input_file}')
             else:
                 print('Successfully loaded (Xugrid)', self.input_file)
 

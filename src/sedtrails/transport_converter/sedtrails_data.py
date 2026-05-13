@@ -1,9 +1,10 @@
-import numpy as np
-from typing import Dict
-from dataclasses import dataclass
 import warnings
-from scipy.spatial.distance import pdist
-from scipy.spatial import ConvexHull
+from dataclasses import dataclass
+from typing import Any, Dict
+
+import numpy as np
+from scipy.spatial import ConvexHull, cKDTree
+
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 
 
@@ -17,7 +18,7 @@ class SedtrailsData:
 
     Attributes:
     -----------
-    
+
     times: np.ndarray
         Array of time values in seconds since reference_date
     reference_date: np.datetime64
@@ -90,10 +91,15 @@ class SedtrailsData:
     sediment_concentration: np.ndarray
     nonlinear_wave_velocity: Dict[str, np.ndarray]
     metadata: SedtrailsMetadata
+    node_x: np.ndarray | None = None
+    node_y: np.ndarray | None = None
+    face_node_connectivity: np.ndarray | None = None
+    face_node_fill_value: int = -1
 
     def __post_init__(self):
         """Initialize container for dynamic physics fields and validate metadata."""
-        
+
+        self._normalize_optional_mesh_geometry()
         # Validate metadata field
         self._validate_metadata()
         # TODO: do we also need to check that min max values are sensible? i.e. min <= max
@@ -101,9 +107,32 @@ class SedtrailsData:
         self._compute_grid_metadata()
         self._physics_fields: Dict[str, np.ndarray | Dict[str, np.ndarray]] = {}
 
+    def _normalize_optional_mesh_geometry(self) -> None:
+        """Normalize optional UGRID-style mesh geometry for dashboard consumers."""
+        if self.node_x is not None:
+            self.node_x = np.asarray(self.node_x)
+        if self.node_y is not None:
+            self.node_y = np.asarray(self.node_y)
+        if self.face_node_connectivity is not None:
+            self.face_node_connectivity = np.asarray(self.face_node_connectivity, dtype=np.int64)
+
+    def mesh_geometry(self) -> Dict[str, Any] | None:
+        """Return optional face-node mesh geometry for visualization code."""
+        if self.node_x is None or self.node_y is None or self.face_node_connectivity is None:
+            return None
+
+        return {
+            'x': self.x,
+            'y': self.y,
+            'node_x': self.node_x,
+            'node_y': self.node_y,
+            'face_node_connectivity': self.face_node_connectivity,
+            'face_node_fill_value': self.face_node_fill_value,
+        }
+
     def _calculate_timestep(self):
         """Calculate median timestep and add to metadata."""
-        
+
         if len(self.times) < 2:
             # Cannot calculate timestep with fewer than 2 time points
             timestep = None
@@ -136,17 +165,48 @@ class SedtrailsData:
         - min_resolution: minimum distance between any two grid points
         - outer_envelope: convex hull vertices of the grid points
         """
-        
+
         # Stack coordinates for distance calculations
         coords = np.column_stack((self.x.flatten(), self.y.flatten()))
 
-        # Compute minimum resolution (minimum distance between any two points)
-        distances = pdist(coords)
-        min_resolution = float(np.min(distances))
+        # Remove invalid points (e.g., NaNs from mesh construction)
+        valid_mask = np.isfinite(coords).all(axis=1)
+        coords = coords[valid_mask]
 
-        # Compute outer envelope using convex hull
-        hull = ConvexHull(coords)
-        outer_envelope = coords[hull.vertices].tolist()  # Convert to list for JSON serialization
+        if coords.shape[0] < 2:
+            self.metadata.add('min_resolution', None)
+            self.metadata.add('outer_envelope', [])
+            return
+
+        # Drop duplicate points: repeated coordinates are not additional spatial resolution.
+        unique_coords = np.unique(coords, axis=0)
+        if unique_coords.shape[0] < 2:
+            self.metadata.add('min_resolution', None)
+            self.metadata.add('outer_envelope', [])
+            return
+
+        # Compute minimum resolution using nearest-neighbor search on unique points.
+        tree = cKDTree(unique_coords)
+        distances, _ = tree.query(unique_coords, k=2)
+        nearest_distances = distances[:, 1]
+        positive_distances = nearest_distances[nearest_distances > 0.0]
+
+        if positive_distances.size == 0:
+            min_resolution = None
+        else:
+            min_resolution = float(np.min(positive_distances))
+
+        # Compute outer envelope using convex hull; fallback to bbox on failure
+        try:
+            hull = ConvexHull(unique_coords)
+            outer_envelope = unique_coords[hull.vertices].tolist()
+        except Exception as e:
+            warnings.warn(f'Convex hull failed ({e}); using bounding box instead.', stacklevel=1)
+            min_x = float(np.min(unique_coords[:, 0]))
+            max_x = float(np.max(unique_coords[:, 0]))
+            min_y = float(np.min(unique_coords[:, 1]))
+            max_y = float(np.max(unique_coords[:, 1]))
+            outer_envelope = [[min_x, min_y], [min_x, max_y], [max_x, max_y], [max_x, min_y]]
 
         # Add to metadata
         self.metadata.add('min_resolution', min_resolution)
@@ -154,7 +214,7 @@ class SedtrailsData:
 
     def _validate_metadata(self):
         """Validate that metadata field exists and is the correct type."""
-        
+
         # Only check that metadata is the right type
         if not isinstance(self.metadata, SedtrailsMetadata):
             raise TypeError(f'metadata must be an instance of SedtrailsMetadata, got {type(self.metadata).__name__}')
@@ -165,29 +225,29 @@ class SedtrailsData:
 
         Parameters
         ----------
-        
+
         name : str
             Name of the physics field
         data : np.ndarray or dict
             Physics data (scalar array or dict with 'x', 'y', 'magnitude' for vectors)
         """
-        
+
         self._physics_fields[name] = data
         setattr(self, name, data)
 
     def has_physics_field(self, name: str) -> bool:
         """Check if a specific physics field exists."""
-        
+
         return name in self._physics_fields
 
     def get_physics_fields(self) -> list:
         """Get list of available physics field names."""
-        
+
         return list(self._physics_fields.keys())
 
     def has_physics_data(self) -> bool:
         """Check if any physics fields have been added."""
-        
+
         return len(self._physics_fields) > 0
 
     # ------------------------------------------------------------------
@@ -199,21 +259,21 @@ class SedtrailsData:
 
         Parameters
         ----------
-        
+
         time_index : int
             Time index to extract
 
         Returns
         -------
-        
+
         Dict
             Dictionary containing all data for the specified time index
         """
-        
+
         if time_index < 0 or time_index >= len(self.times):
             raise IndexError(f'Time index {time_index} out of bounds (0-{len(self.times) - 1})')
 
-        # Core fields
+        # Core fields (only include optional fields when present)
         data = {
             'time': self.times[time_index],
             'reference_date': self.reference_date,
@@ -221,31 +281,47 @@ class SedtrailsData:
             'y': self.y,
             'bed_level': self.bed_level,  # typically time-independent
             'fractions': self.fractions,
-            'water_depth': self.water_depth[time_index],
-            'mean_bed_shear_stress': self.mean_bed_shear_stress[time_index],
-            'max_bed_shear_stress': self.max_bed_shear_stress[time_index],
-            'sediment_concentration': self.sediment_concentration[time_index],
-            'depth_avg_flow_velocity': {
+        }
+
+        if self.water_depth is not None:
+            data['water_depth'] = self.water_depth[time_index]
+
+        if self.mean_bed_shear_stress is not None:
+            data['mean_bed_shear_stress'] = self.mean_bed_shear_stress[time_index]
+
+        if self.max_bed_shear_stress is not None:
+            data['max_bed_shear_stress'] = self.max_bed_shear_stress[time_index]
+
+        if self.sediment_concentration is not None:
+            data['sediment_concentration'] = self.sediment_concentration[time_index]
+
+        if self.depth_avg_flow_velocity is not None:
+            data['depth_avg_flow_velocity'] = {
                 'x': self.depth_avg_flow_velocity['x'][time_index],
                 'y': self.depth_avg_flow_velocity['y'][time_index],
                 'magnitude': self.depth_avg_flow_velocity['magnitude'][time_index],
-            },
-            'bed_load_transport': {
+            }
+
+        if self.bed_load_transport is not None:
+            data['bed_load_transport'] = {
                 'x': self.bed_load_transport['x'][time_index],
                 'y': self.bed_load_transport['y'][time_index],
                 'magnitude': self.bed_load_transport['magnitude'][time_index],
-            },
-            'suspended_transport': {
+            }
+
+        if self.suspended_transport is not None:
+            data['suspended_transport'] = {
                 'x': self.suspended_transport['x'][time_index],
                 'y': self.suspended_transport['y'][time_index],
                 'magnitude': self.suspended_transport['magnitude'][time_index],
-            },
-            'nonlinear_wave_velocity': {
+            }
+
+        if self.nonlinear_wave_velocity is not None:
+            data['nonlinear_wave_velocity'] = {
                 'x': self.nonlinear_wave_velocity['x'][time_index],
                 'y': self.nonlinear_wave_velocity['y'][time_index],
                 'magnitude': self.nonlinear_wave_velocity['magnitude'][time_index],
-            },
-        }
+            }
 
         # Dynamic physics fields
         for name, value in self._physics_fields.items():

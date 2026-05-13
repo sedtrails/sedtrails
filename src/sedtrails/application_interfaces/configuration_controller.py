@@ -7,9 +7,10 @@ and provides configurations to other components.
 """
 
 from abc import ABC, abstractmethod
-from sedtrails.application_interfaces.validator import YAMLConfigValidator
+from typing import Any, Dict
+
 from sedtrails.application_interfaces.find import find_value
-from typing import Dict, Any
+from sedtrails.application_interfaces.validator import YAMLConfigValidator
 
 
 class Controller(ABC):
@@ -18,7 +19,7 @@ class Controller(ABC):
     """
 
     # TODO: Something to keep in mind in this class:
-    # if we can and it is convenient to have separted methods to retrieve parts of the configuration
+    # if we can and it is convenient to have separated methods to retrieve parts of the configuration
     # that go to the particle tracer and the transport converter. For example, if it is convenient to
     # have a method that returns the configuration values that are only relevant for the particle tracer.
 
@@ -27,7 +28,7 @@ class Controller(ABC):
         """
         Reads the configuration file and applies default values.
         """
-        
+
         pass
 
     @abstractmethod
@@ -35,7 +36,7 @@ class Controller(ABC):
         """
         Returns the current configuration.
         """
-        
+
         pass
 
     @abstractmethod
@@ -53,7 +54,7 @@ class ConfigurationController(Controller):
 
     Attributes
     ----------
-    
+
     config : str
         The path to the configuration file.
     config_data : dict
@@ -65,11 +66,11 @@ class ConfigurationController(Controller):
         Initializes the ConfigurationController with a configuration file.
         Parameters
         ----------
-        
+
         config_file : str
             The path to the configuration file to read.
         """
-        
+
         self.config: str = config_file
         self.config_data = {}
 
@@ -79,7 +80,7 @@ class ConfigurationController(Controller):
 
         Parameters
         ----------
-        
+
         config_file : str
             The path to the configuration file to read.
         """
@@ -99,11 +100,11 @@ class ConfigurationController(Controller):
 
         Returns
         -------
-        
+
         dict
             The current configuration.
         """
-        
+
         if not self.config_data:
             self.load_config(self.config)
 
@@ -115,7 +116,7 @@ class ConfigurationController(Controller):
 
         Parameters
         ----------
-        
+
         key : str
             The dot-separated key to retrieve from the configuration.
         default : any, optional
@@ -123,13 +124,13 @@ class ConfigurationController(Controller):
 
         Returns
         -------
-        
+
         any
             The value associated with the key or the default value. None if the key is not found.
 
         Example
         --------
-        
+
         >>> controller = ConfigurationController()
         >>> controller.read_config('path/to/config.yaml')
         >>> value = controller.get('some.nested.key')

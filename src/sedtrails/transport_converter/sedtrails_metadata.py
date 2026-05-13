@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping
 
+
 @dataclass
 class SedtrailsMetadata:
     """
@@ -15,25 +16,27 @@ class SedtrailsMetadata:
     flowfield_domain : dict
         Required dictionary containing:
         - x_min : float
-        - x_max : float  
+        - x_max : float
         - y_min : float
         - y_max : float
+    timestep : float
+        Timestep of the Sedtrails simulation
     """
-    
+
     flowfield_domain: Dict[str, float]
-    
-    REQUIRED_DOMAIN_KEYS = {"x_min", "x_max", "y_min", "y_max"}
-    RESERVED_KEYS = {"flowfield_domain"}
+
+    REQUIRED_DOMAIN_KEYS = {'x_min', 'x_max', 'y_min', 'y_max'}
+    RESERVED_KEYS = {'flowfield_domain'}
 
     def __post_init__(self):
         """Validate that flowfield_domain contains required keys."""
         if not isinstance(self.flowfield_domain, dict):
-            raise TypeError("flowfield_domain must be a dictionary")
-        
+            raise TypeError('flowfield_domain must be a dictionary')
+
         missing_keys = self.REQUIRED_DOMAIN_KEYS - set(self.flowfield_domain.keys())
         if missing_keys:
-            raise ValueError(f"flowfield_domain missing required keys: {missing_keys}")
-        
+            raise ValueError(f'flowfield_domain missing required keys: {missing_keys}')
+
         # Ensure all values are float
         for key in self.REQUIRED_DOMAIN_KEYS:
             self.flowfield_domain[key] = float(self.flowfield_domain[key])
@@ -51,7 +54,7 @@ class SedtrailsMetadata:
     def update(self, metadata_dict: Mapping[str, Any]):
         """Update metadata with a dictionary of key-value pairs."""
         for key, value in metadata_dict.items():
-            self.add(key, value) 
+            self.add(key, value)
 
     def get(self, key: str, default=None) -> Any:
         """Get metadata value by key."""
@@ -60,7 +63,7 @@ class SedtrailsMetadata:
     def to_dict(self) -> Dict[str, Any]:
         """
         Export all metadata as dictionary.
-        
+
         Returns
         -------
         dict
@@ -71,6 +74,7 @@ class SedtrailsMetadata:
             if not key.startswith('_'):  # Skip private attributes
                 result[key] = value
         return result
+
 
 # Example usage
 # 1. Create with flowfield_domain dictionary

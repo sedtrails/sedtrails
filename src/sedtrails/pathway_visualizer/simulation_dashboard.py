@@ -5,18 +5,40 @@ This module provides interactive dashboard capabilities for monitoring particle
 simulations with spatial and temporal visualizations.
 """
 
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap
-import matplotlib.dates as mdates
-from collections import defaultdict
-from pathlib import Path
 import datetime
-from typing import Dict, Tuple
+from collections import defaultdict
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, Tuple
+
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.colors import ListedColormap
+from matplotlib.path import Path as MplPath
+from scipy.spatial import ConvexHull, QhullError, cKDTree
+
+
+@dataclass
+class RasterInterpolationWeights:
+    """Cached mapping from dashboard raster pixels to source grid faces."""
+
+    geometry_key: tuple
+    shape: tuple[int, int]
+    extent: tuple[float, float, float, float]
+    face_indices: np.ndarray
+    weights: np.ndarray
+    valid_mask: np.ndarray
+    quiver_indices: np.ndarray
 
 
 class SimulationDashboard:
     """Real-time visualization dashboard for particle simulations."""
+
+    LARGE_GRID_POINT_LIMIT = 5_000
+    LARGE_GRID_QUIVER_LIMIT = 100
+    RASTER_MAX_SIDE = 700
+    RASTER_K_NEIGHBORS = 4
 
     def __init__(self, reference_date: str = '1970-01-01'):
         """Initialize the dashboard."""
@@ -29,6 +51,10 @@ class SimulationDashboard:
         self.plot_initialized = False
         self.last_update_time = 0
         self.keep_open = True  # Control for keeping window open after simulation
+        self._raster_weights: RasterInterpolationWeights | None = None
+        self._raster_images = {}
+        self._spatial_quivers = {}
+        self._particle_artists = []
 
         # Store reference date for time conversions
         self.reference_date = datetime.datetime.fromisoformat(reference_date)
@@ -73,6 +99,10 @@ class SimulationDashboard:
 
         # Force display and bring to front
         self._show_and_raise_window()
+
+    def should_update(self, current_time: float, plot_interval: float) -> bool:
+        """Return whether the dashboard should redraw for the given simulation time."""
+        return current_time - self.last_update_time >= plot_interval
 
     def _show_and_raise_window(self):
         """Show window and bring it to front (cross-platform)."""
@@ -255,11 +285,11 @@ class SimulationDashboard:
         plot_interval: float,
         simulation_start_time: float = 0,
         simulation_end_time: float | None = None,
+        mesh_geometry: Dict[str, Any] | None = None,
     ) -> None:
         """Update dashboard with current simulation data."""
 
-        # Check if we should update based on plot_interval
-        if current_time - self.last_update_time < plot_interval:
+        if not self.should_update(current_time, plot_interval):
             return
 
         # Store trajectory data at this plot_interval
@@ -277,8 +307,8 @@ class SimulationDashboard:
             particle_data_with_initial['y_initial'] = self.trajectories['y'][0]
 
         # Update all plots
-        self._update_flowfield_plot(flow_field, bathymetry)
-        self._update_bathymetry_plot(flow_field, bathymetry, particle_data_with_initial)
+        self._update_flowfield_plot(flow_field, bathymetry, mesh_geometry=mesh_geometry)
+        self._update_bathymetry_plot(flow_field, bathymetry, particle_data_with_initial, mesh_geometry=mesh_geometry)
         self._update_time_series_plots()
         self._update_progress_bar(current_time, simulation_start_time, simulation_end_time)
 
@@ -331,32 +361,328 @@ class SimulationDashboard:
         else:
             self.data_store['mixing_depth'].append(0.0)
 
-    def _update_flowfield_plot(self, flow_field: Dict[str, np.ndarray], bathymetry: np.ndarray) -> None:
+    @classmethod
+    def _is_large_grid(cls, n_points: int) -> bool:
+        """Return whether the spatial plot should use the sampled large-grid path."""
+        return n_points > cls.LARGE_GRID_POINT_LIMIT
+
+    @classmethod
+    def _sample_indices(cls, n_points: int, limit: int) -> slice | np.ndarray:
+        """Return deterministic point indices for large-grid plotting."""
+        if n_points <= limit:
+            return slice(None)
+        return np.linspace(0, n_points - 1, limit, dtype=np.intp)
+
+    @staticmethod
+    def _flatten(values: np.ndarray) -> np.ndarray:
+        """Flatten field data for plotting without copying when possible."""
+        return np.asarray(values).ravel()
+
+    def _geometry_key(self, x: np.ndarray, y: np.ndarray, mesh_geometry: Dict[str, Any] | None) -> tuple:
+        extent = self._spatial_extent(x, y, mesh_geometry)
+        if mesh_geometry is None:
+            return (x.size, extent, None, None, self.RASTER_MAX_SIDE, self.RASTER_K_NEIGHBORS)
+
+        node_x = mesh_geometry.get('node_x')
+        face_node_connectivity = mesh_geometry.get('face_node_connectivity')
+        node_count = 0 if node_x is None else np.asarray(node_x).size
+        connectivity_shape = None if face_node_connectivity is None else np.asarray(face_node_connectivity).shape
+        return (x.size, extent, node_count, connectivity_shape, self.RASTER_MAX_SIDE, self.RASTER_K_NEIGHBORS)
+
+    def _spatial_extent(
+        self, x: np.ndarray, y: np.ndarray, mesh_geometry: Dict[str, Any] | None
+    ) -> tuple[float, float, float, float]:
+        if mesh_geometry is not None and mesh_geometry.get('node_x') is not None and mesh_geometry.get('node_y') is not None:
+            extent_x = self._flatten(mesh_geometry['node_x'])
+            extent_y = self._flatten(mesh_geometry['node_y'])
+        else:
+            extent_x = x
+            extent_y = y
+
+        valid = np.isfinite(extent_x) & np.isfinite(extent_y)
+        min_x = float(np.nanmin(extent_x[valid]))
+        max_x = float(np.nanmax(extent_x[valid]))
+        min_y = float(np.nanmin(extent_y[valid]))
+        max_y = float(np.nanmax(extent_y[valid]))
+
+        if min_x == max_x:
+            min_x -= 0.5
+            max_x += 0.5
+        if min_y == max_y:
+            min_y -= 0.5
+            max_y += 0.5
+
+        return (min_x, max_x, min_y, max_y)
+
+    def _raster_shape(self, extent: tuple[float, float, float, float]) -> tuple[int, int]:
+        min_x, max_x, min_y, max_y = extent
+        width = max_x - min_x
+        height = max_y - min_y
+        if width >= height:
+            n_cols = self.RASTER_MAX_SIDE
+            n_rows = max(2, int(round(self.RASTER_MAX_SIDE * height / width)))
+        else:
+            n_rows = self.RASTER_MAX_SIDE
+            n_cols = max(2, int(round(self.RASTER_MAX_SIDE * width / height)))
+        return n_rows, n_cols
+
+    def _get_raster_weights(
+        self, x: np.ndarray, y: np.ndarray, mesh_geometry: Dict[str, Any] | None
+    ) -> RasterInterpolationWeights:
+        geometry_key = self._geometry_key(x, y, mesh_geometry)
+        current_weights = getattr(self, '_raster_weights', None)
+        if current_weights is not None and current_weights.geometry_key == geometry_key:
+            return current_weights
+
+        weights = self._build_raster_weights(x, y, mesh_geometry, geometry_key)
+        self._raster_weights = weights
+        return weights
+
+    def _build_raster_weights(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        mesh_geometry: Dict[str, Any] | None,
+        geometry_key: tuple,
+    ) -> RasterInterpolationWeights:
+        extent = self._spatial_extent(x, y, mesh_geometry)
+        n_rows, n_cols = self._raster_shape(extent)
+        min_x, max_x, min_y, max_y = extent
+
+        pixel_x = np.linspace(min_x, max_x, n_cols, endpoint=False) + (max_x - min_x) / (2 * n_cols)
+        pixel_y = np.linspace(min_y, max_y, n_rows, endpoint=False) + (max_y - min_y) / (2 * n_rows)
+        pixel_xx, pixel_yy = np.meshgrid(pixel_x, pixel_y)
+        pixel_points = np.column_stack((pixel_xx.ravel(), pixel_yy.ravel()))
+
+        valid_faces = np.flatnonzero(np.isfinite(x) & np.isfinite(y))
+        face_points = np.column_stack((x[valid_faces], y[valid_faces]))
+        tree = cKDTree(face_points)
+        k_neighbors = min(self.RASTER_K_NEIGHBORS, valid_faces.size)
+        distances, local_indices = self._query_tree(tree, pixel_points, k_neighbors)
+        if k_neighbors == 1:
+            distances = distances[:, None]
+            local_indices = local_indices[:, None]
+
+        face_indices = valid_faces[local_indices]
+        interpolation_weights = self._inverse_distance_weights(distances)
+        valid_mask = self._raster_valid_mask(pixel_points, distances[:, 0], extent, mesh_geometry).reshape(n_rows, n_cols)
+        quiver_indices = self._sample_indices(x.size, self.LARGE_GRID_QUIVER_LIMIT)
+        if isinstance(quiver_indices, slice):
+            quiver_indices = np.arange(x.size)[quiver_indices]
+
+        return RasterInterpolationWeights(
+            geometry_key=geometry_key,
+            shape=(n_rows, n_cols),
+            extent=extent,
+            face_indices=face_indices,
+            weights=interpolation_weights,
+            valid_mask=valid_mask,
+            quiver_indices=quiver_indices,
+        )
+
+    @staticmethod
+    def _query_tree(tree: cKDTree, pixel_points: np.ndarray, k_neighbors: int) -> tuple[np.ndarray, np.ndarray]:
+        try:
+            return tree.query(pixel_points, k=k_neighbors, workers=-1)
+        except TypeError:
+            return tree.query(pixel_points, k=k_neighbors)
+
+    @staticmethod
+    def _inverse_distance_weights(distances: np.ndarray) -> np.ndarray:
+        zero_distance = distances <= np.finfo(float).eps
+        has_exact_match = np.any(zero_distance, axis=1)
+        weights = np.zeros_like(distances, dtype=float)
+
+        if np.any(has_exact_match):
+            exact = zero_distance[has_exact_match]
+            weights[has_exact_match] = exact / exact.sum(axis=1, keepdims=True)
+
+        remaining = ~has_exact_match
+        if np.any(remaining):
+            inverse_distance = 1.0 / np.maximum(distances[remaining], np.finfo(float).eps) ** 2
+            weights[remaining] = inverse_distance / inverse_distance.sum(axis=1, keepdims=True)
+
+        return weights
+
+    def _raster_valid_mask(
+        self,
+        pixel_points: np.ndarray,
+        nearest_distances: np.ndarray,
+        extent: tuple[float, float, float, float],
+        mesh_geometry: Dict[str, Any] | None,
+    ) -> np.ndarray:
+        mask = np.ones(pixel_points.shape[0], dtype=bool)
+        if mesh_geometry is not None:
+            hull_mask = self._mesh_hull_mask(pixel_points, mesh_geometry)
+            if hull_mask is not None:
+                mask &= hull_mask
+
+        cell_radius = self._representative_cell_radius(mesh_geometry)
+        min_x, max_x, min_y, max_y = extent
+        pixel_dx = (max_x - min_x) / max(1, self._raster_shape(extent)[1])
+        pixel_dy = (max_y - min_y) / max(1, self._raster_shape(extent)[0])
+        pixel_diagonal = float(np.hypot(pixel_dx, pixel_dy))
+        if cell_radius is not None and np.isfinite(cell_radius):
+            mask &= nearest_distances <= max(3.0 * cell_radius, 2.0 * pixel_diagonal)
+
+        return mask
+
+    def _mesh_hull_mask(self, pixel_points: np.ndarray, mesh_geometry: Dict[str, Any]) -> np.ndarray | None:
+        node_x = mesh_geometry.get('node_x')
+        node_y = mesh_geometry.get('node_y')
+        if node_x is None or node_y is None:
+            return None
+
+        coords = np.column_stack((self._flatten(node_x), self._flatten(node_y)))
+        finite = np.isfinite(coords).all(axis=1)
+        coords = coords[finite]
+        if coords.shape[0] < 3:
+            return None
+
+        try:
+            hull = ConvexHull(coords)
+        except QhullError:
+            return None
+
+        hull_path = MplPath(coords[hull.vertices])
+        return hull_path.contains_points(pixel_points)
+
+    def _representative_cell_radius(self, mesh_geometry: Dict[str, Any] | None) -> float | None:
+        if mesh_geometry is None:
+            return None
+
+        node_x = mesh_geometry.get('node_x')
+        node_y = mesh_geometry.get('node_y')
+        connectivity = mesh_geometry.get('face_node_connectivity')
+        if node_x is None or node_y is None or connectivity is None:
+            return None
+
+        node_x = self._flatten(node_x)
+        node_y = self._flatten(node_y)
+        connectivity = np.asarray(connectivity, dtype=np.int64)
+        if connectivity.size == 0:
+            return None
+
+        sample_size = min(connectivity.shape[0], 100_000)
+        sample_indices = np.linspace(0, connectivity.shape[0] - 1, sample_size, dtype=np.intp)
+        sampled_connectivity = connectivity[sample_indices]
+        valid = sampled_connectivity >= 0
+        clipped = np.clip(sampled_connectivity, 0, max(0, node_x.size - 1))
+        face_node_x = np.where(valid, node_x[clipped], np.nan)
+        face_node_y = np.where(valid, node_y[clipped], np.nan)
+        center_x = np.nanmean(face_node_x, axis=1)
+        center_y = np.nanmean(face_node_y, axis=1)
+        radius = np.nanmax(np.hypot(face_node_x - center_x[:, None], face_node_y - center_y[:, None]), axis=1)
+        radius = radius[np.isfinite(radius) & (radius > 0)]
+        if radius.size == 0:
+            return None
+        return float(np.nanmedian(radius))
+
+    def _rasterize_field(self, values: np.ndarray, weights: RasterInterpolationWeights) -> np.ndarray:
+        field = self._flatten(values)
+        sampled_values = field[weights.face_indices]
+        finite = np.isfinite(sampled_values)
+        weighted_values = np.where(finite, sampled_values * weights.weights, 0.0)
+        valid_weights = np.where(finite, weights.weights, 0.0)
+        denominator = valid_weights.sum(axis=1)
+
+        image = np.full(weights.face_indices.shape[0], np.nan, dtype=float)
+        valid = denominator > 0.0
+        image[valid] = weighted_values.sum(axis=1)[valid] / denominator[valid]
+        image[~weights.valid_mask.ravel()] = np.nan
+        return image.reshape(weights.shape)
+
+    def _update_image_artist(
+        self,
+        axis_name: str,
+        image: np.ndarray,
+        weights: RasterInterpolationWeights,
+        cmap,
+        vmin: float | None = None,
+        vmax: float | None = None,
+    ):
+        ax = self.axes[axis_name]
+        images = getattr(self, '_raster_images', {})
+        image_artist = images.get(axis_name)
+        if image_artist is None or image_artist.axes is not ax:
+            ax.clear()
+            image_artist = ax.imshow(
+                image,
+                origin='lower',
+                extent=weights.extent,
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+                interpolation='nearest',
+            )
+            images[axis_name] = image_artist
+            self._raster_images = images
+        else:
+            image_artist.set_data(image)
+            image_artist.set_extent(weights.extent)
+            image_artist.set_clim(vmin=vmin, vmax=vmax)
+        return image_artist
+
+    def _remove_spatial_artist(self, artist_key: str) -> None:
+        artists = getattr(self, artist_key, {})
+        if isinstance(artists, dict):
+            for artist in artists.values():
+                try:
+                    artist.remove()
+                except (AttributeError, NotImplementedError, ValueError):
+                    pass
+            artists.clear()
+        elif isinstance(artists, list):
+            for artist in artists:
+                try:
+                    artist.remove()
+                except (AttributeError, NotImplementedError, ValueError):
+                    pass
+            artists.clear()
+
+    def _update_flowfield_plot(
+        self,
+        flow_field: Dict[str, np.ndarray],
+        bathymetry: np.ndarray,
+        mesh_geometry: Dict[str, Any] | None = None,
+    ) -> None:
         """Update the flow field spatial plot."""
         ax = self.axes['flowfield']
-        ax.clear()
 
-        x, y, magnitude = flow_field['x'], flow_field['y'], flow_field['magnitude']
+        x = self._flatten(flow_field['x'])
+        y = self._flatten(flow_field['y'])
+        magnitude = self._flatten(flow_field['magnitude'])
+        u = self._flatten(flow_field['u'])
+        v = self._flatten(flow_field['v'])
+        bathymetry = self._flatten(bathymetry)
+        n_points = x.size
 
-        # Contour plot of magnitude
-        ax.tricontourf(x, y, magnitude, levels=15, cmap='viridis')
+        self._remove_spatial_artist('_spatial_quivers')
 
-        # Add z=0 bathymetry contour
-        ax.tricontour(x, y, bathymetry, levels=[0], colors='white', linewidths=2, linestyles='-')
+        if self._is_large_grid(n_points):
+            weights = self._get_raster_weights(x, y, mesh_geometry)
+            image = self._rasterize_field(magnitude, weights)
+            self._update_image_artist('flowfield', image, weights, cmap='viridis')
+            quiver_sampled = weights.quiver_indices
+        else:
+            getattr(self, '_raster_images', {}).pop('flowfield', None)
+            ax.clear()
+            ax.tricontourf(x, y, magnitude, levels=15, cmap='viridis')
+            ax.tricontour(x, y, bathymetry, levels=[0], colors='white', linewidths=2, linestyles='-')
+            downsample = max(1, n_points // 20)
+            quiver_sampled = slice(None, None, downsample)
 
-        # Add velocity vectors (more vectors - reduce downsample)
-        downsample = max(1, len(x) // 20)  # Reduced from 50 to 20 for more vectors
-        skip = slice(None, None, downsample)
-        ax.quiver(
-            x[skip],
-            y[skip],
-            flow_field['u'][skip],
-            flow_field['v'][skip],
+        quiver = ax.quiver(
+            x[quiver_sampled],
+            y[quiver_sampled],
+            u[quiver_sampled],
+            v[quiver_sampled],
             color='white',
             scale=10,
             width=0.004,
             alpha=0.8,
-        )  # Adjusted scale and width
+        )
+        self._spatial_quivers = {'flowfield': quiver}
 
         ax.set_xlabel('X (m)')
         ax.set_ylabel('Y (m)')
@@ -364,53 +690,88 @@ class SimulationDashboard:
         ax.set_title('(a) Flow Field (Latest)', fontsize=12, fontweight='bold')
 
     def _update_bathymetry_plot(
-        self, flow_field: Dict[str, np.ndarray], bathymetry: np.ndarray, particles: Dict[str, np.ndarray]
+        self,
+        flow_field: Dict[str, np.ndarray],
+        bathymetry: np.ndarray,
+        particles: Dict[str, np.ndarray],
+        mesh_geometry: Dict[str, Any] | None = None,
     ) -> None:
         """Update the bathymetry and particles spatial plot."""
         ax = self.axes['bathymetry']
-        ax.clear()
 
-        x, y = flow_field['x'], flow_field['y']
+        x = self._flatten(flow_field['x'])
+        y = self._flatten(flow_field['y'])
+        bathymetry = self._flatten(bathymetry)
 
-        # Bathymetry contour plot
-        ax.tricontourf(
-            x, y, bathymetry, levels=20, cmap=self.bathymetry_cmap, vmin=self.bathymetry_vmin, vmax=self.bathymetry_vmax
-        )
+        self._remove_spatial_artist('_particle_artists')
+        legend = ax.get_legend()
+        if legend is not None:
+            try:
+                legend.remove()
+            except (AttributeError, NotImplementedError, ValueError):
+                pass
 
-        # Add z=0 bathymetry contour
-        ax.tricontour(x, y, bathymetry, levels=[0], colors='black', linewidths=2, linestyles='-')
+        if self._is_large_grid(x.size):
+            weights = self._get_raster_weights(x, y, mesh_geometry)
+            image = self._rasterize_field(bathymetry, weights)
+            self._update_image_artist(
+                'bathymetry',
+                image,
+                weights,
+                cmap=self.bathymetry_cmap,
+                vmin=self.bathymetry_vmin,
+                vmax=self.bathymetry_vmax,
+            )
+        else:
+            getattr(self, '_raster_images', {}).pop('bathymetry', None)
+            ax.clear()
+            ax.tricontourf(
+                x,
+                y,
+                bathymetry,
+                levels=20,
+                cmap=self.bathymetry_cmap,
+                vmin=self.bathymetry_vmin,
+                vmax=self.bathymetry_vmax,
+            )
+            ax.tricontour(x, y, bathymetry, levels=[0], colors='black', linewidths=2, linestyles='-')
 
         # Plot particles
+        particle_artists = getattr(self, '_particle_artists', [])
         if len(particles['x']) > 0:
             # Current positions (white circles)
-            ax.scatter(
-                particles['x'],
-                particles['y'],
-                color='white',
-                s=50,
-                marker='o',
-                edgecolors='black',
-                linewidth=1,
-                label='Current',
-                zorder=5,
+            particle_artists.append(
+                ax.scatter(
+                    particles['x'],
+                    particles['y'],
+                    color='white',
+                    s=50,
+                    marker='o',
+                    edgecolors='black',
+                    linewidth=1,
+                    label='Current',
+                    zorder=5,
+                )
             )
 
             # Initial positions (white crosses)
             if 'x_initial' in particles:
-                ax.scatter(
-                    particles['x_initial'],
-                    particles['y_initial'],
-                    color='white',
-                    s=50,
-                    marker='x',
-                    linewidth=3,
-                    label='Initial',
-                    zorder=5,
+                particle_artists.append(
+                    ax.scatter(
+                        particles['x_initial'],
+                        particles['y_initial'],
+                        color='white',
+                        s=50,
+                        marker='x',
+                        linewidth=3,
+                        label='Initial',
+                        zorder=5,
+                    )
                 )
 
                 # Connect with lines
                 for i in range(len(particles['x'])):
-                    ax.plot(
+                    (line,) = ax.plot(
                         [particles['x_initial'][i], particles['x'][i]],
                         [particles['y_initial'][i], particles['y'][i]],
                         'w-',
@@ -418,8 +779,10 @@ class SimulationDashboard:
                         linewidth=1,
                         zorder=4,
                     )
+                    particle_artists.append(line)
 
             ax.legend(loc='upper right')
+        self._particle_artists = particle_artists
 
         ax.set_xlabel('X (m)')
         ax.set_ylabel('Y (m)')

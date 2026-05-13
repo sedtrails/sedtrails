@@ -1,9 +1,13 @@
 """A plugin for Soulsby et al. (2011) sediment transport physics calculations."""
 
+import logging
+
 import numpy as np
 from sedtrails.transport_converter import physics_lib
 from sedtrails.transport_converter import SedtrailsData
 from sedtrails.transport_converter.plugins import BasePhysicsPlugin
+
+logger = logging.getLogger(__name__)
 
 
 class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the PhysicsPlugin
@@ -25,7 +29,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         'See: Soulsby, R. L., et al. (2011). Lagrangian model for simulating '
         'the dispersal of sand-sized particles in coastal waters.'
         """
-        print('Using Soulsby et al. (2011) to compute transport velocities and add to SedTRAILS data...')
+        logger.info('Using Soulsby et al. (2011) to compute transport velocities and add to SedTRAILS data')
 
         # === LOAD: Extract data ===
 
@@ -168,7 +172,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                     Rb[i][j] = bed_load_velocity[i][j] / flow_velocity_magnitude[i][j]
                     if Rb[i][j] > 1:
                         Rb[i][j] = 1  # apply velocity limiter (grain velocity cannot exceed flow velocity)
-                    elif np.isnan(Rb[i][j]):
+                    elif not np.isfinite(Rb[i][j]):
                         Rb[i][j] = 0
 
         # VECTORIZE THESE LOOPS!
@@ -186,7 +190,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                     )
                     if Rs[i][j] > 1:
                         Rs[i][j] = 1  # Apply velocity limiter (grain velocity cannot exceed flow velocity)
-                    elif np.isnan(Rs[i][j]):
+                    elif not np.isfinite(Rs[i][j]):
                         Rs[i][j] = 0
         
         # VECTORIZE THESE LOOPS!
@@ -199,7 +203,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                     soulsby_R[i][j] = Rb[i][j]
 
         # Compute grain velocities
-        grain_velocity_magnitude = np.multiply(np.multiply(soulsby_P, soulsby_R), flow_velocity_magnitude)  # (Equation 1)
+        grain_velocity_magnitude = soulsby_P * soulsby_R * flow_velocity_magnitude  # (Equation 1)
         grain_velocity_x = np.multiply((flow_velocity_x / flow_velocity_magnitude), grain_velocity_magnitude)
         grain_velocity_y = np.multiply((flow_velocity_y / flow_velocity_magnitude), grain_velocity_magnitude)
 
@@ -213,7 +217,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
 
         # === STORE ===
 
-        print('Adding physics fields to SedtrailsData...')
+        logger.info('Adding physics fields to SedtrailsData')
 
         # Sediment velocities (vector fields)
         sedtrails_data.add_physics_field(

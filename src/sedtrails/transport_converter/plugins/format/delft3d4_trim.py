@@ -20,4 +20,4 @@ class FormatPlugin(BaseFormatPlugin):
         **kwargs : dict
             Keyword arguments for conversion.
         """
-        raise NotImplementedError('NetCDF DFM conversion is not yet implemented.')
+        raise NotImplementedError('Delft3D trim file conversion is not yet implemented.')

@@ -5,8 +5,8 @@ This module adds physics-based calculations to existing SedtrailsData objects
 using the physics library functions and allowing method selection.
 """
 
-from typing import Optional, Any, Dict
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, Optional
 
 # Import physics library
 from sedtrails.transport_converter import physics_lib
@@ -23,9 +23,11 @@ GRAIN_DIAMETER = 2.5e-4  # m (250 μm)
 # Morphological acceleration factor
 MORFAC = 1.0
 
+
 @dataclass
 class PhysicsConfig:
     """Configuration parameters for physics calculations."""
+
     # Physics methods
     tracer_method: str = 'vanwesten'  # name of method for
     gravity: float = GRAVITY
@@ -38,7 +40,9 @@ class PhysicsConfig:
     morfac: float = MORFAC
 
     @classmethod
-    def from_dict(cls, config: Optional[Dict[str, Any]] = None, tracer_config: Optional[Dict[str, Any]] = None) -> "PhysicsConfig":
+    def from_dict(
+        cls, config: Optional[Dict[str, Any]] = None, tracer_config: Optional[Dict[str, Any]] = None
+    ) -> 'PhysicsConfig':
         """
         Build a PhysicsConfig by merging:
         1) defaults (class fields),
@@ -51,16 +55,16 @@ class PhysicsConfig:
         # Apply base config
         if config:
             if isinstance(config, cls):
-                base = asdict(config)          # deep copy dataclass fields
+                base = asdict(config)  # deep copy dataclass fields
             elif isinstance(config, dict):
                 base = config
             else:
-                base = {k: v for k, v in vars(config).items() if not k.startswith("_")}
+                base = {k: v for k, v in vars(config).items() if not k.startswith('_')}
             for k, v in base.items():
                 setattr(obj, k, v)
         # Apply method-specific (flatten) from tracer_config
         if tracer_config:
-            method = getattr(config, "tracer_method", "vanwesten")
+            method = getattr(config, 'tracer_method', 'vanwesten')
             # If tracer_config is nested like {"soulsby": {...}}, pick the active method
             if isinstance(tracer_config.get(method, None), dict):
                 method_params = tracer_config[method]
@@ -71,9 +75,11 @@ class PhysicsConfig:
                 for k, v in tracer_config.items():
                     setattr(obj, k, v)
         return obj
+
     # Optional: expose a dict view when needed
     def as_dict(self) -> Dict[str, Any]:
         return dict(self.__dict__)
+
 
 class PhysicsConverter:
     """
@@ -161,9 +167,10 @@ class PhysicsConverter:
                     f'Ensure the module exists and is correctly named.'
                 ) from e
             else:
-                self._physics_plugin = plugin_module.PhysicsPlugin(self.config, self.tracer_config)  # all classes should be called the PhysicsPlugin
+                self._physics_plugin = plugin_module.PhysicsPlugin(
+                    self.config, self.tracer_config
+                )  # all classes should be called the PhysicsPlugin
         return self._physics_plugin
-
 
     def convert_physics(self, sedtrails_data, transport_probability_method: str = None) -> None:
         """

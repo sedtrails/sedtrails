@@ -2,8 +2,8 @@
     "$id": "urn:sedtrails:config:population.schema.json",
     "$schema": "https://json-schema.org/draft/2020-12/schema#",
     "type": "object",
-    "title": "Sediment Trails Population Configuration",
-    "description": "Configuration for particle populations in Sediment Trails",
+    "title": "SedTrails Population Configuration",
+    "description": "Configuration for particle populations in SedTrails",
     "unevaluatedProperties": false,
     "$defs": {
         "passive_characteristics": {
@@ -191,6 +191,20 @@
                 }
             },
             "description": "Soulsby method for particle tracking"
+        },
+        "passive_method": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "flow_field_name": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "List of flow field names to use for passive tracer method"
+                }
+            },
+            "description": "Passive tracer method for particle tracking"
         }
     },
     "properties": {
@@ -230,6 +244,9 @@
                 },
                 "macdonald": {
                     "$ref": "#/$defs/macdonald_method"
+                },
+                "passive_tracer": {
+                    "$ref": "#/$defs/passive_method"
                 }
             },
             "minProperties": 1,
@@ -461,7 +478,7 @@
                             "properties": {
                                 "pol_file": {
                                     "type": "string",
-                                    "description": "path to Deltares '.pol' file with bounding polygon for cluster analysis"
+                                    "description": "path to tekal '.pol' file with bounding polygon for cluster analysis"
                                 },
                                 "separation": {
                                     "type": "object",
@@ -496,51 +513,51 @@
                                     "type": "boolean",
                                     "default": false,
                                     "description": "Do you want to save cluster check plots?"
+                                }
+                            },
+                            "oneOf": [
+                                {
+                                    "required": [
+                                        "pol_file"
+                                    ]
                                 },
-                                "oneOf": [
-                                    {
-                                        "required": [
-                                            "pol_file"
-                                        ]
-                                    },
-                                    {
-                                        "required": [
-                                            "separation"
-                                        ]
-                                    }
-                                ]
-                            }
+                                {
+                                    "required": [
+                                        "separation"
+                                    ]
+                                }
+                            ]
                         },
                         "file_points": {
                             "type": "object",
-							"additionalProperties": false,
+							       "additionalProperties": false,
                             "properties": {
-								"path":       { "type": "string", "minLength": 1, "description": "Path to text/CSV/TSV with x,y columns" },
-								"x_col":      { "oneOf": [ { "type": "integer", "minimum": 0 }, { "type": "string", "minLength": 1 } ], "description": "Column index or name for x" },
-								"y_col":      { "oneOf": [ { "type": "integer", "minimum": 0 }, { "type": "string", "minLength": 1 } ], "description": "Column index or name for y" },
-								"has_header": { "type": "boolean", "default": true },
-								"deduplicate":{ "type": "boolean", "default": true },
-								"dropna":     { "type": "boolean", "default": true },
-								"stride":     { "type": "integer", "minimum": 1, "default": 1, "description": "Keep every Nth point" },
-								"bbox": {
-								  "oneOf": [
-									{ "type": "string", "description": "xmin,ymin xmax,ymax (commas/whitespace allowed)" },
-									{
-									  "type": "object",
-									  "additionalProperties": false,
-									  "properties": {
-										"xmin": { "type": "number" },
-										"ymin": { "type": "number" },
-										"xmax": { "type": "number" },
-										"ymax": { "type": "number" }
-									  },
-									  "required": ["xmin","ymin","xmax","ymax"]
-									}
-								  ]
-								}
-							},
-							"required": ["path"]
-						}						
+                                 "path":       { "type": "string", "minLength": 1, "description": "Path to text/CSV/TSV with x,y columns" },
+                                 "x_col":      { "oneOf": [ { "type": "integer", "minimum": 0 }, { "type": "string", "minLength": 1 } ], "description": "Column index or name for x" },
+                                 "y_col":      { "oneOf": [ { "type": "integer", "minimum": 0 }, { "type": "string", "minLength": 1 } ], "description": "Column index or name for y" },
+                                 "has_header": { "type": "boolean", "default": true },
+                                 "deduplicate":{ "type": "boolean", "default": true },
+                                 "dropna":     { "type": "boolean", "default": true },
+                                 "stride":     { "type": "integer", "minimum": 1, "default": 1, "description": "Keep every Nth point" },
+                                 "bbox": {
+                                 "oneOf": [
+                                    { "type": "string", "description": "xmin,ymin xmax,ymax (commas/whitespace allowed)" },
+                                    {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                       "xmin": { "type": "number" },
+                                       "ymin": { "type": "number" },
+                                       "xmax": { "type": "number" },
+                                       "ymax": { "type": "number" }
+                                    },
+                                    "required": ["xmin","ymin","xmax","ymax"]
+                                    }
+                                 ]
+                                 }
+                              },
+                              "required": ["path"]
+                           }
                     },
                     "oneOf": [
                         {
