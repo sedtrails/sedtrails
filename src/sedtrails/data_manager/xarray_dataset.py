@@ -18,15 +18,17 @@ def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfiel
             'x': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
             'y': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
             'z': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'z_bed': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
             'burial_depth': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
             'mixing_depth': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
             # Status variables - initialize with zeros (False/not active)
-            'status_alive': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
-            'status_buried': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
-            'status_domain': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
-            'status_transported': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
-            'status_released': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
-            'status_mobile': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'is_alive': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'is_exposed': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'is_inside': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'is_picked_up': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'is_released': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'is_suspended': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'is_mobile': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
             # Transport distances per flow field
             'covered_distance': (
                 ('n_flowfields', 'n_particles', 'n_timesteps'),
@@ -137,23 +139,28 @@ def collect_timestep_data(ds, populations, timestep, current_time):
         # ds['mixing_depth'][particle_slice, timestep] = population.particles['mixing_depth'] # TODO: implement mixing depth tracking
 
         # Status variables (assuming these exist in population.particles)
-        ds['status_alive'][particle_slice, timestep] = population.particles.get(
-            'status_alive', np.ones(num_particles, dtype=int)
+        ds['is_alive'][particle_slice, timestep] = population.particles.get(
+            'is_alive', np.ones(num_particles, dtype=int)
         )
-        ds['status_buried'][particle_slice, timestep] = population.particles.get(
-            'status_buried', np.zeros(num_particles, dtype=int)
+        ds['is_exposed'][particle_slice, timestep] = population.particles.get(
+            'is_exposed', np.zeros(num_particles, dtype=int)
         )
-        ds['status_domain'][particle_slice, timestep] = population.particles.get(
-            'status_domain', np.ones(num_particles, dtype=int)
+        ds['is_inside'][particle_slice, timestep] = population.particles.get(
+            'is_inside', np.ones(num_particles, dtype=int)
         )
-        ds['status_transported'][particle_slice, timestep] = population.particles.get(
-            'status_transported', np.zeros(num_particles, dtype=int)
+        ds['is_picked_up'][particle_slice, timestep] = population.particles.get(
+            'is_picked_up', np.zeros(num_particles, dtype=int)
         )
-        ds['status_released'][particle_slice, timestep] = population.particles.get(
-            'status_released', np.ones(num_particles, dtype=int)
+        ds['is_released'][particle_slice, timestep] = population.particles.get(
+            'is_released', np.ones(num_particles, dtype=int)
         )
         ds['status_mobile'][particle_slice, timestep] = population.particles.get(
             'is_mobile', population.particles.get('status_mobile', np.zeros(num_particles, dtype=int))
+        ds['is_suspended'][particle_slice, timestep] = population.particles.get(
+            'is_suspended', np.ones(num_particles, dtype=int)
+        )
+        ds['is_mobile'][particle_slice, timestep] = population.particles.get(
+            'is_mobile', np.zeros(num_particles, dtype=int)
         )
 
         particle_offset += num_particles

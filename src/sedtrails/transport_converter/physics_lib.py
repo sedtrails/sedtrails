@@ -471,11 +471,11 @@ def compute_grain_properties(
             np.sqrt(10.36**2 + 1.049 * dstar**3) - 10.36
         )
     elif settling_velocity_method.lower() in ["macdonald2006", "macdonald", "ptm"]: # (MacDonald et al., 2006, Equation 28)
-        settling_velocity = compute_settling_velocity_macdonald(
-            dstar=dstar,
-            grain_diameter=grain_diameter,
-            kinematic_viscosity=kinematic_viscosity,
-        )
+        term_large = np.sqrt(107.33 + 1.049 * dstar**3) - 10.36
+        ws_large = (kinematic_viscosity / grain_diameter) * term_large
+        ws_small = (kinematic_viscosity / grain_diameter) * (0.0077 * dstar**2)
+        settling_velocity = np.where(dstar >= 0.672, ws_large, ws_small)
+        
     else:
         raise ValueError(
             f"Unknown settling_velocity_method='{settling_velocity_method}'. "
@@ -491,59 +491,30 @@ def compute_grain_properties(
         'critical_shear_stress': critical_shear_stress,
     }
 
-def compute_settling_velocity_macdonald(
-    dstar,
-    grain_diameter,
-    kinematic_viscosity,
+def calculate_skin_roughness(
+    *,
+    method: str = "macdonald_d90",
+    d50: float | None = None,
+    d65: float | None = None,
+    d84: float | None = None,
+    d90: float | None = None,
 ):
     """
-    Settling velocity w_s following MacDonald et al. (2006) (PTM report).
-
-    Piecewise formulation (as commonly reported in PTM documentation):
-
-        (w_s * d) / nu = sqrt(107.33 + 1.049 * D_*^3) - 10.36     for D_* >= 0.672
-        (w_s * d) / nu = 0.0077 * D_*^2                            for D_* < 0.672
+    Calculate skin-friction roughness length k_s for a flat, non-rippled sand bed.
 
     Parameters
     ----------
-    dstar : float or array-like
-        Dimensionless grain size D_* [-].
-    grain_diameter : float or array-like
-        Grain diameter d [m].
-    kinematic_viscosity : float or array-like
-        Kinematic viscosity nu [m^2/s].
+    method : str
+        Method used to compute k_s. Options include:
 
-    Returns
-    -------
-    w_s : float or array-like
-        Settling velocity [m/s].
+        - "macdonald_d90" : k_s = 3.0 * d90  (MacDonald et al., 2006)
+        - "soulsby_d50"   : k_s = 2.5 * d50  (Soulsby, 1997, eq. 24)
+        - "vanrijn_d65"   : k_s = 2.0 * d65  (Van Rijn, 1993)
+        - "soulsby_d90"   : k_s = 1.1 * d90  (Soulsby & Humphery, 1990)
 
-    Reference
-    ---------
-    MacDonald, N. et al. (2006). PTM: Particle Tracking Model. Report 1: Model Theory,
-    Implementation, and Example Applications. U.S. Army Corps of Engineers. Equation 28.    
-    """
-    nu = kinematic_viscosity
-    d = grain_diameter
-
-    term_large = np.sqrt(107.33 + 1.049 * dstar**3) - 10.36
-    ws_large = (nu / d) * term_large
-
-    ws_small = (nu / d) * (0.0077 * dstar**2)
-
-    return np.where(dstar >= 0.672, ws_large, ws_small)
-
-def calculate_skin_roughness(grain_diameter):
-    """
-    Skin-friction roughness following MacDonald et al. (2006).
-
-    Commonly approximated as:
-        k_s = 3 * d90
-
-    Parameters
-    ----------
-    grain_diameter : float
-        Representative grain size [m], typically d90.
+    d50, d65, d84, d90 : float
+        Grain-size percentiles [m]. Only the percentile required by the selected
+        method must be provided.
 
     Returns
     -------
@@ -552,12 +523,37 @@ def calculate_skin_roughness(grain_diameter):
 
     Reference
     ---------
-    MacDonald, N., Davies, M., Zundel, A., Howlett, J., Demirbilek, Z.,
-    Gailani, J., Lackey, T., & Smith, J. (2006). *PTM: Particle Tracking Model. 
-    Report 1: Model Theory, Implementation, and Example Applications*. 
-    U.S. Army Corps of Engineers. Equation 13
+    Soulsby, R. (1997). Dynamics of marine sands: a manual for practical applications. Thomas Telford. eq 24 and below. 
+
     """
-    return 3.0 * grain_diameter
+
+    method = method.lower()
+
+    if method == "macdonald_d90":
+        if d90 is None:
+            raise ValueError("d90 must be provided for method 'macdonald_d90'")
+        return 3.0 * d90
+
+    elif method == "soulsby_d50":
+        if d50 is None:
+            raise ValueError("d50 must be provided for method 'soulsby_d50'")
+        return 2.5 * d50
+
+    elif method == "vanrijn_d65":
+        if d65 is None:
+            raise ValueError("d65 must be provided for method 'vanrijn_d65'")
+        return 2.0 * d65
+
+    elif method == "soulsby_d90":
+        if d90 is None:
+            raise ValueError("d90 must be provided for method 'soulsby_d90'")
+        return 1.1 * d90
+
+    else:
+        raise ValueError(
+            f"Unknown skin roughness method '{method}'. "
+            "See docstring for available options."
+        )
 
 
 
@@ -600,7 +596,7 @@ def calculate_equilibrium_bedform_height(theta_max, theta_cr, grain_diameter, wa
     """
 
     # initialize bedform height array
-    eta_b = np.zeros_like(theta_max)
+    eta_b = np.zeros_like(theta_max, dtype=float)
 
     # ratio of Shields parameter to critical Shields
     theta_ratio = theta_max / theta_cr
@@ -608,15 +604,196 @@ def calculate_equilibrium_bedform_height(theta_max, theta_cr, grain_diameter, wa
     # apply the valid range for Eq. 12: 1 < theta/theta_cr < 24
     mask = (theta_ratio > 1) & (theta_ratio < 24)
 
-    eta_b[mask] = (
-        0.11 * water_depth[mask]
-        * (grain_diameter / water_depth[mask]) ** 0.3
-        * (1 - np.exp(-0.5 * (theta_ratio[mask] - 1)))
-        * (24 - theta_ratio[mask])
-    )
+    eta_candidate = (0.11 * water_depth* (grain_diameter / water_depth) ** 0.3
+                     * (1 - np.exp(-0.5 * (theta_ratio - 1)))* (24 - theta_ratio))
+    eta_b = np.where(mask, eta_candidate, 0)
 
     # form roughness is the bedform height
     return eta_b
+
+
+
+def calculate_current_related_bed_roughness_vanrijn2007(
+    flow_velocity_magnitude,
+    near_bed_peak_orbital_velocity,
+    grain_diameter,
+    water_depth,
+    relative_density,
+    gravity,
+):
+    """
+    Current-related bed roughness k_s,c following van Rijn (2007),
+    including contributions from ripples, megaripples, and dunes.
+
+    Parameters
+    ----------
+    flow_velocity_magnitude : array-like
+        Depth-averaged current velocity [m/s].
+    near_bed_peak_orbital_velocity : array-like
+        Near-bed peak orbital velocity [m/s]. 
+        Can be estimated from wave parameters or provided as input if available.
+        near_bed_peak_orbital_velocity=pi * Hs / (Tr * sinh(2*k*water_depth)) is
+        a common approximation for wave orbital velocity (see van Rijn, 2007, below equation 5d).
+    grain_diameter : float or array-like
+        Median grain size d50 [m].
+    water_depth : float or array-like
+        Water depth h [m].
+    relative_density : float, optional
+        Sediment relative density s = ρ_s / ρ_w (default 2.65).
+    gravity : float
+        Gravitational acceleration g [m/s²].   
+
+
+    Returns
+    -------
+    ks_c : array-like
+        Total current-related bed roughness [m].
+    ks_r : array-like
+        Ripple-related bed roughness [m].
+    ks_mr : array-like
+        Megaripple-related bed roughness [m].
+    ks_d : array-like
+        Dune-related bed roughness [m].
+    """
+
+    # --- Mobility parameter Ψ (van Rijn 2007) ---
+    # Use Uwc^2 directly (avoid sqrt then square)
+    Uwc2 = flow_velocity_magnitude**2 + near_bed_peak_orbital_velocity**2
+    psi = Uwc2 / ((relative_density - 1.0) * gravity * grain_diameter)
+
+    # thresholds
+    d_gravel = 0.002     # [m] defined in van Rijn 2007 
+    d_sand   = 0.000062  # [m] defined in van Rijn 2007 
+    d_silt   = 0.000032  # [m] defined in van Rijn 2007 
+
+    # --- Grain-size factors (depend on d50 only; broadcast happens automatically in np.where) ---
+    f_cs = np.minimum(1.0, (0.25 * d_gravel / grain_diameter) ** 1.5)           # ripple coarse-sed limiter (expresses the effect of a gradually decreasing ripple roughness 
+                                                                                # for very coarse sediment beds - for those sediments f_cs< 1, for finer sediments f_cs=1 )
+    f_fs = np.minimum(1.0, grain_diameter / (1.5 * d_sand))                     # megaripple fine-sed limiter no megaripple roughness for fine sediments (silt, very fine sand)
+
+    # --- Ripple roughness k_s,r (Eq. 5a–5d logic, van Rijn 2007) ---
+    ks_r = np.zeros_like(psi, dtype=float)
+
+    ks_r = np.where(psi <= 50,
+                    150.0 * f_cs * grain_diameter,
+                    ks_r)
+
+    ks_r = np.where((psi > 50) & (psi <= 250),
+                    (182.5 - 0.652 * psi) * f_cs * grain_diameter,
+                    ks_r)
+
+    ks_r = np.where(psi > 250,
+                    20.0 * f_cs * grain_diameter,
+                    ks_r)
+
+    # fine sediment override (your choice; keeps small baseline roughness)
+    ks_r = np.where(grain_diameter < d_silt,
+                    20.0 * d_silt,
+                    ks_r)
+
+    # --- Megaripple roughness k_s,mr (Eq. 6a–6d, van Rijn 2007) ---
+    ks_mr = np.zeros_like(psi, dtype=float)
+
+    ks_mr = np.where(psi <= 50,
+                     0.0002 * f_fs * psi * water_depth,
+                     ks_mr)
+
+    ks_mr = np.where((psi > 50) & (psi <= 550),
+                     (0.011 - 0.00002 * psi) * f_fs * water_depth,
+                     ks_mr)
+
+    ks_mr = np.where((psi >= 550) & (grain_diameter >= 1.5 * d_sand),
+                     0.02, # in upper regime if the sand is coarser
+                     ks_mr)
+
+    ks_mr = np.where((psi >= 550) & (grain_diameter < 1.5 * d_sand),
+                     200.0 * grain_diameter, # in upper regime if the sand is very fine
+                     ks_mr)
+
+    # no megaripples for very fine sediment
+    ks_mr = np.where(grain_diameter < d_silt, 0.0, ks_mr)
+
+    # --- Dune roughness k_s,d (Eq. 7a–7d, van Rijn 2007) ---
+    ks_d = np.zeros_like(psi, dtype=float)
+
+    ks_d = np.where(psi <= 100,
+                    0.0004 * f_fs * psi * water_depth,
+                    ks_d)
+
+    ks_d = np.where((psi > 100) & (psi <= 600),
+                    (0.048 - 0.00008 * psi) * f_fs * water_depth,
+                    ks_d)
+
+    ks_d = np.where(psi > 600, 0.0, ks_d)
+
+    # no dunes for very fine sediment
+    ks_d = np.where(grain_diameter < d_silt, 0.0, ks_d)
+
+    # --- Total current-related roughness (Eq. 8, van Rijn 2007) ---
+    ks_c = np.sqrt(ks_r**2 + ks_mr**2 + ks_d**2)
+
+    return ks_c, ks_r, ks_mr, ks_d
+
+
+def calculate_apparent_bed_roughness_vanrijn2007(
+    ks_c,
+    near_bed_peak_orbital_velocity,
+    flow_velocity_magnitude,
+    phi_deg,
+):
+    """
+    Apparent bed roughness k_a following van Rijn (2007),
+    with angle-dependent wave–current interaction.
+
+    Parameters
+    ----------
+    ks_c : array-like
+        Physical current-related bed roughness k_s,c [m].
+    near_bed_peak_orbital_velocity : array-like
+        Near-bed peak orbital velocity U_w [m/s].
+    flow_velocity_magnitude : array-like
+        Depth-averaged current velocity u_c [m/s].
+    phi_deg : array-like
+        Angle between wave and current direction [degrees].
+        Expected range: 0 <= phi_deg <= 180.
+
+    Returns
+    -------
+    ka : array-like
+        Apparent bed roughness k_a [m].
+    ka_ksc : array-like
+        Ratio k_a / k_s,c [-], capped at 10.
+    gamma : array-like
+        Angle-dependent interaction coefficient gamma [-].
+    """
+
+    # --------------------------------------------------------------
+    # Convert angle to radians
+    # --------------------------------------------------------------
+    phi = np.deg2rad(np.minimum(phi_deg, 360-phi_deg))
+
+    # --------------------------------------------------------------
+    # Angle-dependent interaction coefficient gamma (van Rijn 2007)
+    # --------------------------------------------------------------
+    gamma = 0.8 + phi - 0.3 * phi**2
+
+    # --------------------------------------------------------------
+    # Prevent division by zero for very weak currents
+    # --------------------------------------------------------------
+    uc_safe = np.maximum(flow_velocity_magnitude, 1e-6)
+
+    # --------------------------------------------------------------
+    # Apparent roughness amplification factor (hard capped)
+    # --------------------------------------------------------------
+    ka_ksc = np.exp(gamma * near_bed_peak_orbital_velocity / uc_safe)
+    ka_ksc = np.minimum(ka_ksc, 10.0)
+
+    # --------------------------------------------------------------
+    # Apparent bed roughness
+    # --------------------------------------------------------------
+    ka = ka_ksc * ks_c
+
+    return ka, ka_ksc, gamma
 
 
 def calculate_relative_density_ratio(sediment_density, water_density):

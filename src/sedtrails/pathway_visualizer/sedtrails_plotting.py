@@ -29,10 +29,10 @@ Dimensions:
 Variables (shapes shown in parentheses):
     time (N, T)                float64
     x, y, z (N, T)             float32
-    status_alive (N, T)        int32  (0/1)
-    status_domain (N, T)       int32  (0/1)
-    status_released (N, T)     int32  (0/1)
-    status_mobile (N, T)       int32  (0/1)
+    is_alive (N, T)            int32  (0/1)
+    is_inside (N, T)           int32  (0/1)
+    is_released (N, T)         int32  (0/1)
+    is_mobile (N, T)           int32  (0/1)
     trajectory_id (N,)         (optional char)
     population_id (N,)         int32  (optional)
 
@@ -41,7 +41,7 @@ Notes
 - All plotters accept `units_scale` (default=1.0). Use e.g. units_scale=1e-3
   to convert meters->kilometers on the axes without modifying inputs.
 - Age is computed per-particle as time - time_of_release, where time_of_release
-  is the first timestep where status_released==1. If status_released is missing,
+  is the first timestep where is_released==1. If is_released is missing,
   we fall back to the first finite (x, y) position.
 - Baseline distance coloring uses the *initial* (at `first_stable_index`) rotated-x
   coordinate per-particle as a constant color for its whole trajectory. The rotated
@@ -95,10 +95,10 @@ class TrajectoryArrays:
     y: np.ndarray  # shape (N, T)
 
     # Optional status masks (0/1 or bool), all shape (N, T)
-    status_alive: Optional[np.ndarray] = None
-    status_domain: Optional[np.ndarray] = None
-    status_released: Optional[np.ndarray] = None
-    status_mobile: Optional[np.ndarray] = None
+    is_alive: Optional[np.ndarray] = None
+    is_inside: Optional[np.ndarray] = None
+    is_released: Optional[np.ndarray] = None
+    is_mobile: Optional[np.ndarray] = None
 
     # Optional meta
     population_id: Optional[np.ndarray] = None  # shape (N,)
@@ -114,18 +114,18 @@ class TrajectoryArrays:
             alive==1, in-domain==1, released==1.
         """
         mask = np.isfinite(self.x) & np.isfinite(self.y)
-        if self.status_alive is not None:
-            mask &= self.status_alive.astype(bool)
-        if self.status_domain is not None:
-            mask &= self.status_domain.astype(bool)
-        if self.status_released is not None:
-            mask &= self.status_released.astype(bool)
+        if self.is_alive is not None:
+            mask &= self.is_alive.astype(bool)
+        if self.is_inside is not None:
+            mask &= self.is_inside.astype(bool)
+        if self.is_released is not None:
+            mask &= self.is_released.astype(bool)
         return mask
 
     def release_time(self) -> np.ndarray:
         """Compute per-particle release time (shape (N,)).
 
-        Prefers first index where status_released==1. If not provided,
+        Prefers first index where is_released==1. If not provided,
         uses first finite (x, y) time. If a particle has no finite
         positions, falls back to time[:,0].
         """
@@ -133,8 +133,8 @@ class TrajectoryArrays:
         t0 = np.empty(N, dtype=float)
         t0[:] = np.nan
 
-        if self.status_released is not None:
-            rel = self.status_released.astype(bool)
+        if self.is_released is not None:
+            rel = self.is_released.astype(bool)
             first_rel = np.argmax(rel, axis=1)  # zeros where all False
             no_rel = ~rel.any(axis=1)
             t0 = self.time[np.arange(N), first_rel]
@@ -522,12 +522,12 @@ def compute_particle_stats(tr: TrajectoryArrays, first_stable_index: int = 0) ->
         y = tr.y[i, :]
         t = tr.time[i, :]
         valid = np.isfinite(x) & np.isfinite(y)
-        if tr.status_released is not None:
-            valid &= tr.status_released[i, :].astype(bool)
-        if tr.status_domain is not None:
-            valid &= tr.status_domain[i, :].astype(bool)
-        if tr.status_alive is not None:
-            valid &= tr.status_alive[i, :].astype(bool)
+        if tr.is_released is not None:
+            valid &= tr.is_released[i, :].astype(bool)
+        if tr.is_inside is not None:
+            valid &= tr.is_inside[i, :].astype(bool)
+        if tr.is_alive is not None:
+            valid &= tr.is_alive[i, :].astype(bool)
         if valid.sum() < 2:
             stats.append(ParticleStats(*([np.nan] * 11)))
             continue
@@ -722,10 +722,10 @@ def load_from_xarray(ds) -> TrajectoryArrays:
         time=np.asarray(ds['time']),
         x=np.asarray(ds['x']),
         y=np.asarray(ds['y']),
-        status_alive=np.asarray(ds['status_alive']) if 'status_alive' in ds else None,
-        status_domain=np.asarray(ds['status_domain']) if 'status_domain' in ds else None,
-        status_released=np.asarray(ds['status_released']) if 'status_released' in ds else None,
-        status_mobile=np.asarray(ds['status_mobile']) if 'status_mobile' in ds else None,
+        is_alive=np.asarray(ds['is_alive']) if 'is_alive' in ds else None,
+        is_inside=np.asarray(ds['is_inside']) if 'is_inside' in ds else None,
+        is_released=np.asarray(ds['is_released']) if 'is_released' in ds else None,
+        is_mobile=np.asarray(ds['is_mobile']) if 'is_mobile' in ds else None,
         population_id=np.asarray(ds['population_id']) if 'population_id' in ds else None,
         trajectory_id=list(map(str, ds['trajectory_id'].values)) if 'trajectory_id' in ds else None,
     )

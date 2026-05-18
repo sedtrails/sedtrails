@@ -131,13 +131,13 @@
                 },
 				"use_transport_fields": {
 				  "type": "string",
-				  "enum": ["D3D", "SoulsbyvanRijn1997"],
-				  "default": "D3D",
-				  "description": "Select which transport fields are used for particle transport. 'D3D' uses transport velocity fields from Delft3D-FM; 'SoulsbyvanRijn1997' computes Soulsby-vanRijn transports."
+				  "enum": ["model-native", "SoulsbyvanRijn1997"],
+				  "default": "model-native",
+				  "description": "Select which transport fields are used for particle transport. 'model-native' uses transport velocity fields from Delft3D-FM; 'SoulsbyvanRijn1997' computes Soulsby-vanRijn transports."
 				},
 				"max_suspended_velocity_factor": {
 				  "type": ["number", "null"],
-				  "default": null,
+				  "default": 1.0,
 				  "description": "Optional cap on suspended-load advection velocity, expressed as a multiple of the depth-averaged flow velocity. If null, no capping is applied."
 				}
             },
