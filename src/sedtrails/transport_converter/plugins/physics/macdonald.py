@@ -3,10 +3,12 @@
 import os
 import numpy as np
 import xarray as xr
+from scipy.spatial import cKDTree
 # from random import random
 from sedtrails.transport_converter import physics_lib
 from sedtrails.transport_converter.plugins import BasePhysicsPlugin
 from sedtrails.transport_converter import SedtrailsData
+
 
 
 class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the PhysicsPlugin
@@ -19,6 +21,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
     Report 1: Model theory, implementation, and example applications (No. ERDCCHLTR0620).
     """
 
+    # Shared class-level cache for MacDonald lookup table
+    # Loaded lazily on first use and shared across all plugin instances
     _macdonald_lookup_da = None
     _macdonald_lookup_path = None
     _macdonald_warned_oob = False
@@ -26,6 +30,12 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
     def __init__(self, config, tracer_methods: None):
         super().__init__()
         self.config = config
+        
+        # This plugin relies on shared class-level MacDonald lookup cache
+        _ = PhysicsPlugin._macdonald_lookup_da
+        _ = PhysicsPlugin._macdonald_lookup_path
+        _ = PhysicsPlugin._macdonald_warned_oob
+
 
     def add_physics(
         self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float], transport_probability_method: str
@@ -85,10 +95,11 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             raise ValueError("Missing required 'critical_shields' value in grain_properties.")
         
         # Bed roughness (MacDonald et al., 2006, equations 12-13)
-        k_s_skin = physics_lib.calculate_skin_roughness(self.config.grain_diameter) #Consider here passing the background grain diameter instead of the particle grain diameter.
+        k_s_skin = physics_lib.calculate_skin_roughness(method="soulsby_d50", d50=self.config.grain_diameter) #Consider here passing the background grain diameter instead of the particle grain diameter.
         k_s_form = physics_lib.calculate_equilibrium_bedform_height(mean_shields_number, critical_shields, self.config.grain_diameter, water_depth)
         k_s_total = k_s_form + k_s_skin  
         # TO DO: Note that k_s_form is the equilibrium bedform height eta_b from MacDonald et al. (2006) Eq. 12 - we should implement the rate of change also (eq. 14-15) in future
+        
 
         s = physics_lib.calculate_relative_density_ratio(self.config.particle_density, self.config.water_density)    # relative density ratio
         dstar = grain_properties.get('dimensionless_grain_size')  
@@ -96,7 +107,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         rouse_number = physics_lib.calculate_rouse_number(settling_velocity, max_shear_velocity, self.config.von_karman_constant)
 
 
-        if self.config.use_transport_fields=='D3D':
+        if self.config.use_transport_fields=='model-native':
             
             # bed load transport
             # bed_load_transport_x = sedtrails_data.bed_load_transport['x']
@@ -143,8 +154,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             
             # suspended load transport fraction 
             den = suspended_transport_magnitude_calc + bed_load_transport_magnitude_calc
-            qs_qt = np.full_like(suspended_transport_magnitude_calc, np.nan, dtype=float)
-            mask = np.isfinite(suspended_transport_magnitude_calc) & np.isfinite(bed_load_transport_magnitude_calc) & (den > 0)
+            qs_qt = np.full_like(suspended_transport_magnitude_calc, 0.0, dtype=float)
+            mask = den > 0
             qs_qt[mask] = suspended_transport_magnitude_calc[mask] / den[mask]
             
         elif self.config.use_transport_fields=='SoulsbyvanRijn1997':
@@ -172,12 +183,13 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
            
         # suspended load velocity (MacDonald et al., 2006, equation 29) 
         # Note Vassia: here we sum skin and form roughness for total roughness - eq. 29 says k_s'' indicating bedform roughness
-        suspended_velocity = PhysicsPlugin.calculate_macdonald_suspended_load_velocity(
-            mean_shear_velocity, 
-            z_s, 
-            k_s_total, 
-            flow_velocity_magnitude, 
-            max_suspended_velocity_factor=self.config.max_suspended_velocity_factor)
+        suspended_velocity    = PhysicsPlugin.calculate_macdonald_loglaw_velocity_at_z(mean_shear_velocity, z_s,  k_s_total)
+        if self.config.max_suspended_velocity_factor is not None:
+            suspended_velocity = PhysicsPlugin.cap_particle_velocity(
+                suspended_velocity,
+                flow_velocity_magnitude,
+                self.config.max_suspended_velocity_factor,
+            )
         #Question Vassia: should the max_suspended_velocity_factor be used here or in the final step - on the mean_particle_velocity?
         
         # bed load velocity (MacDonald et al., 2006, equation 30) - Engelund & Fredsoe (1976), same as Soulsby et al (2011)
@@ -202,13 +214,114 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             suspended_probability[:] = 1.0
 
         # sediment advection velocity (MacDonald et al., 2006, equation 32)
-        u_c = qs_qt * suspended_velocity + (1 - qs_qt) * bed_load_velocity
+        u_zc = qs_qt * suspended_velocity + (1 - qs_qt) * bed_load_velocity
         # total transport centroid elevation (MacDonald et al., 2006, equation 34)
-        z_c = k_s_total * 10 ** (0.1739 * (u_c / max_shear_velocity) - 1.47826)
+        z_c = np.zeros_like(u_zc)
+        mask = max_shear_velocity > 0
+        z_c[mask] = k_s_total[mask] * 10 ** (0.1739 * (u_zc[mask] / max_shear_velocity[mask]) - 1.47826)
         
         # horizontal mean particle advection velocity (u_a) (MacDonald et al., 2006, equation 35)
-        mean_particle_velocity = u_c #no need to calculate it again, previously PhysicsPlugin.calculate_mean_particle_advection_velocity(max_shear_velocity, z_c, k_s_total)
+        mean_particle_velocity = u_zc #no need to calculate it again, previously PhysicsPlugin.calculate_2d_total_load_particle_advection_velocity(max_shear_velocity, z_c,  k_s_total)
         
+
+        # # ----------------------------------------------------------------------------------------
+        # # MacDonald probabilistic bed-particle interaction model
+ 
+        #PTM turbulence parameter (macdonald et al., 2006 below equation 54)
+        timestep = 60 # we need to get this dynamically from the model, this is just a placeholder value for now
+        gamma=0.4 # We need to update this to 0.05 * timestep . How do i get the timer._current_timestep information in here? 
+
+        # standard deviation of the shear stress fluctuation (macdonald et al., 2006 equation 54)
+        sigma_tau=gamma * max_bed_shear_stress# mean or max bed shear stress?
+        mean_tau=max_bed_shear_stress # mean or max bed shear stress?
+
+        # sample turbulent bed shear stress based ona normal distribution with mean_tau, sigma_tau
+        turbulent_shear = np.random.normal(mean_tau, sigma_tau)
+        # enforce physical constraint - shear stress cannot be negative
+        turbulent_shear = np.clip(turbulent_shear, a_min=0.0, a_max=None)
+
+
+
+        # turbulent Shields number (macdonald et al., 2006 equation 59)
+        turbulent_shields = turbulent_shear/ (self.config.water_density * self.config.gravity * self.config.grain_diameter * (s - 1))
+
+        # particle entrainment rate (van Rijn (1984b) pickup function, as used in MacDonald et al., 2006, equation 58)
+        q_pickup = np.zeros_like(turbulent_shields, dtype=float)
+        # Valid pickup condition (mobility > 1)
+        valid = (
+            np.isfinite(turbulent_shields)
+            & np.isfinite(critical_shields)
+            & (critical_shields > 0)
+            & (turbulent_shields > critical_shields)
+        )
+        # Compute only where physically allowed
+        theta_excess = (
+            (turbulent_shields[valid] - critical_shields)
+            / critical_shields
+        )
+        q_pickup[valid] = (
+            0.00033
+            * theta_excess**1.5
+            * (((s - 1) * self.config.gravity * self.config.grain_diameter**3)
+            / self.config.kinematic_viscosity**2) ** 0.1
+            * np.sqrt((s - 1) * self.config.gravity * self.config.grain_diameter)
+        )
+        # frequency of particle pickup (macdonald et al., 2006, equation 61)
+        freq_pickup = q_pickup / self.config.grain_diameter
+        
+        # active layer depth (mixing depth) (macdonald et al., 2006, equation 63)
+        h_active = np.zeros_like(turbulent_shields, dtype=float)
+        h_active[valid] = 5 * (turbulent_shields[valid] - critical_shields) * self.config.grain_diameter
+        
+        # mixing factor (macdonald et al., 2006, equation 64)
+        K_mixing = np.where(
+            h_active > self.config.grain_diameter,
+            self.config.grain_diameter / h_active,
+            1.0
+        )
+        
+        # burial factor (macdonald et al., 2006, equation 66)
+        h_burial = np.zeros_like(h_active) # burial depth not implemented yet
+        K_burial = np.where(
+            h_active > 0,
+            1.0 - (h_burial / h_active),
+            0.0 # h_active is 0 when out of the valid area, where turbulent_shear<critical shear. For those areas also the freq_pickup=0
+        )
+        K_burial = np.clip(K_burial, 0, 1)  # ensure between 0 and 1
+        
+        # frequency of entrainment (macdonald et al., 2006, equation 57)
+        freq_entrainment = K_burial * K_mixing * freq_pickup
+        
+        # # ----------------------------------------------------------------------------------------    
+        # # MacDonald Q3D mode
+        
+        # mean particle fall time (macdonald et al., 2006, equation 36)
+        t_fall = z_c / settling_velocity
+        
+        # mean particle wait time (macdonald et al., 2006, equation 37)
+        t_wait = 1 / freq_entrainment
+        
+        # proportion of time particle is entrained in flow (macdonald et al., 2006, equation 38)
+        p_time_entrained = np.zeros_like(t_fall)
+        mask = t_wait > 0
+        p_time_entrained[mask] = t_fall[mask] / t_wait[mask]
+        
+        # velocity deficit coefficient (macdonald et al., 2006, equation 39)
+        velocity_deficit_coeff = np.ones_like(mean_particle_velocity)
+        velocity_deficit_coeff = np.where(
+            p_time_entrained > 1.0,
+            1.0,
+            p_time_entrained
+        )
+            
+        # particle position quasi 3D
+        z_p = z_c # FOR NOW! THIS NEEDS TO BE IN PARTICLE PROPERTIES AND UPDATED DYNAMICALLY
+        
+        # # adjusted mean particle velocity (macdonald et al., 2006, equation 40)
+        u_zp = PhysicsPlugin.calculate_2d_total_load_particle_advection_velocity(max_shear_velocity, z_p,  k_s_total)
+        u_1p4zc =  PhysicsPlugin.calculate_2d_total_load_particle_advection_velocity(max_shear_velocity, 1.4*z_c,  k_s_total)
+        mean_particle_velocity = PhysicsPlugin.apply_q3d_velocity_deficit(u_zp, u_zc, u_1p4zc, z_p, z_c, velocity_deficit_coeff)
+
         # calculate x and y components of mean particle velocity
         mean_particle_velocity_x, mean_particle_velocity_y = physics_lib.compute_directions_from_magnitude(
             mean_particle_velocity,
@@ -216,86 +329,107 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             flow_velocity_y,
             flow_velocity_magnitude,
         )
-        # Note Vassia: we could consider getting particle velocity direction from bedload and suspended load velocities instead of flow velocity
+        # Note Vassia: we could consider getting particle velocity direction from bedload and suspended load instead of flow velocity
         # In that way the effect of slopes which are considered in D3D might be included better. 
+        # Question Vassia - should i check here again to cap the mean particle velocity?
 
+        E_turb_hor, E_turb_vert = PhysicsPlugin.compute_turbulent_diffusion_coefficients(
+            water_depth=water_depth,
+            z_p=z_p,
+            flow_velocity_magnitude=flow_velocity_magnitude,
+            shear_velocity=max_shear_velocity,
+            K_Et=0.15,
+        )
 
-        # # ----------------------------------------------------------------------------------------
-        # # MacDonald probabilistic bed-particle interaction model
+        u_Dx, u_Dy, w_D = PhysicsPlugin.compute_random_walk_diffusion_velocities(
+            E_turb_hor=E_turb_hor,
+            E_turb_vert=E_turb_vert,
+            dt=timestep,
+        )
+
+        # calculate velocity divergence using KNN least-squares fit
+        # this is just a first order approximation for the divergence, we could consider more sophisticated methods in the future
+        divU, dudx, dvdy = PhysicsPlugin.divergence_scattered_knn_time(sedtrails_data.x, 
+                                                                       sedtrails_data.y, 
+                                                                       sedtrails_data.depth_avg_flow_velocity['x'], 
+                                                                       sedtrails_data.depth_avg_flow_velocity['y'], 
+                                                                       k=12, r_max=150)
         
-        # # particle entrainment rate (van Rijn (1984b) pickup function, as used in MacDonald et al., 2006, equation 58)
-        # q_pickup = (0.00033 * ((max_shields_number - critical_shields) / critical_shields)**1.5 * (
-        #     ((s - 1) * self.config.gravity * self.config.grain_diameter**3) / self.config.viscosity**2) ** 0.1 
-        #     * np.sqrt((s - 1) * self.config.gravity * self.config.grain_diameter)
+        # """" # --- plot vectors (units are m/s; scale controls arrow length)
+        # ax.quiver(
+        #     x[idx], y[idx],
+        #     u[it, idx], v[it, idx],
+        #     color="k",
+        #     alpha=0.75,
+        #     width=0.0025,
+        #     headwidth=3.5,
+        #     headlength=4.5,
+        #     headaxislength=4.0,
+        #     scale=0.003,          # larger -> shorter arrows; tune this
+        #     scale_units="xy",  # interpret in data units
+        #     angles="xy",
+        #     zorder=2
         # )
-        
-        # # frequency of particle pickup (macdonald et al., 2006, equation 60)
-        # freq_pickup = q_pickup / self.config.grain_diameter
-        
-        # # active layer depth (mixing depth) (macdonald et al., 2006, equation 63)
-        # h_active = 5 * (max_shields_number - critical_shields) * self.config.grain_diameter
-        
-        # # mixing factor (macdonald et al., 2006, equation 64)
-        # if h_active > self.config.grain_diameter:
-        #     K_mixing = self.config.grain_diameter / h_active
-        # else:
-        #     K_mixing = 1.0
-        
-        # # burial factor (macdonald et al., 2006, equation 66)
-        # h_burial = 0 # burial depth not implemented yet
-        # K_burial = 1 - h_burial/h_active
-        # K_burial = np.clip(K_burial, 0, 1)  # ensure between 0 and 1
-        
-        # # frequency of entrainment (macdonald et al., 2006, equation 57)
-        # freq_entrainment = K_burial * K_mixing * freq_pickup
-        
-        # # ----------------------------------------------------------------------------------------    
-        # # MacDonald Q3D mode
-        
-        # # mean particle fall time (macdonald et al., 2006, equation 36)
-        # t_fall = z_c / settling_velocity
-        
-        # # mean particle wait time (macdonald et al., 2006, equation 37)
-        # t_wait = 1 / freq_entrainment
-        
-        # # proportion of time particle is entrained in flow (macdonald et al., 2006, equation 38)
-        # p_time_entrained = t_fall / t_wait
-        
-        # # velocity deficit coefficient (macdonald et al., 2006, equation 39)
-        # # I DON'T THINK I'M IMPLEMENTING THE LOGIC CORRECTLY HERE- CHECK E.G. INDEXING
-        # velocity_deficit_coeff = np.ones_like(mean_particle_velocity)
-        # if p_time_entrained > 1:
-        #     velocity_deficit_coeff = 1
-        # else:
-        #     velocity_deficit_coeff = p_time_entrained
-            
-        # # particle position quasi 3D
-        # z_p = z_c # FOR NOW! THIS NEEDS TO BE IN PARTICLE PROPERTIES AND UPDATED DYNAMICALLY
-        
-        # # # adjusted mean particle velocity (macdonald et al., 2006, equation 40)
-        # # if and(z_p > 0, z_p <= z_c):
-        # #     mean_particle_velocity = velocity_deficit_coeff * 
-        # #     u_zp = calculate_macdonald_particle_velocity_at_zp(max_shear_velocity, z_p, k_s)
-        # # mean_particle_velocity
-        
-        # # particle deposition rate (macdonald et al., 2006, equation 67)
-        # if z_p < k_s_skin/4:
-        #     is_deposited = True
-        # else:
-        #     is_deposited = False
-        # # NB. THIS SHOULD BE IN PARTICLE LOOP, NOT APPLIED TO FIELDS
-        
-        # # q3D entrainment
-        # if random.uniform(0, 1) < freq_entrainment * self.config.time_step:
-        #     is_entrained = True
-        #     z_p = z_c # initially set particle height to centroid height
-        # else:
-        #     is_entrained = False
-        #     z_p = z_bed # keep particle at bed level
-        # # NB. THIS SHOULD BE IN PARTICLE LOOP, NOT APPLIED TO FIELDS
 
-        # # if bed-particle interaction disabled, deposited particles instantaneously re-entrained to z_c if mobility M>1
-        # # NB. THIS SHOULD BE IN PARTICLE LOOP, NOT APPLIED TO FIELDS
+        # # optional: add a reference arrow for magnitude
+        # ref_speed = np.nanpercentile(np.sqrt(u[it]**2 + v[it]**2), 80)  # m/s
+        # ax.quiverkey(
+        #     ax.collections[-1] if hasattr(ax, "collections") else None,  # safe-ish
+        #     X=0.85, Y=1.03, U=ref_speed,
+        #     label=f"{ref_speed:.2f} m/s", labelpos="E"
+        # )
+
+        # ax.set_aspect("equal")
+        # ax.set_title(f"Divergence + depth-avg velocity vectors (t={it})")
+        # ax.set_xlabel("x [m]")
+        # ax.set_ylabel("y [m]")
+        # ax.grid(True, linestyle=":", alpha=0.3)
+
+        # fig.tight_layout()
+        # plt.show()
+        # """"
+
+        dh_dt = PhysicsPlugin.compute_dh_dt(
+            sedtrails_data.water_depth,
+            sedtrails_data.bed_level,
+            timestep
+        )
+
+        # initialise output
+        w_zp = np.zeros_like(sedtrails_data.water_depth)
+
+        # explicit mask: only compute where depth > 0
+        wet = sedtrails_data.water_depth != 0
+
+        w_zp[wet] = (
+            (dh_dt[wet] / sedtrails_data.water_depth[wet]) + divU[wet]
+        ) * (sedtrails_data.water_depth[wet] - z_p[wet])
+
+        # optional but recommended safeguard
+        w_zp = np.nan_to_num(w_zp, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+
+
+
+        # particle deposition rate (macdonald et al., 2006, equation 67)
+        if z_p < k_s_skin/4:
+            is_deposited = True
+        else:
+            is_deposited = False
+        # NB. THIS SHOULD BE IN PARTICLE LOOP, NOT APPLIED TO FIELDS
+        
+        # q3D entrainment
+        if random.uniform(0, 1) < freq_entrainment * self.config.time_step:
+            is_entrained = True
+            z_p = z_c # initially set particle height to centroid height
+        else:
+            is_entrained = False
+            z_p = z_bed # keep particle at bed level
+        # NB. THIS SHOULD BE IN PARTICLE LOOP, NOT APPLIED TO FIELDS
+
+        # if bed-particle interaction disabled, deposited particles instantaneously re-entrained to z_c if mobility M>1
+        # NB. THIS SHOULD BE IN PARTICLE LOOP, NOT APPLIED TO FIELDS
         
         # # macdonald ----------------------------------------------------------------------------------------
 
@@ -343,6 +477,12 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         sedtrails_data.add_physics_field('mean_shear_velocity', mean_shear_velocity) # this is for debugging purposes
         sedtrails_data.add_physics_field('suspended_load_velocity_lnpart', np.log(30 * z_s / k_s_total)) # this is for debugging purposes
         sedtrails_data.add_physics_field('particle_velocity_over_da_velocity', mean_particle_velocity/flow_velocity_magnitude) # this is for debugging purposes
+        sedtrails_data.add_physics_field('diffusive_velocity_x', u_Dx)# this is for debugging purposes
+        sedtrails_data.add_physics_field('diffusive_velocity_y', u_Dy)# this is for debugging purposes
+        sedtrails_data.add_physics_field('diffusive_velocity_z', w_D)# this is for debugging purposes
+        sedtrails_data.add_physics_field('turbulent_diffusion_coefficient_horizontal', E_turb_hor)# this is for debugging purposes
+        sedtrails_data.add_physics_field('turbulent_diffusion_coefficient_vertical', E_turb_vert)# this is for debugging purposes
+        sedtrails_data.add_physics_field('vertical_advection_velocity', w_zp)# this is for debugging purposes
 
 
         # Sediment velocities (vector fields)
@@ -351,7 +491,336 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             {'x': mean_particle_velocity_x, 'y': mean_particle_velocity_y, 'magnitude': mean_particle_velocity},
         )
 
+    @staticmethod
+    def compute_dh_dt(water_depth, bed_level, dt):
+        """
+        Time derivative of water depth dh/dt using backward difference.
+        """
+        dh_dt = np.zeros_like(water_depth)
+        wet = water_depth != 0
+        
+        dh_dt[1:] = ((water_depth[1:]+bed_level[1:]) - (water_depth[:-1]+bed_level[:-1])) / dt
+        dh_dt[0] = dh_dt[1]  # reasonable fill for first timestep
+        
+        wet = water_depth != 0
+        dh_dt[~wet] = np.nan  # set dh/dt to NaN where water depth is zero (dry areas)
+        return dh_dt
 
+
+    @staticmethod
+    def divergence_scattered_knn_time(
+        x, y,
+        u, v,
+        k=12,
+        r_max=None,
+    ):
+        """
+        Time-aware wrapper for KNN least-squares divergence.
+
+        Parameters
+        ----------
+        x, y : (N,) arrays
+            Coordinates [m]
+        u, v : (nt, N) arrays
+            Velocity components [m/s]
+        k : int
+            Number of nearest neighbours
+        r_max : float or None
+            Max neighbour radius [m]
+
+        Returns
+        -------
+        divU : (nt, N) array
+            Horizontal divergence ∇·U [1/s]
+        dudx, dvdy : (nt, N) arrays
+            Gradient components (diagnostics)
+        """
+
+        x = np.asarray(x)
+        y = np.asarray(y)
+        u = np.asarray(u)
+        v = np.asarray(v)
+
+        # ---- sanity checks (VERY IMPORTANT)
+        if x.ndim != 1 or y.ndim != 1:
+            raise ValueError("x and y must be 1D arrays")
+
+        if u.ndim != 2 or v.ndim != 2:
+            raise ValueError("u and v must be 2D arrays (nt, npoints)")
+
+        nt, npoints = u.shape
+        if x.size != npoints:
+            raise ValueError(
+                f"Spatial mismatch: x has {x.size} points, "
+                f"but u/v have {npoints}"
+            )
+
+        divU = np.full((nt, npoints), np.nan)
+        dudx = np.full((nt, npoints), np.nan)
+        dvdy = np.full((nt, npoints), np.nan)
+
+        for it in range(nt):
+            divU[it], dudx[it], dvdy[it] = PhysicsPlugin.divergence_scattered_knn(
+                x, y,
+                u[it], v[it],
+                k=k,
+                r_max=r_max,
+            )
+
+        return divU, dudx, dvdy
+
+    @staticmethod
+    def divergence_scattered_knn(
+        x, y, u, v,
+        k=12,
+        r_max=None,
+        eps=1e-12
+    ):
+        """
+        Best-effort horizontal divergence from scattered (x,y,u,v)
+        using local KNN least-squares fits.
+
+        Parameters
+        ----------
+        x, y : (N,) arrays
+            Coordinates [m]
+        u, v : (N,) arrays
+            Depth-averaged velocity components [m/s]
+        k : int
+            Number of nearest neighbours (8–20 typical)
+        r_max : float or None
+            Max search radius [m]; avoids using neighbours across gaps
+        eps : float
+            Numerical safeguard
+
+        Returns
+        -------
+        divU : (N,) array
+            Estimated divergence [1/s]
+        dudx, dvdy : (N,) arrays
+            Components of divU (for diagnostics)
+        """
+
+        x = np.asarray(x); y = np.asarray(y)
+        u = np.asarray(u); v = np.asarray(v)
+
+        N = x.size
+        divU = np.full(N, np.nan)
+        dudx = np.full(N, np.nan)
+        dvdy = np.full(N, np.nan)
+
+        coords = np.column_stack((x, y))
+        tree = cKDTree(coords)
+
+        # k+1 because the nearest neighbour is the point itself
+        dists, idxs = tree.query(coords, k=k+1)
+
+        for i in range(N):
+            neigh = idxs[i][1:]
+            r = dists[i][1:]
+
+            if r_max is not None:
+                mask = r <= r_max
+                neigh = neigh[mask]
+                r = r[mask]
+
+            if neigh.size < 3:
+                continue
+
+            dx = x[neigh] - x[i]
+            dy = y[neigh] - y[i]
+
+            # Distance-weighted least squares
+            w = 1.0 / (r + eps)
+            W = np.sqrt(w)
+
+            A = np.column_stack((np.ones_like(dx), dx, dy))
+            Aw = A * W[:, None]
+
+            # u-plane
+            bu, *_ = np.linalg.lstsq(Aw, u[neigh] * W, rcond=None)
+            # v-plane
+            bv, *_ = np.linalg.lstsq(Aw, v[neigh] * W, rcond=None)
+
+            dudx[i] = bu[1]
+            dvdy[i] = bv[2]
+            divU[i] = dudx[i] + dvdy[i]
+
+        return divU, dudx, dvdy
+
+
+    def apply_q3d_velocity_deficit(
+        u_zp: xr.DataArray,
+        u_zc: xr.DataArray,
+        u_1p4zc: xr.DataArray,
+        z_p: xr.DataArray,
+        z_c: xr.DataArray,
+        c_A: xr.DataArray,
+    ) -> xr.DataArray:
+        """
+
+        Apply the Q3-D horizontal velocity deficit formulation of
+        MacDonald et al. (2006), Eq. (40).
+
+        This function reduces the horizontal particle advection velocity
+        to account for intermittent particle–bed interaction in Q3-D mode.
+        The reduction depends on particle elevation relative to the
+        transport centroid and on the velocity deficit coefficient c_A
+        (Eq. 39).
+
+
+        Returns
+        -------
+        xarray.DataArray
+            Reduced horizontal particle advection velocity. The returned velocity
+            equals:
+            • c_A * u(z_p) below the centroid,
+            • a linear blend between c_A * u(z_c) and u(1.4 z_c) in the transition
+                zone,
+            • u(z_p) above 1.4 z_c.
+        """
+
+        # Linear blending term for transition region
+        blending = (z_p - z_c) / (0.4 * z_c)
+
+        # Transition-zone velocity (z_c < z_p <= 1.4 z_c)
+        u_transition = (
+            c_A * u_zc
+            + blending * (u_1p4zc - c_A * u_zc)
+        )
+
+        # Piecewise definition of reduced velocity
+        u_particle = xr.where(
+            z_p <= z_c,
+            c_A * u_zp,
+            xr.where(
+                z_p <= 1.4 * z_c,
+                u_transition,
+                u_zp,
+            ),
+        )
+
+        return u_particle
+
+    @staticmethod
+    def compute_turbulent_diffusion_coefficients(
+        water_depth,
+        z_p,
+        flow_velocity_magnitude,
+        shear_velocity,
+        *,
+        K_Et=0.15,
+        K_Ev=None,
+        M_b=None,
+        E_turb_hor_min=0.02,
+        E_turb_vert_min=0.0,
+    ):
+        """
+        Compute turbulent diffusion coefficients following MacDonald et al. (2006).
+
+        Parameters
+        ----------
+        water_depth : array
+            Total water depth h [m]
+        z_p : array
+            Particle height above bed z_p [m]
+        flow_velocity_magnitude : array
+            |U| depth-averaged velocity magnitude [m/s]
+        shear_velocity : array
+            Shear velocity u_* [m/s]
+        K_Et : float
+            Horizontal diffusion scaling coefficient (≈ 0.15–0.6)
+        K_Ev : float or None
+            Vertical diffusion scaling coefficient (if None, defaults to K_Et)
+        M_b : array or None
+            Wave-breaking enhancement factor (defaults to 1)
+        E_turb_hor_min : float
+            Minimum horizontal diffusivity [m²/s]
+        E_turb_vert_min : float
+            Minimum vertical diffusivity [m²/s] (default = 0 in PTM)
+
+        Returns
+        -------
+        E_turb_hor, E_turb_vert : arrays
+            Horizontal and vertical turbulent diffusion coefficients [m²/s]
+        """
+
+        if K_Ev is None:
+            K_Ev = K_Et  # PTM uses same scaling unless specified
+
+        if M_b is None:
+            M_b = np.ones_like(flow_velocity_magnitude)
+
+        # ---------------------
+        # Horizontal diffusion
+        # Equation (45) + (48)
+        # ---------------------
+        E_turb_hor = M_b * K_Et * water_depth * shear_velocity
+        E_turb_hor = np.nan_to_num(E_turb_hor, nan=0.0)
+        E_turb_hor = np.maximum(E_turb_hor, E_turb_hor_min)
+
+        # ---------------------
+        # Vertical diffusion
+        # Equations (49) + (50)
+        # ---------------------
+        shape = np.zeros_like(water_depth)
+        valid = water_depth > 0
+
+        shape[valid] = (
+            z_p[valid]
+            * (water_depth[valid] - z_p[valid]) ** 2
+            / water_depth[valid] ** 3
+        )
+
+        E_turb_vert = M_b * K_Ev * flow_velocity_magnitude * shape
+        E_turb_vert = np.nan_to_num(E_turb_vert, nan=0.0)
+        E_turb_vert = np.maximum(E_turb_vert, E_turb_vert_min)
+
+        return E_turb_hor, E_turb_vert
+
+
+    @staticmethod
+    def compute_random_walk_diffusion_velocities(
+        E_turb_hor,
+        E_turb_vert,
+        dt,
+        rng=np.random,# default gives uniformly distributed random numbers in [0,1)
+    ):
+        """
+        Compute random-walk diffusion velocities following MacDonald et al. (2006).
+
+        Parameters
+        ----------
+        E_turb_hor : array
+            Horizontal turbulent diffusivity [m²/s]
+        E_turb_vert : array
+            Vertical turbulent diffusivity [m²/s]
+        dt : float
+            Time step [s]
+        rng : numpy random generator
+            Random number generator (default: np.random)
+
+        Returns
+        -------
+        u_Dx, u_Dy, w_D : arrays
+            Random diffusion velocities [m/s]
+        """
+
+        # Uniform random numbers in [0,1]
+        Pi_x = rng.random(E_turb_hor.shape)
+        Pi_y = rng.random(E_turb_hor.shape)
+        Pi_z = rng.random(E_turb_vert.shape)
+
+        # Equation (51): horizontal (isotropic)
+        scale_h = np.sqrt(6.0 * E_turb_hor / dt)
+        u_Dx = 2.0 * (Pi_x - 0.5) * scale_h
+        u_Dy = 2.0 * (Pi_y - 0.5) * scale_h
+
+        # Equation (52): vertical
+        scale_v = np.sqrt(6.0 * E_turb_vert / dt)
+        w_D = 2.0 * (Pi_z - 0.5) * scale_v
+
+        return u_Dx, u_Dy, w_D
 
 
     def calculate_soulsby_vanrijn_potential_transport(self, water_depth, flow_velocity_magnitude,
@@ -577,31 +1046,95 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
 
         return float(z_s) if scalar_out else z_s
     
+
     @staticmethod
-    def calculate_macdonald_suspended_load_velocity(max_shear_velocity, z_s, k_s, flow_velocity_magnitude, max_suspended_velocity_factor=None):
-        """Calculate suspended load velocity using MacDonald et al. (2006) Eq. 29"""
-        suspended_load_velocity = np.zeros_like(z_s, dtype=float)
+    def calculate_macdonald_loglaw_velocity_at_z(
+        shear_velocity: np.ndarray,
+        z: np.ndarray,
+        roughness_height: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Compute mean horizontal fluid velocity at elevation z using the
+        logarithmic velocity profile of MacDonald et al. (2006), Eq. (29).
+
+            u(z) = 2.5 * u_* * ln(30 z / k_s)
+
+        All inputs are NumPy arrays.
+
+        Parameters
+        ----------
+        shear_velocity : ndarray
+            Shear velocity u_* [m/s].
+        z : ndarray
+            Elevation above the bed [m].
+        roughness_height : ndarray
+            Bed roughness height k_s [m].
+
+        Returns
+        -------
+        ndarray
+            Log-law fluid velocity at elevation z [m/s].
+        """
+
+        # Initialize output
+        u = np.zeros_like(z, dtype=float)
 
         # Log-law argument
-        argument = 30.0 * z_s / k_s
+        argument = 30.0 * z / roughness_height
 
-        # Validity mask: above roughness sublayer and finite u*
-        mask = (argument > 1.0) & np.isfinite(max_shear_velocity) & (max_shear_velocity > 0)
+        # Validity mask (physical + numerical)
+        valid = (
+            (argument > 1.0)
+            & np.isfinite(argument)
+            & np.isfinite(shear_velocity)
+            & (shear_velocity > 0.0)
+        )
 
-        # Apply log-law only where physically valid
-        suspended_load_velocity[mask] = 2.5 * max_shear_velocity[mask] * np.log(argument[mask])
-        
-        # Elsewhere u_sus remains zero (no suspended-load advection)
+        # Apply log-law where valid
+        u[valid] = 2.5 * shear_velocity[valid] * np.log(argument[valid])
 
-        # Cap suspended load velocity to a fraction of flow velocity if specified
-        if max_suspended_velocity_factor is not None:
-            suspended_load_velocity = np.minimum(suspended_load_velocity, max_suspended_velocity_factor * flow_velocity_magnitude)
+        return u
 
-        return suspended_load_velocity
+
+    @staticmethod
+    def cap_particle_velocity(
+        velocity: xr.DataArray,
+        flow_velocity_magnitude: xr.DataArray,
+        max_velocity_factor: float,
+    ) -> xr.DataArray:
+        """
+        Cap particle velocity to a specified fraction of the depth-averaged
+        flow velocity.
+
+        This is a numerical or modeling safeguard and not part of the
+        MacDonald et al. (2006) formulation.
+
+        Parameters
+        ----------
+        velocity : xarray.DataArray
+            Particle or fluid velocity to be capped [m/s].
+        flow_velocity_magnitude : xarray.DataArray
+            Magnitude of the ambient flow velocity [m/s].
+        max_velocity_factor : float
+            Maximum allowed fraction of the flow velocity (e.g. 1.0 or 0.8).
+
+        Returns
+        -------
+        xarray.DataArray
+            Capped velocity [m/s].
+        """
+
+        return xr.ufuncs.minimum(
+            velocity,
+            max_velocity_factor * flow_velocity_magnitude,
+        )
+
+
+
 
     
     @staticmethod
-    def calculate_mean_particle_advection_velocity(max_shear_velocity, reference_height, total_roughness):
+    def calculate_2d_total_load_particle_advection_velocity(shear_velocity, reference_height, total_roughness):
         """
         Compute horizontal mean particle advection velocity u_a following
         MacDonald et al. (2006), Equation 35.
@@ -629,20 +1162,20 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         U.S. Army Corps of Engineers. Eq. 35.
         """
 
-        mean_particle_velocity = np.full_like(
-            max_shear_velocity, np.nan, dtype=float
+        mean_particle_velocity = np.zeros_like(
+            shear_velocity, dtype=float
         )
 
         argument = reference_height / total_roughness
         mask = (
             np.isfinite(argument)
-            & np.isfinite(max_shear_velocity)
+            & np.isfinite(shear_velocity)
             & (total_roughness > 0)
             & (argument > 1)
         )
 
         mean_particle_velocity[mask] = (
-            max_shear_velocity[mask]
+            shear_velocity[mask]
             * (5.75 * np.log10(argument[mask]) + 8.5)
         )
 
