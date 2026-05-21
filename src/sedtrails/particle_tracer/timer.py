@@ -441,4 +441,10 @@ class Timer:
             if data_timestep is not None and data_timestep > 0:
                 cfl_timestep = min(cfl_timestep, data_timestep)
 
+            # toggle this on to enforce that the CFL timestep doesn't exceed the input time step in the simulation time parameters
+            # this is useful to prevent the timestep from jumping to the data timestep when velocities are very low- e.g during slack tides
+            # configured_timestep = self.simulation_time.time_step.seconds
+            # if configured_timestep is not None and configured_timestep > 0:
+            #     cfl_timestep = min(cfl_timestep, configured_timestep)
+
             self.set_timestep(cfl_timestep)

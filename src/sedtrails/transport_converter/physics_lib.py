@@ -599,13 +599,28 @@ def calculate_equilibrium_bedform_height(theta_max, theta_cr, grain_diameter, wa
     eta_b = np.zeros_like(theta_max, dtype=float)
 
     # ratio of Shields parameter to critical Shields
-    theta_ratio = theta_max / theta_cr
+    theta_ratio = np.full_like(theta_max, np.nan, dtype=float)
+    if theta_cr > 0:
+        np.divide(theta_max, theta_cr, out=theta_ratio)
 
     # apply the valid range for Eq. 12: 1 < theta/theta_cr < 24
-    mask = (theta_ratio > 1) & (theta_ratio < 24)
+    water_depth = np.broadcast_to(np.asarray(water_depth, dtype=float), theta_max.shape)
+    mask = (
+        (theta_ratio > 1)
+        & (theta_ratio < 24)
+        & (water_depth > 0)
+        & np.isfinite(theta_ratio)
+        & np.isfinite(water_depth)
+    )
 
-    eta_candidate = (0.11 * water_depth* (grain_diameter / water_depth) ** 0.3
-                     * (1 - np.exp(-0.5 * (theta_ratio - 1)))* (24 - theta_ratio))
+    eta_candidate = np.zeros_like(theta_max, dtype=float)
+    eta_candidate[mask] = (
+        0.11
+        * water_depth[mask]
+        * (grain_diameter / water_depth[mask]) ** 0.3
+        * (1 - np.exp(-0.5 * (theta_ratio[mask] - 1)))
+        * (24 - theta_ratio[mask])
+    )
     eta_b = np.where(mask, eta_candidate, 0)
 
     # form roughness is the bedform height

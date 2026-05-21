@@ -17,10 +17,45 @@ def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfiel
             'time': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
             'x': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
             'y': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
-            'z': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
-            'z_bed': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
-            'burial_depth': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'z': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)), # absolute particle elevation in the model vertical datum, positive upwards
+            'z_burial': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'z_p': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'burial_depth': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)), # depth below the bed surface (z=0) that the particle is buried (if buried) positive downwards
             'mixing_depth': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            # Q3D diagnostics. These velocity/parameter fields are stored from
+            # the first Q3D substep; x/y/z/status are stored after all substeps.
+            'q3d_diagnostic_z_p_first_substep': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'modified_centroid_particle_velocity_x': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'modified_centroid_particle_velocity_y': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'modified_centroid_particle_velocity': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'horizontal_particle_velocity_x': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'horizontal_particle_velocity_y': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'horizontal_particle_velocity': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'horizontal_diffusion_velocity_x': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'horizontal_diffusion_velocity_y': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'horizontal_diffusion_velocity': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'vertical_advection_velocity': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'vertical_diffusion_velocity': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'vertical_particle_velocity': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'horizontal_diffusion_coefficient': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'vertical_diffusion_coefficient': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'diagnostic_bed_level': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'diagnostic_water_depth': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'diagnostic_skin_roughness_height': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'diagnostic_max_shear_velocity': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'diagnostic_total_roughness_height': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'diagnostic_total_transport_centroid_elevation': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'diagnostic_q3d_velocity_deficit_coefficient': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'diagnostic_q3d_vertical_velocity_gradient': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'diagnostic_settling_velocity': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'diagnostic_q3d_flow_magnitude': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'diagnostic_rouse_number': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'turbulent_shields_number': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'critical_shields_number': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'q3d_entrainment_probability': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'q3d_entrainment_height_above_bed': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'q3d_vertical_update_scheme_code': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'q3d_motion_substeps': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
             # Status variables - initialize with zeros (False/not active)
             'is_alive': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
             'is_exposed': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
@@ -28,7 +63,12 @@ def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfiel
             'is_picked_up': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
             'is_released': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
             'is_suspended': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'is_deposited': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'is_buried': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
             'is_mobile': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'is_available_for_entrainment': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'entrained_now': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'deposited_now': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
             # Transport distances per flow field
             'covered_distance': (
                 ('n_flowfields', 'n_particles', 'n_timesteps'),
@@ -135,6 +175,10 @@ def collect_timestep_data(ds, populations, timestep, current_time):
         ds['x'][particle_slice, timestep] = population.particles['x']
         ds['y'][particle_slice, timestep] = population.particles['y']
         ds['z'][particle_slice, timestep] = population.particles.get('z', np.zeros(num_particles))
+        ds['z_burial'][particle_slice, timestep] = population.particles.get(
+            'z_burial', np.full(num_particles, np.nan)
+        )
+        ds['z_p'][particle_slice, timestep] = population.particles.get('z_p', np.full(num_particles, np.nan))
         ds['burial_depth'][particle_slice, timestep] = population.particles['burial_depth']
         # ds['mixing_depth'][particle_slice, timestep] = population.particles['mixing_depth'] # TODO: implement mixing depth tracking
 
@@ -154,13 +198,68 @@ def collect_timestep_data(ds, populations, timestep, current_time):
         ds['is_released'][particle_slice, timestep] = population.particles.get(
             'is_released', np.ones(num_particles, dtype=int)
         )
-        ds['status_mobile'][particle_slice, timestep] = population.particles.get(
-            'is_mobile', population.particles.get('status_mobile', np.zeros(num_particles, dtype=int))
         ds['is_suspended'][particle_slice, timestep] = population.particles.get(
             'is_suspended', np.ones(num_particles, dtype=int)
+        )
+        ds['is_deposited'][particle_slice, timestep] = population.particles.get(
+            'is_deposited', np.zeros(num_particles, dtype=int)
+        )
+        ds['is_buried'][particle_slice, timestep] = population.particles.get(
+            'is_buried', np.zeros(num_particles, dtype=int)
         )
         ds['is_mobile'][particle_slice, timestep] = population.particles.get(
             'is_mobile', np.zeros(num_particles, dtype=int)
         )
+
+        q3d_float_fields = (
+            'q3d_diagnostic_z_p_first_substep',
+            'modified_centroid_particle_velocity_x',
+            'modified_centroid_particle_velocity_y',
+            'modified_centroid_particle_velocity',
+            'horizontal_particle_velocity_x',
+            'horizontal_particle_velocity_y',
+            'horizontal_particle_velocity',
+            'horizontal_diffusion_velocity_x',
+            'horizontal_diffusion_velocity_y',
+            'horizontal_diffusion_velocity',
+            'vertical_advection_velocity',
+            'vertical_diffusion_velocity',
+            'vertical_particle_velocity',
+            'horizontal_diffusion_coefficient',
+            'vertical_diffusion_coefficient',
+            'diagnostic_bed_level',
+            'diagnostic_water_depth',
+            'diagnostic_skin_roughness_height',
+            'diagnostic_max_shear_velocity',
+            'diagnostic_total_roughness_height',
+            'diagnostic_total_transport_centroid_elevation',
+            'diagnostic_q3d_velocity_deficit_coefficient',
+            'diagnostic_q3d_vertical_velocity_gradient',
+            'diagnostic_settling_velocity',
+            'diagnostic_q3d_flow_magnitude',
+            'diagnostic_rouse_number',
+            'turbulent_shields_number',
+            'critical_shields_number',
+            'q3d_entrainment_probability',
+            'q3d_entrainment_height_above_bed',
+        )
+        for field_name in q3d_float_fields:
+            ds[field_name][particle_slice, timestep] = population.particles.get(
+                field_name,
+                np.full(num_particles, np.nan),
+            )
+
+        q3d_int_fields = (
+            'q3d_vertical_update_scheme_code',
+            'q3d_motion_substeps',
+            'is_available_for_entrainment',
+            'entrained_now',
+            'deposited_now',
+        )
+        for field_name in q3d_int_fields:
+            ds[field_name][particle_slice, timestep] = population.particles.get(
+                field_name,
+                np.zeros(num_particles, dtype=int),
+            )
 
         particle_offset += num_particles

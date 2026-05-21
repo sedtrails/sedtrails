@@ -690,9 +690,10 @@ class Simulation:
                         )
                     elif tracer_method == 'macdonald':
                         transport_prob = get_scalar_field_bounds_cached(
-                            flow_field_name.replace('velocity', 'probability'),
+                            'mean_particle_probability',
                             'get_scalar_field.transport_probability',
-                        )                    
+                        )
+                        mixing_depth = float('inf')
                     else:
                         transport_prob = 1.0
 
@@ -708,18 +709,101 @@ class Simulation:
                     # Update particle burial depth
                     if tracer_method == 'vanwesten':
                         population.update_burial_depth()
-                    elif tracer_method == 'macdonald':
-                        population.update_burial_depth()
 
                     # Determining status
                     population.update_status()
 
+                    is_macdonald_q3d = (
+                        tracer_method == 'macdonald'
+                        and str(getattr(self.physics_converter.config, 'computationType', '2D')).upper() == 'Q3D'
+                    )
+
                     # Get flow field information
                     flow_field = get_flow_field_bounds_cached(flow_field_name, 'get_flow_field.update_position')
 
-                    # Update particle position
-                    with self._profile_section('update_position'):
-                        population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
+                    if is_macdonald_q3d:
+                        hydrodynamic_flow_field = get_flow_field_bounds_cached(
+                            'depth_avg_flow_velocity',
+                            'get_flow_field.depth_avg_flow_velocity',
+                        )
+                        q3d_entrainment_mode = getattr(
+                            self.physics_converter.config, 'q3d_entrainment_mode', 'shields_threshold'
+                        )
+                        q3d_entrainment_frequency = None
+                        if str(q3d_entrainment_mode).lower().replace('-', '_') in {
+                            'entrainment_frequency',
+                            'frequency',
+                        }:
+                            q3d_entrainment_frequency = get_scalar_field_bounds_cached(
+                                'q3d_entrainment_frequency',
+                                'get_scalar_field.q3d_entrainment_frequency',
+                            )
+                        with self._profile_section('update_q3d_particle_motion'):
+                            population.update_q3d_particle_motion(
+                                current_timestep=timer.current_timestep,
+                                centroid_flow_field=flow_field,
+                                hydrodynamic_flow_field=hydrodynamic_flow_field,
+                                bed_level_field=bed_level,
+                                max_shear_velocity=get_scalar_field_bounds_cached(
+                                    'max_shear_velocity',
+                                    'get_scalar_field.max_shear_velocity',
+                                ),
+                                total_roughness_height=get_scalar_field_bounds_cached(
+                                    'total_roughness_height',
+                                    'get_scalar_field.total_roughness_height',
+                                ),
+                                total_transport_centroid_elevation=get_scalar_field_bounds_cached(
+                                    'total_transport_centroid_elevation',
+                                    'get_scalar_field.total_transport_centroid_elevation',
+                                ),
+                                q3d_velocity_deficit_coefficient=get_scalar_field_bounds_cached(
+                                    'q3d_velocity_deficit_coefficient',
+                                    'get_scalar_field.q3d_velocity_deficit_coefficient',
+                                ),
+                                q3d_vertical_velocity_gradient=get_scalar_field_bounds_cached(
+                                    'q3d_vertical_velocity_gradient',
+                                    'get_scalar_field.q3d_vertical_velocity_gradient',
+                                ),
+                                turbulent_shields_number=get_scalar_field_bounds_cached(
+                                    'turbulent_shields_number',
+                                    'get_scalar_field.turbulent_shields_number',
+                                ),
+                                critical_shields_number=self.physics_converter.grain_properties.get(
+                                    'critical_shields'
+                                ),
+                                settling_velocity=self.physics_converter.grain_properties.get('settling_velocity'),
+                                water_depth=get_scalar_field_bounds_cached(
+                                    'water_depth',
+                                    'get_scalar_field.water_depth',
+                                ),
+                                skin_roughness_height=get_scalar_field_bounds_cached(
+                                    'skin_roughness_height',
+                                    'get_scalar_field.skin_roughness_height',
+                                ),
+                                entrainment_height_above_bed=get_scalar_field_bounds_cached(
+                                    'q3d_entrainment_height_above_bed',
+                                    'get_scalar_field.q3d_entrainment_height_above_bed',
+                                ),
+                                rouse_number=get_scalar_field_bounds_cached(
+                                    'rouse_number',
+                                    'get_scalar_field.rouse_number',
+                                ),
+                                K_Et=getattr(
+                                    self.physics_converter.config, 'q3d_horizontal_diffusion_factor', 0.15
+                                ),
+                                q3d_entrainment_mode=q3d_entrainment_mode,
+                                q3d_entrainment_frequency=q3d_entrainment_frequency,
+                                q3d_vertical_update_scheme=getattr(
+                                    self.physics_converter.config, 'q3d_vertical_update_scheme', 'geometric'
+                                ),
+                                q3d_motion_substeps=getattr(
+                                    self.physics_converter.config, 'q3d_motion_substeps', 1
+                                ),
+                            )
+                    else:
+                        # Update particle position
+                        with self._profile_section('update_position'):
+                            population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
 
             # Collect data from all populations for this timestep using DataManager
             self.data_manager.collect_timestep_data(xr_data, populations, timer.step_count, timer.current)

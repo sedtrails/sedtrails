@@ -139,6 +139,24 @@
 				  "type": ["number", "null"],
 				  "default": 1.0,
 				  "description": "Optional cap on suspended-load advection velocity, expressed as a multiple of the depth-averaged flow velocity. If null, no capping is applied."
+				},
+				"q3d_entrainment_mode": {
+				  "type": "string",
+				  "enum": ["shields_threshold", "non_zero_particle_velocity", "entrainment_frequency"],
+				  "default": "shields_threshold",
+				  "description": "Rule used in Q3D to decide which available bed particles enter suspension. shields_threshold uses turbulent Shields > critical Shields; non_zero_particle_velocity sends every available particle into the Q3D motion calculation and lets the computed particle velocities decide whether it moves; entrainment_frequency uses the q3d_entrainment_frequency field computed by MacDonald."
+				},
+				"q3d_vertical_update_scheme": {
+				  "type": "string",
+				  "enum": ["geometric", "centroid_floor", "rouse_sample"],
+				  "default": "geometric",
+				  "description": "Q3D vertical position update scheme. geometric applies the bed-change correction z_p,new = z_p,old + w dt + bed_old - bed_new; centroid_floor applies settling only in absolute z and prevents suspended particles from falling below the new total-transport centroid; rouse_sample samples the new height above bed from a Rouse-shaped distribution using the MacDonald rouse_number field."
+				},
+				"q3d_motion_substeps": {
+				  "type": "integer",
+				  "minimum": 1,
+				  "default": 1,
+				  "description": "Number of Q3D horizontal/vertical particle motion substeps per outer particle timestep. A value of 1 gives the original single-step update."
 				}
             },
             "description": "Macdonald method for particle tracking"
@@ -302,6 +320,35 @@
                                 "constant"
                             ]
                         }
+                    ]
+                },
+                "vertical_position": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Optional initial vertical position of particles. Resolved after bed level and water depth are known.",
+                    "default": {
+                        "mode": "burial_depth"
+                    },
+                    "properties": {
+                        "mode": {
+                            "type": "string",
+                            "enum": [
+                                "burial_depth",
+                                "bed",
+                                "height_above_bed",
+                                "absolute_z",
+                                "centroid_on_release"
+                            ],
+                            "default": "burial_depth",
+                            "description": "Vertical initialization mode: use configured burial_depth, bed level, a height above bed, an absolute model z, or the Q3D centroid/entrainment height at release."
+                        },
+                        "value": {
+                            "type": "number",
+                            "description": "Vertical value for height_above_bed [m] or absolute_z [m in model vertical datum]."
+                        }
+                    },
+                    "required": [
+                        "mode"
                     ]
                 },
                 "class": {
