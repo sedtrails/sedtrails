@@ -1288,12 +1288,12 @@ def _resolve_relative_path(path: str | Path, base_dir: Path) -> Path:
 
 def _yaml_path_value(points_path: Path, output_config_dir: Path) -> str:
     try:
-        cwd = Path.cwd().resolve()
-        path_value = Path(points_path).resolve().relative_to(cwd)
+        path_value = Path(points_path).resolve().relative_to(output_config_dir.resolve())
         normalized = path_value.as_posix()
     except ValueError:
         try:
-            path_value = Path(points_path).resolve().relative_to(output_config_dir.resolve())
+            cwd = Path.cwd().resolve()
+            path_value = Path(points_path).resolve().relative_to(cwd)
             normalized = path_value.as_posix()
         except ValueError:
             normalized = Path(points_path).as_posix()
