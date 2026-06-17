@@ -535,6 +535,17 @@
         }
       }
     },
+    "compute": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "n_workers": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of parallel worker processes. Falls back to SLURM_CPUS_PER_TASK env var, then 1 (single-core)."
+        }
+      }
+    },
     "visualization": {
       "$ref": "urn:sedtrails:config:visualization.schema.json"
     }

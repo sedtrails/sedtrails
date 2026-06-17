@@ -25,6 +25,7 @@ from sedtrails.simulation_orchestrator.runtime_plan import (
 )
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
+from sedtrails.simulation_orchestrator import parallel_worker as _pw
 
 
 class Simulation:
@@ -150,17 +151,20 @@ class Simulation:
             return
 
         self.logger.info('=== SEDTRAILS PROFILE SUMMARY (%s) ===', status)
+        total_wall = sum(s['total'] for s in self._profile_timings.values())
         for name, stats in sorted(self._profile_timings.items(), key=lambda item: item[1]['total'], reverse=True):
             count = stats['count']
             total = stats['total']
             average = total / count if count else 0.0
+            pct = total / total_wall * 100 if total_wall > 0 else 0.0
             self.logger.info(
-                'profile %-42s count=%6d total=%10.6fs avg=%10.6fs max=%10.6fs',
+                'profile %-42s count=%6d total=%10.6fs avg=%10.6fs max=%10.6fs %5.1f%%',
                 name,
                 count,
                 total,
                 average,
                 stats['max'],
+                pct,
             )
 
     def _create_dashboard(self):
@@ -654,6 +658,13 @@ class Simulation:
             # Convert to Path object for consistency
             output_dir = Path(output_dir)
 
+        # In parallel runs each worker writes to its own task_XXXX/ subdirectory,
+        # which the parent merges into a single output file after all workers finish.
+        n_tasks = int(os.environ.get('SEDTRAILS_N_TASKS', 1))
+        if n_tasks > 1:
+            task_id = int(os.environ.get('SEDTRAILS_TASK_ID', 0))
+            output_dir = output_dir / f'task_{task_id:04d}'
+
         return output_dir
 
     def _get_physics_config(self):
@@ -840,12 +851,25 @@ class Simulation:
         """
         Execute the simulation and flush profile timings on failure.
 
+        Dispatches to parallel workers when n_workers > 1.
+
         Returns
         -------
         object
             Value returned by the simulation implementation.
         """
         try:
+            # Workers set SEDTRAILS_N_TASKS before calling run(); skip parallel dispatch
+            # to prevent infinite recursion (workers always go straight to _run_impl).
+            if int(os.environ.get('SEDTRAILS_N_TASKS', 1)) > 1:
+                return self._run_impl()
+
+            n_workers = int(
+                self._controller.get('compute.n_workers', None)
+                or os.environ.get('SLURM_CPUS_PER_TASK', 1)
+            )
+            if n_workers > 1:
+                return self._run_parallel(n_workers)
             return self._run_impl()
         except Exception:
             if self._active_progress_bar is not None:
@@ -853,6 +877,69 @@ class Simulation:
                 self._active_progress_bar = None
             self._log_profile_summary(status='interrupted')
             raise
+
+    def _run_parallel(self, n_workers: int) -> None:
+        """Fork n_workers subprocesses each handling a particle slice, then auto-merge.
+
+        The DFM dataset is loaded once in the parent and shared with workers via
+        Linux copy-on-write — workers inherit the pages read-only at near-zero cost.
+        """
+        import gc
+        import multiprocessing
+
+        base_output_dir = self._get_output_dir()
+        self.logger.info('Starting parallel run with %d workers -> %s', n_workers, base_output_dir)
+
+        # Preload DFM into numpy arrays in the parent so all workers share them via CoW.
+        plugin = self.format_converter.format_plugin
+        plugin.load()
+        plugin.input_data.load()
+        _pw._PRELOADED_INPUT_DATA = plugin.input_data
+        try:
+            dfm_mb = plugin.input_data.nbytes / 1e6
+            self.logger.info('DFM preloaded (%.0f MB), forking %d workers', dfm_mb, n_workers)
+        except Exception:
+            dfm_mb = 0.0
+            self.logger.info('DFM preloaded, forking %d workers', n_workers)
+
+        # Compute read_interval and duration in seconds for the OOM estimate.
+        try:
+            read_interval_s = float(Duration(self._controller.get('inputs.read_interval')).seconds)
+            duration_s = float(Duration(self._controller.get('time.duration')).seconds)
+        except Exception:
+            read_interval_s = duration_s = float('inf')
+        _pw._warn_if_oom_risk(dfm_mb, n_workers, read_interval_s, duration_s, self.logger)
+
+        worker_timeout = int(os.environ.get('SEDTRAILS_WORKER_TIMEOUT', 82800))
+        wall_t0 = time.perf_counter()
+
+        args = [(self._config_file, i, n_workers) for i in range(n_workers)]
+        n_failed = 0
+        with multiprocessing.Pool(processes=n_workers) as pool:
+            result = pool.starmap_async(_pw._worker_fn, args)
+            try:
+                result.get(timeout=worker_timeout)
+            except multiprocessing.TimeoutError:
+                n_failed += 1
+                self.logger.warning(
+                    'Worker timeout after %.0fs — terminating stuck workers', worker_timeout)
+                pool.terminate()
+            except Exception as e:
+                n_failed += 1
+                self.logger.warning(
+                    'Worker exception: %s — terminating pool, merging available outputs', e)
+                pool.terminate()
+
+        if n_failed:
+            self.logger.warning(
+                'Some workers failed or timed out; merge covers only completed outputs')
+
+        _pw._PRELOADED_INPUT_DATA = None
+        gc.collect()
+
+        _pw._merge_outputs(base_output_dir, self.logger)
+        self.logger.info('Total wall time: %.1fs (%d workers)',
+                         time.perf_counter() - wall_t0, n_workers)
 
     def _run_impl(self):
         """
@@ -863,6 +950,8 @@ class Simulation:
         if not self._config_is_read:  # assure config is read only once
             self._controller.load_config(self._config_file)
             self._config_is_read = True
+
+        wall_t0 = time.perf_counter()
 
         # Time configuration
         simulation_time = self._create_simulation_time()
@@ -1208,6 +1297,7 @@ class Simulation:
             )
 
             print(f'Simulation results saved to: {output_file}')
+            self.logger.info('Total wall time: %.1fs', time.perf_counter() - wall_t0)
             self._log_profile_summary(status='completed')
 
             # Keep dashboard open after simulation ends

@@ -299,10 +299,9 @@ def _shallow_sedtrails_data_clone(sedtrails_data: Any) -> Any:
 
 
 def _copy_physics_value(value: Any) -> Any:
+    # Physics arrays are read-only after build_plan_sedtrails_data completes.
+    # Sharing by reference instead of copying avoids ~3.5 GB of duplicate
+    # allocations per parallel worker (previously np.array(value, copy=True)).
     if isinstance(value, dict):
-        return {key: _copy_physics_value(item) for key, item in value.items()}
-    if isinstance(value, np.ndarray):
-        return np.array(value, copy=True)
-    if hasattr(value, 'copy'):
-        return value.copy()
-    return copy.deepcopy(value)
+        return dict(value)
+    return value
