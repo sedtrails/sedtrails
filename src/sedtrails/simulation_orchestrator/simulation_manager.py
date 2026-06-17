@@ -768,6 +768,12 @@ class Simulation:
                 'Some workers failed or timed out; merge covers only completed outputs')
 
         _pw._PRELOADED_INPUT_DATA = None
+        # Also drop the reference still held by the format plugin; without this the
+        # DFM dataset stays alive in the parent until _merge_outputs completes.
+        try:
+            self.format_converter.format_plugin.input_data = None
+        except Exception:
+            pass
         gc.collect()
 
         _pw._merge_outputs(base_output_dir, self.logger)
