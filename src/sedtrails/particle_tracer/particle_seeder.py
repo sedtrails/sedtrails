@@ -836,6 +836,11 @@ class ParticleFactory:
         # then non-reproducible across runs for those strategies.
         # TODO: add a dedicated burial_depth.seed config key for full reproducibility.
         strategy_seed = getattr(config, 'strategy_settings', {}).get('seed', None)
+        # In parallel runs, mix task_id into the seed so each worker draws a
+        # different burial-depth sequence — without this every worker would start
+        # from the same RNG state and produce identical (correlated) depths.
+        if n_tasks > 1 and strategy_seed is not None:
+            strategy_seed = hash((strategy_seed, task_id))
         burial_rng = random.Random(strategy_seed)
 
         particles = []
