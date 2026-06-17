@@ -915,7 +915,8 @@ class Simulation:
 
         args = [(self._config_file, i, n_workers) for i in range(n_workers)]
         n_failed = 0
-        with multiprocessing.Pool(processes=n_workers) as pool:
+        # Explicit fork context: CoW memory sharing only works with fork, not spawn.
+        with multiprocessing.get_context('fork').Pool(processes=n_workers) as pool:
             result = pool.starmap_async(_pw._worker_fn, args)
             try:
                 result.get(timeout=worker_timeout)
