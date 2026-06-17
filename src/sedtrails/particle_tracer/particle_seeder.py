@@ -821,6 +821,13 @@ class ParticleFactory:
         positions = StrategyClass.seed(config)
         _log_seeding_box_volume(config, positions)
 
+        # In parallel runs each worker takes every n_tasks-th position starting at task_id,
+        # giving non-overlapping deterministic subsets that together cover the full population.
+        task_id = int(os.environ.get('SEDTRAILS_TASK_ID', 0))
+        n_tasks = int(os.environ.get('SEDTRAILS_N_TASKS', 1))
+        if n_tasks > 1:
+            positions = positions[task_id::n_tasks]
+
         # Build a dedicated local RNG for burial-depth sampling, isolated from
         # other RNG usage. Seeded from the strategy seed when available (e.g.
         # RandomStrategy) so the simulation stays reproducible. For strategies
