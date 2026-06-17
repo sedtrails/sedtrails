@@ -160,6 +160,18 @@ def _merge_outputs(base_output_dir: Path, logger) -> None:
             merged['population_count'][pop_idx] = count
             merged['population_start_idx'][pop_idx] = start
 
+    # Each worker numbers its particles from 0, so trajectory_id contains
+    # duplicates after concat (traj_0, traj_1, ... repeated N times).
+    # Regenerate globally unique IDs matching the merged n_particles index.
+    if 'trajectory_id' in merged:
+        n_total = merged.sizes['n_particles']
+        name_strlen = merged.sizes.get('name_strlen', 24)
+        new_ids = np.array(
+            [list(f'traj_{i}'.ljust(name_strlen)[:name_strlen]) for i in range(n_total)],
+            dtype='S1'
+        )
+        merged['trajectory_id'] = xr.DataArray(new_ids, dims=['n_particles', 'name_strlen'])
+
     out_path = base_output_dir / 'sedtrails_results.nc'
     merged.to_netcdf(out_path)
 
