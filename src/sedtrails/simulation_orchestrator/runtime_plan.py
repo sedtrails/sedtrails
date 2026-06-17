@@ -6,8 +6,6 @@ import copy
 from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any, Mapping, Sequence
 
-import numpy as np
-
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.transport_converter.physics_converter import PhysicsConfig, PhysicsConverter
 
