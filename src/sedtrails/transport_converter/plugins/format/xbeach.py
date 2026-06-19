@@ -115,6 +115,8 @@ class FormatPlugin(BaseFormatPlugin):
             Converted SedTRAILS data. Spatial ``ny,nx`` fields are flattened
             to a single spatial axis. XBeach sediment transport components are
             summed over source ``sediment_classes`` before being stored.
+            XBeach cutout cells whose ``globalx`` or ``globaly`` coordinate is
+            not finite are omitted from the flattened spatial axis.
 
         Raises
         ------
@@ -236,9 +238,11 @@ class FormatPlugin(BaseFormatPlugin):
         Returns
         -------
         types.SimpleNamespace
-            Object with flattened XBeach cell-center coordinates, Delaunay
-            fallback or structured triangular connectivity for particle tracking, optional
-            ``boundary_edge_classification`` metadata, and ``face_node_fill_value``.
+            Object with flattened active XBeach cell-center coordinates,
+            Delaunay fallback or structured triangular connectivity for
+            particle tracking, optional ``boundary_edge_classification``
+            metadata, and ``face_node_fill_value``. XBeach cutout cells with
+            non-finite coordinates are omitted.
         """
         self.load()
         x, y = self._get_grid_coordinates()
@@ -260,8 +264,9 @@ class FormatPlugin(BaseFormatPlugin):
         Returns
         -------
         tuple[np.ndarray, np.ndarray]
-            Flattened X and Y cell-center coordinates, each with shape
-            ``(n_points,)``.
+            Flattened active X and Y cell-center coordinates, each with shape
+            ``(n_points,)``. XBeach cutout cells with non-finite coordinates
+            are omitted.
 
         Raises
         ------
@@ -479,17 +484,41 @@ class FormatPlugin(BaseFormatPlugin):
         return data
 
     def _get_grid_coordinates(self) -> tuple[np.ndarray, np.ndarray]:
-        """Return flattened XBeach cell-center coordinates."""
+        """Return flattened active XBeach cell-center coordinates."""
+        x_grid, y_grid = self._grid_coordinate_arrays()
+        x = x_grid.ravel()
+        y = y_grid.ravel()
+        active_mask = self._active_mask_from_coordinates(x, y)
+        return x[active_mask], y[active_mask]
+
+    def _grid_coordinate_arrays(self) -> tuple[np.ndarray, np.ndarray]:
+        """Return XBeach coordinate arrays with matching shapes."""
         if self.input_data is None:
             raise ValueError('Dataset not loaded. Call load() first.')
         if 'globalx' not in self.input_data or 'globaly' not in self.input_data:
             raise KeyError("Required XBeach coordinates 'globalx' and/or 'globaly' not found")
 
-        x = np.asarray(self.input_data['globalx'].values, dtype=float).ravel()
-        y = np.asarray(self.input_data['globaly'].values, dtype=float).ravel()
-        if x.shape != y.shape:
-            raise ValueError(f'globalx and globaly must have the same flattened shape, got {x.shape} and {y.shape}')
-        return x, y
+        x_grid = np.asarray(self.input_data['globalx'].values, dtype=float)
+        y_grid = np.asarray(self.input_data['globaly'].values, dtype=float)
+        if x_grid.shape != y_grid.shape:
+            raise ValueError(f'globalx and globaly must have the same shape, got {x_grid.shape} and {y_grid.shape}')
+        return x_grid, y_grid
+
+    def _grid_active_mask(self) -> np.ndarray | None:
+        """Return the flattened finite-coordinate mask, or ``None`` when unavailable."""
+        if self.input_data is None or 'globalx' not in self.input_data or 'globaly' not in self.input_data:
+            return None
+        x_grid, y_grid = self._grid_coordinate_arrays()
+        return self._active_mask_from_coordinates(x_grid.ravel(), y_grid.ravel())
+
+    @staticmethod
+    def _active_mask_from_coordinates(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """Return points with finite XBeach coordinates."""
+        x_array = np.asarray(x, dtype=float).ravel()
+        y_array = np.asarray(y, dtype=float).ravel()
+        if x_array.shape != y_array.shape:
+            raise ValueError(f'globalx and globaly must have the same flattened shape, got {x_array.shape} and {y_array.shape}')
+        return np.isfinite(x_array) & np.isfinite(y_array)
 
     def _particle_face_connectivity(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         cache = self._particle_connectivity_cache
@@ -510,8 +539,9 @@ class FormatPlugin(BaseFormatPlugin):
         if self.input_data is None or 'globalx' not in self.input_data or 'globaly' not in self.input_data:
             return None
 
-        x_shape = np.asarray(self.input_data['globalx'].values).shape
-        y_shape = np.asarray(self.input_data['globaly'].values).shape
+        x_grid, y_grid = self._grid_coordinate_arrays()
+        x_shape = x_grid.shape
+        y_shape = y_grid.shape
         if x_shape != y_shape or len(x_shape) != 2:
             return None
 
@@ -519,8 +549,11 @@ class FormatPlugin(BaseFormatPlugin):
         if ny < 2 or nx < 2:
             return None
 
-        triangles = np.empty(((ny - 1) * (nx - 1) * 2, 3), dtype=np.int64)
-        out_index = 0
+        active_mask = self._active_mask_from_coordinates(x_grid.ravel(), y_grid.ravel())
+        index_map = np.full(active_mask.size, -1, dtype=np.int64)
+        index_map[active_mask] = np.arange(np.count_nonzero(active_mask), dtype=np.int64)
+
+        triangles: list[tuple[int, int, int]] = []
         for iy in range(ny - 1):
             row = iy * nx
             next_row = (iy + 1) * nx
@@ -529,10 +562,17 @@ class FormatPlugin(BaseFormatPlugin):
                 lower_right = lower_left + 1
                 upper_left = next_row + ix
                 upper_right = upper_left + 1
-                triangles[out_index] = (lower_left, lower_right, upper_right)
-                triangles[out_index + 1] = (lower_left, upper_right, upper_left)
-                out_index += 2
-        return triangles
+                for triangle in (
+                    (lower_left, lower_right, upper_right),
+                    (lower_left, upper_right, upper_left),
+                ):
+                    mapped_triangle = index_map[np.asarray(triangle, dtype=np.int64)]
+                    if np.all(mapped_triangle >= 0):
+                        triangles.append(tuple(int(index) for index in mapped_triangle))
+
+        if not triangles:
+            return np.empty((0, 3), dtype=np.int64)
+        return np.asarray(triangles, dtype=np.int64)
 
     def _boundary_edge_classification(
         self,
@@ -595,14 +635,7 @@ class FormatPlugin(BaseFormatPlugin):
         var = self._require_mean_variable(var_name)
         if self.FRACTION_DIM in var.dims:
             raise ValueError(f"Expected scalar mean variable '{var_name}', found fraction dimension {var.dims}")
-        var = self._select_time(var, time_slice)
-        if self.TIME_DIM in var.dims:
-            spatial_dims = [dim for dim in var.dims if dim != self.TIME_DIM]
-            var = var.transpose(self.TIME_DIM, *spatial_dims)
-            values = np.asarray(var.values, dtype=float)
-        else:
-            values = np.broadcast_to(np.asarray(var.values, dtype=float), (num_times, *var.shape))
-        return values.reshape(num_times, grid_size)
+        return self._reshape_mean_spatial(self._select_time(var, time_slice), num_times, grid_size)
 
     def _mean_transport_component(
         self, var_name: str, time_slice: slice, num_times: int, grid_size: int
@@ -620,9 +653,45 @@ class FormatPlugin(BaseFormatPlugin):
         if self.TIME_DIM in var.dims:
             spatial_dims = [dim for dim in var.dims if dim != self.TIME_DIM]
             var = var.transpose(self.TIME_DIM, *spatial_dims)
-            return np.asarray(var.values, dtype=float).reshape(num_times, grid_size)
-        values = np.asarray(var.values, dtype=float).reshape(grid_size)
+            values = np.asarray(var.values, dtype=float)
+            return self._reshape_timed_spatial_values(values, num_times, grid_size, var.name or '<unnamed>')
+        values = self._reshape_static_spatial_values(np.asarray(var.values, dtype=float), grid_size, var.name or '<unnamed>')
         return np.broadcast_to(values, (num_times, grid_size))
+
+    def _reshape_timed_spatial_values(
+        self,
+        values: np.ndarray,
+        num_times: int,
+        grid_size: int,
+        var_name: str,
+    ) -> np.ndarray:
+        """Flatten timed XBeach spatial values and apply the active grid mask."""
+        if values.shape[0] != num_times:
+            raise ValueError(f"Variable '{var_name}' has {values.shape[0]} time values, expected {num_times}")
+        flat_values = values.reshape(num_times, -1)
+        return self._apply_active_grid_mask(flat_values, grid_size, var_name)
+
+    def _reshape_static_spatial_values(self, values: np.ndarray, grid_size: int, var_name: str) -> np.ndarray:
+        """Flatten static XBeach spatial values and apply the active grid mask."""
+        flat_values = np.asarray(values, dtype=float).reshape(1, -1)
+        return self._apply_active_grid_mask(flat_values, grid_size, var_name)[0]
+
+    def _apply_active_grid_mask(self, flat_values: np.ndarray, grid_size: int, var_name: str) -> np.ndarray:
+        """Filter flattened spatial values to the finite-coordinate XBeach grid."""
+        values = np.asarray(flat_values, dtype=float)
+        active_mask = self._grid_active_mask()
+        if active_mask is not None:
+            if values.shape[1] == active_mask.size:
+                values = values[:, active_mask]
+            elif values.shape[1] != grid_size:
+                raise ValueError(
+                    f"Variable '{var_name}' has {values.shape[1]} spatial values, "
+                    f"but XBeach coordinates expose {active_mask.size} raw points and {grid_size} active points"
+                )
+
+        if values.shape[1] != grid_size:
+            raise ValueError(f"Variable '{var_name}' has {values.shape[1]} active spatial values, expected {grid_size}")
+        return values
 
     def _require_mean_variable(self, var_name: str) -> xr.DataArray:
         """Return a required XBeach ``*_mean`` variable or raise a clear error."""

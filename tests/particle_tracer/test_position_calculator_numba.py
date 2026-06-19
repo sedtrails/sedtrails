@@ -88,6 +88,17 @@ def test_explicit_triangle_connectivity_is_preserved():
     np.testing.assert_array_equal(calculator['triangles'], triangles)
 
 
+def test_explicit_empty_triangle_connectivity_disables_delaunay_fallback():
+    """Explicit empty connectivity should leave all particle locations outside."""
+    grid_x, grid_y = square_grid()
+    geometry = create_grid_geometry(grid_x, grid_y, triangles=np.empty((0, 3), dtype=np.int64))
+
+    np.testing.assert_array_equal(geometry.triangles, np.empty((0, 3), dtype=np.int64))
+    np.testing.assert_array_equal(geometry.locate_points(np.array([0.5]), np.array([0.5])), np.array([-1]))
+    values = geometry.interpolate_field(grid_x + grid_y, np.array([0.5]), np.array([0.5]))
+    assert np.isnan(values[0])
+
+
 def test_rk4_update_with_constant_velocity():
     """Validates RK4 advection matches constant-velocity analytical motion."""
     grid_x, grid_y = square_grid()

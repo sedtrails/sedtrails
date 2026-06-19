@@ -184,6 +184,7 @@ def load_bathymetry_view_data(
         raise SeedingGuiError(
             f'Map arrays have incompatible lengths: x={len(x)}, y={len(y)}, {variable_name}={len(values)}.'
         )
+    x, y, values = _filter_finite_map_points(x, y, values, variable_name)
 
     return BathymetryViewData(x=x, y=y, values=values, variable=variable_name, input_file=input_file)
 
@@ -203,6 +204,22 @@ def _open_netcdf_dataset(input_file: Path) -> Any:
 
     details = '; '.join(errors)
     raise SeedingGuiError(f'Could not load input data with an explicit NetCDF engine: {details}')
+
+
+def _filter_finite_map_points(
+    x: np.ndarray,
+    y: np.ndarray,
+    values: np.ndarray,
+    variable_name: str,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return finite coordinate/value triples for GUI map operations."""
+    x_array = np.asarray(x, dtype=float).reshape(-1)
+    y_array = np.asarray(y, dtype=float).reshape(-1)
+    value_array = np.asarray(values, dtype=float).reshape(-1)
+    finite = np.isfinite(x_array) & np.isfinite(y_array) & np.isfinite(value_array)
+    if not np.any(finite):
+        raise SeedingGuiError(f"No finite map points found for bathymetry variable '{variable_name}'.")
+    return x_array[finite], y_array[finite], value_array[finite]
 
 
 def update_config_for_file_points(

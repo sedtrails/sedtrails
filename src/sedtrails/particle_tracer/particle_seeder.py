@@ -1497,8 +1497,10 @@ def _geometry_triangles_from_field_data(sedtrails_data: HasFieldCoordinates) -> 
         return None
 
     triangles = np.asarray(connectivity, dtype=np.int64)
-    if triangles.ndim != 2 or triangles.shape[1] != 3 or triangles.size == 0:
+    if triangles.ndim != 2 or triangles.shape[1] != 3:
         return None
+    if triangles.shape[0] == 0:
+        return triangles
 
     n_points = np.asarray(sedtrails_data.x).size
     valid = triangles >= 0

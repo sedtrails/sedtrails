@@ -1,8 +1,10 @@
 """Tests for the XBeach format plugin."""
 
 import numpy as np
+import pytest
 import xarray as xr
 
+from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever
 from sedtrails.particle_tracer.particle_seeder import ParticleSeeder
 from sedtrails.transport_converter.format_converter import FormatConverter
@@ -93,6 +95,100 @@ def test_xbeach_convert_uses_mean_variables_and_flattens_spatial_dims(monkeypatc
     np.testing.assert_allclose(sedtrails_data.mean_bed_shear_stress, 5.0)
     np.testing.assert_allclose(sedtrails_data.max_bed_shear_stress, 5.0)
     np.testing.assert_array_equal(sedtrails_data.nonlinear_wave_velocity['x'], (scalar + 3.0).reshape(2, 4))
+
+
+def test_xbeach_cutout_coordinates_filter_fields_and_connectivity(monkeypatch):
+    """Checks XBeach cutout points are removed from fields and mesh connectivity."""
+    globalx = np.array([[0.0, np.nan, 2.0], [0.0, 1.0, 2.0]])
+    globaly = np.array([[0.0, np.nan, 0.0], [1.0, 1.0, 1.0]])
+    scalar = np.arange(6, dtype=float).reshape(1, 2, 3)
+    transport = np.ones((1, 1, 2, 3), dtype=float)
+
+    ds = xr.Dataset(
+        data_vars={
+            'zb_mean': (('meantime', 'ny', 'nx'), scalar),
+            'hh_mean': (('meantime', 'ny', 'nx'), scalar + 1.0),
+            'ue_mean': (('meantime', 'ny', 'nx'), scalar + 2.0),
+            've_mean': (('meantime', 'ny', 'nx'), scalar + 3.0),
+            'taubx_mean': (('meantime', 'ny', 'nx'), np.full((1, 2, 3), 3.0)),
+            'tauby_mean': (('meantime', 'ny', 'nx'), np.full((1, 2, 3), 4.0)),
+            'Subg_mean': (('meantime', 'sediment_classes', 'ny', 'nx'), transport),
+            'Svbg_mean': (('meantime', 'sediment_classes', 'ny', 'nx'), transport + 1.0),
+            'Susg_mean': (('meantime', 'sediment_classes', 'ny', 'nx'), transport + 2.0),
+            'Svsg_mean': (('meantime', 'sediment_classes', 'ny', 'nx'), transport + 3.0),
+            'cctot_mean': (('meantime', 'ny', 'nx'), scalar + 4.0),
+        },
+        coords={
+            'globalx': (('ny', 'nx'), globalx),
+            'globaly': (('ny', 'nx'), globaly),
+            'meantime': (('meantime',), np.array([0.0])),
+        },
+    )
+
+    def fake_load(self):
+        """Injects synthetic XBeach grid coordinates with a cutout point."""
+        self.input_data = ds
+        return ds
+
+    def fail_delaunay(*_args, **_kwargs):
+        """Fails if structured XBeach grids fall back to Delaunay connectivity."""
+        raise AssertionError('Structured XBeach grids should not use Delaunay connectivity')
+
+    monkeypatch.setattr(xbeach.FormatPlugin, 'load', fake_load)
+    monkeypatch.setattr(xbeach, 'delaunay_connectivity', fail_delaunay)
+
+    plugin = xbeach.FormatPlugin(_existing_input_path())
+    sedtrails_data = plugin.convert()
+    field_data = plugin.get_seeding_field_data()
+
+    expected_x = np.array([0.0, 2.0, 0.0, 1.0, 2.0])
+    expected_y = np.array([0.0, 0.0, 1.0, 1.0, 1.0])
+    expected_connectivity = np.array([[0, 3, 2]], dtype=np.int64)
+
+    np.testing.assert_array_equal(sedtrails_data.x, expected_x)
+    np.testing.assert_array_equal(sedtrails_data.y, expected_y)
+    np.testing.assert_array_equal(sedtrails_data.bed_level, np.array([[0.0, 2.0, 3.0, 4.0, 5.0]]))
+    np.testing.assert_array_equal(sedtrails_data.depth_avg_flow_velocity['x'], np.array([[2.0, 4.0, 5.0, 6.0, 7.0]]))
+    np.testing.assert_array_equal(sedtrails_data.face_node_connectivity, expected_connectivity)
+    np.testing.assert_array_equal(field_data.x, expected_x)
+    np.testing.assert_array_equal(field_data.y, expected_y)
+    np.testing.assert_array_equal(field_data.face_node_connectivity, expected_connectivity)
+    assert np.isfinite(field_data.x).all()
+    assert np.isfinite(field_data.y).all()
+
+
+def test_xbeach_empty_cutout_connectivity_does_not_fall_back_to_delaunay(monkeypatch):
+    """Checks cutout-only cells stay outside instead of being Delaunay-filled."""
+    ds = xr.Dataset(
+        coords={
+            'globalx': (('ny', 'nx'), np.array([[0.0, 1.0], [0.0, np.nan]])),
+            'globaly': (('ny', 'nx'), np.array([[0.0, 0.0], [1.0, np.nan]])),
+        },
+    )
+
+    def fake_load(self):
+        """Injects a grid where no complete structured triangle survives."""
+        self.input_data = ds
+        return ds
+
+    monkeypatch.setattr(xbeach.FormatPlugin, 'load', fake_load)
+
+    field_data = xbeach.FormatPlugin(_existing_input_path()).get_seeding_field_data()
+
+    np.testing.assert_array_equal(field_data.particle_face_connectivity, np.empty((0, 3), dtype=np.int64))
+    config = {
+        'name': 'cutout-only population',
+        'particle_type': 'sand',
+        'transport_probability': 'no_probability',
+        'seeding': {
+            'strategy': {'point': {'locations': ['0.5,0.5']}},
+            'quantity': 1,
+            'release_start': '0',
+            'burial_depth': {'constant': 0.0},
+        },
+    }
+    with pytest.raises(ConfigurationError, match='outside the input field domain'):
+        ParticleSeeder([config]).seed(field_data)
 
 
 def test_format_converter_get_seeding_field_data_uses_xbeach_geometry_reader(monkeypatch):

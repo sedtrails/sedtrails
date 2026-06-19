@@ -214,6 +214,45 @@ def test_load_bathymetry_view_data_supports_xbeach(tmp_path, monkeypatch):
     assert view_data.variable == 'zb_mean'
 
 
+def test_load_bathymetry_view_data_filters_xbeach_cutout_points(tmp_path, monkeypatch):
+    """Bathymetry loading omits non-finite XBeach cutout coordinates."""
+
+    config_file = tmp_path / 'config.yaml'
+    input_file = tmp_path / 'input.nc'
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                'general': {'input_model': {'format': 'xbeach'}},
+                'inputs': {'data': str(input_file.name)},
+            }
+        ),
+        encoding='utf-8',
+    )
+    input_file.write_text('', encoding='utf-8')
+
+    dataset = xr.Dataset(
+        {
+            'globalx': (('ny', 'nx'), np.array([[0.0, np.nan, 2.0], [0.0, 1.0, 2.0]])),
+            'globaly': (('ny', 'nx'), np.array([[0.0, np.nan, 0.0], [1.0, 1.0, 1.0]])),
+            'zb': (('globaltime', 'ny', 'nx'), np.arange(6, dtype=float).reshape(1, 2, 3)),
+        }
+    )
+    monkeypatch.setattr(
+        'sedtrails.application_interfaces.seeding_gui._open_netcdf_dataset',
+        lambda _: dataset,
+    )
+
+    view_data = load_bathymetry_view_data(config_file)
+
+    np.testing.assert_allclose(view_data.x, np.array([0.0, 2.0, 0.0, 1.0, 2.0]))
+    np.testing.assert_allclose(view_data.y, np.array([0.0, 0.0, 1.0, 1.0, 1.0]))
+    np.testing.assert_allclose(view_data.values, np.array([0.0, 2.0, 3.0, 4.0, 5.0]))
+    assert view_data.variable == 'zb'
+    assert np.isfinite(view_data.x).all()
+    assert np.isfinite(view_data.y).all()
+    assert np.isfinite(view_data.values).all()
+
+
 def test_generate_transect_points_from_endpoint_pairs():
     """Transect generation interpolates k points for every clicked endpoint pair."""
 

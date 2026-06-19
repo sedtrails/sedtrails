@@ -71,7 +71,10 @@ class GridGeometry:
             if triangle_array.ndim != 2 or triangle_array.shape[1] != 3:
                 raise ValueError('triangles must be an array with shape (n_triangles, 3)')
             triangulation = None
-            triangle_finder = mtri.Triangulation(x, y, triangle_array).get_trifinder()
+            if triangle_array.shape[0] == 0:
+                triangle_finder = None
+            else:
+                triangle_finder = mtri.Triangulation(x, y, triangle_array).get_trifinder()
             triangle_neighbors = _compute_triangle_neighbors(triangle_array)
 
         unique_points = np.unique(finite_points, axis=0)
@@ -116,6 +119,8 @@ class GridGeometry:
 
     def find_triangle(self, x, y) -> int:
         """Return the containing simplex index, or -1 outside the triangulation."""
+        if self.triangles.shape[0] == 0:
+            return -1
         if self.triangulation is not None:
             simplex = self.triangulation.find_simplex(np.array([[x, y]], dtype=np.float64), tol=TRIANGLE_TOLERANCE)
             return int(simplex[0])
@@ -126,6 +131,8 @@ class GridGeometry:
         points = _points_array(x_points, y_points)
         if points.size == 0:
             return np.empty(0, dtype=np.int64)
+        if self.triangles.shape[0] == 0:
+            return np.full(points.shape[0], -1, dtype=np.int64)
 
         if start_simplices is None:
             simplices = np.full(points.shape[0], -1, dtype=np.int64)
@@ -167,6 +174,9 @@ class GridGeometry:
     def barycentric_weights(self, x_points, y_points):
         """Return simplex indices and barycentric weights for points."""
         points = _points_array(x_points, y_points)
+        if self.triangles.shape[0] == 0:
+            return np.full(points.shape[0], -1, dtype=np.int64), np.zeros((points.shape[0], 3), dtype=np.float64)
+
         weights = np.zeros((points.shape[0], 3), dtype=np.float64)
 
         if self.triangulation is not None:
