@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import os
 import sys
 import time
@@ -119,6 +119,62 @@ class Simulation:
         """Return whether lightweight simulation profiling is enabled."""
         return os.environ.get('SEDTRAILS_PROFILE', '').strip().lower() in {'1', 'true', 'yes', 'on'}
 
+    @staticmethod
+    def _parse_positive_int(value: Any, name: str) -> int:
+        """Return a positive integer from a config or environment value."""
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            raise ConfigurationError(f'{name} must be an integer, got {value!r}.') from None
+        if parsed < 1:
+            raise ConfigurationError(f'{name} must be greater than or equal to 1.')
+        return parsed
+
+    @staticmethod
+    def _parallel_env_int(name: str, default: int) -> int:
+        """Return an integer parallel-runtime environment variable."""
+        raw_value = os.environ.get(name)
+        if raw_value is None:
+            return default
+        try:
+            return int(raw_value)
+        except (TypeError, ValueError):
+            raise ConfigurationError(f'{name} must be an integer, got {raw_value!r}.') from None
+
+    @classmethod
+    def _parallel_task_context_from_env(cls) -> tuple[int, int]:
+        """Return validated parallel task identity from the worker environment."""
+        task_id = cls._parallel_env_int('SEDTRAILS_TASK_ID', 0)
+        n_tasks = cls._parallel_env_int('SEDTRAILS_N_TASKS', 1)
+        if n_tasks < 1:
+            raise ConfigurationError('SEDTRAILS_N_TASKS must be greater than or equal to 1.')
+        if task_id < 0 or task_id >= n_tasks:
+            raise ConfigurationError(
+                'SEDTRAILS_TASK_ID must satisfy 0 <= SEDTRAILS_TASK_ID < SEDTRAILS_N_TASKS.'
+            )
+        return task_id, n_tasks
+
+    def _parallel_worker_count(self) -> int:
+        """Return the configured local parallel worker count."""
+        configured = self._controller.get('compute.n_workers', None)
+        if configured is not None:
+            return self._parse_positive_int(configured, 'compute.n_workers')
+
+        slurm_cpus = os.environ.get('SLURM_CPUS_PER_TASK')
+        if slurm_cpus is not None:
+            return self._parse_positive_int(slurm_cpus, 'SLURM_CPUS_PER_TASK')
+
+        return 1
+
+    def _clear_parallel_preloaded_input(self, preload_input: bool) -> None:
+        """Release parent references to input data shared with worker processes."""
+        _pw._PRELOADED_INPUT_DATA = None
+        if preload_input:
+            try:
+                self.format_converter.format_plugin.input_data = None
+            except Exception:
+                pass
+
     @contextmanager
     def _profile_section(self, name: str):
         """Measure a section when profiling is enabled."""
@@ -175,6 +231,12 @@ class Simulation:
             if self._enable_dashboard_override is not None
             else self._controller.get('visualization.dashboard.enable', False)
         )
+
+        if dashboard_enabled and self._parallel_worker_count() > 1:
+            self.logger.warning(
+                'Dashboard disabled because compute.n_workers > 1 uses parallel worker processes.'
+            )
+            return None
 
         if dashboard_enabled:
             reference_date = self._controller.get('general.input_model.reference_date', '1970-01-01')
@@ -660,9 +722,8 @@ class Simulation:
 
         # In parallel runs each worker writes to its own task_XXXX/ subdirectory,
         # which the parent merges into a single output file after all workers finish.
-        n_tasks = int(os.environ.get('SEDTRAILS_N_TASKS', 1))
+        task_id, n_tasks = self._parallel_task_context_from_env()
         if n_tasks > 1:
-            task_id = int(os.environ.get('SEDTRAILS_TASK_ID', 0))
             output_dir = output_dir / f'task_{task_id:04d}'
 
         return output_dir
@@ -849,9 +910,7 @@ class Simulation:
 
     def run(self):
         """
-        Execute the simulation and flush profile timings on failure.
-
-        Dispatches to parallel workers when n_workers > 1.
+        Execute the simulation, dispatching to parallel workers when requested.
 
         Returns
         -------
@@ -861,13 +920,10 @@ class Simulation:
         try:
             # Workers set SEDTRAILS_N_TASKS before calling run(); skip parallel dispatch
             # to prevent infinite recursion (workers always go straight to _run_impl).
-            if int(os.environ.get('SEDTRAILS_N_TASKS', 1)) > 1:
+            if self._parallel_task_context_from_env()[1] > 1:
                 return self._run_impl()
 
-            n_workers = int(
-                self._controller.get('compute.n_workers', None)
-                or os.environ.get('SLURM_CPUS_PER_TASK', 1)
-            )
+            n_workers = self._parallel_worker_count()
             if n_workers > 1:
                 return self._run_parallel(n_workers)
             return self._run_impl()
@@ -881,8 +937,9 @@ class Simulation:
     def _run_parallel(self, n_workers: int) -> None:
         """Fork n_workers subprocesses each handling a particle slice, then auto-merge.
 
-        The DFM dataset is loaded once in the parent and shared with workers via
-        Linux copy-on-write — workers inherit the pages read-only at near-zero cost.
+        When ``compute.preload_input`` is true, the DFM dataset is loaded once
+        in the parent and shared with workers via Linux copy-on-write. When it
+        is false, each worker reads its configured input chunks independently.
         """
         import gc
         import multiprocessing
@@ -890,59 +947,86 @@ class Simulation:
         base_output_dir = self._get_output_dir()
         self.logger.info('Starting parallel run with %d workers -> %s', n_workers, base_output_dir)
 
-        # Preload DFM into numpy arrays in the parent so all workers share them via CoW.
-        plugin = self.format_converter.format_plugin
-        plugin.load()
-        plugin.input_data.load()
-        _pw._PRELOADED_INPUT_DATA = plugin.input_data
         try:
-            dfm_mb = plugin.input_data.nbytes / 1e6
-            self.logger.info('DFM preloaded (%.0f MB), forking %d workers', dfm_mb, n_workers)
-        except Exception:
-            dfm_mb = 0.0
-            self.logger.info('DFM preloaded, forking %d workers', n_workers)
+            fork_context = multiprocessing.get_context('fork')
+        except ValueError as exc:
+            raise ConfigurationError(
+                'compute.n_workers > 1 requires a Python multiprocessing fork context. '
+                'Run this backend on Linux/WSL, or set compute.n_workers: 1.'
+            ) from exc
 
-        # Compute read_interval and duration in seconds for the OOM estimate.
+        preload_input = bool(self._controller.get('compute.preload_input', False))
+        worker_timeout = self._parse_positive_int(
+            os.environ.get('SEDTRAILS_WORKER_TIMEOUT', 82800),
+            'SEDTRAILS_WORKER_TIMEOUT',
+        )
         try:
             read_interval_s = float(Duration(self._controller.get('inputs.read_interval')).seconds)
             duration_s = float(Duration(self._controller.get('time.duration')).seconds)
         except Exception:
             read_interval_s = duration_s = float('inf')
-        _pw._warn_if_oom_risk(dfm_mb, n_workers, read_interval_s, duration_s, self.logger)
 
-        worker_timeout = int(os.environ.get('SEDTRAILS_WORKER_TIMEOUT', 82800))
+        dfm_mb = 0.0
+        if preload_input:
+            try:
+                # Preload DFM into numpy arrays in the parent so all workers share them via CoW.
+                plugin = self.format_converter.format_plugin
+                plugin.load()
+                try:
+                    dfm_mb = plugin.input_data.nbytes / 1e6
+                    _pw._warn_if_oom_risk(dfm_mb, n_workers, read_interval_s, duration_s, self.logger)
+                except Exception:
+                    dfm_mb = 0.0
+                plugin.input_data.load()
+                _pw._PRELOADED_INPUT_DATA = plugin.input_data
+                if dfm_mb > 0.0:
+                    self.logger.info('DFM preloaded (%.0f MB), forking %d workers', dfm_mb, n_workers)
+                else:
+                    self.logger.info('DFM preloaded, forking %d workers', n_workers)
+            except Exception:
+                self._clear_parallel_preloaded_input(preload_input)
+                gc.collect()
+                raise
+        else:
+            _pw._PRELOADED_INPUT_DATA = None
+            self.logger.info(
+                'Parallel input preload disabled; workers will read input chunks independently'
+            )
         wall_t0 = time.perf_counter()
 
         args = [(self._config_file, i, n_workers) for i in range(n_workers)]
-        n_failed = 0
+        worker_error = None
         # Explicit fork context: CoW memory sharing only works with fork, not spawn.
-        with multiprocessing.get_context('fork').Pool(processes=n_workers) as pool:
+        try:
+            pool_context = fork_context.Pool(processes=n_workers)
+        except Exception:
+            self._clear_parallel_preloaded_input(preload_input)
+            gc.collect()
+            raise
+
+        with pool_context as pool:
             result = pool.starmap_async(_pw._worker_fn, args)
             try:
                 result.get(timeout=worker_timeout)
-            except multiprocessing.TimeoutError:
-                n_failed += 1
+            except multiprocessing.TimeoutError as exc:
+                worker_error = exc
                 self.logger.warning(
-                    'Worker timeout after %.0fs — terminating stuck workers', worker_timeout)
+                    'Worker timeout after %.0fs - terminating stuck workers', worker_timeout)
                 pool.terminate()
-            except Exception as e:
-                n_failed += 1
+            except Exception as exc:
+                worker_error = exc
                 self.logger.warning(
-                    'Worker exception: %s — terminating pool, merging available outputs', e)
+                    'Worker exception: %s; terminating pool without merging partial outputs', exc)
                 pool.terminate()
 
-        if n_failed:
-            self.logger.warning(
-                'Some workers failed or timed out; merge covers only completed outputs')
-
-        _pw._PRELOADED_INPUT_DATA = None
-        # Also drop the reference still held by the format plugin; without this the
-        # DFM dataset stays alive in the parent until _merge_outputs completes.
-        try:
-            self.format_converter.format_plugin.input_data = None
-        except Exception:
-            pass
+        # Drop references before the merge so the parent can reclaim memory.
+        self._clear_parallel_preloaded_input(preload_input)
         gc.collect()
+
+        if worker_error is not None:
+            raise RuntimeError(
+                'Parallel worker pool failed; partial worker outputs were not merged.'
+            ) from worker_error
 
         _pw._merge_outputs(base_output_dir, self.logger)
         self.logger.info('Total wall time: %.1fs (%d workers)',
@@ -1164,19 +1248,21 @@ class Simulation:
                     tracer_plan = runtime_plan.tracer
                     retriever = plan_retrievers[runtime_plan.population_index]
 
-                    with self._profile_section('get_scalar_field.mixing_layer_thickness'):
-                        mixing_depth = retriever.get_scalar_field(field_time_seconds, 'mixing_layer_thickness')['magnitude']
-                    with self._profile_section('get_scalar_field.bed_level'):
-                        bed_level = retriever.get_scalar_field(field_time_seconds, 'bed_level')['magnitude']
+                    with self._profile_section('get_scalar_field_bounds.mixing_layer_thickness'):
+                        mixing_depth = retriever.get_scalar_field_bounds(
+                            field_time_seconds, 'mixing_layer_thickness'
+                        )
+                    with self._profile_section('get_scalar_field_bounds.bed_level'):
+                        bed_level = retriever.get_scalar_field_bounds(field_time_seconds, 'bed_level')
 
                     for flow_field_name in tracer_plan.flow_field_names:
                         if tracer_plan.method_name == 'vanwesten':
-                            with self._profile_section('get_scalar_field.transport_probability'):
-                                transport_prob = retriever.get_scalar_field(
+                            with self._profile_section('get_scalar_field_bounds.transport_probability'):
+                                transport_prob = retriever.get_scalar_field_bounds(
                                     field_time_seconds, flow_field_name.replace('velocity', 'probability')
-                                )['magnitude']
+                                )
                         else:
-                            transport_prob = np.ones_like(bed_level)
+                            transport_prob = 1.0
 
                         with self._profile_section('update_information'):
                             population.update_information(
@@ -1193,10 +1279,14 @@ class Simulation:
                         with self._profile_section('update_status'):
                             population.update_status()
 
-                        with self._profile_section('get_flow_field.update_position'):
-                            flow_field = retriever.get_flow_field(field_time_seconds, flow_field_name)
-                        if runtime_plan.population_index == 0 and flow_field_name == tracer_plan.flow_field_names[0]:
-                            dashboard_flow_field = flow_field
+                        with self._profile_section('get_flow_field_bounds.update_position'):
+                            flow_field = retriever.get_flow_field_bounds(field_time_seconds, flow_field_name)
+                        if (
+                            self.dashboard is not None
+                            and runtime_plan.population_index == 0
+                            and flow_field_name == tracer_plan.flow_field_names[0]
+                        ):
+                            dashboard_flow_field = retriever.get_flow_field(field_time_seconds, flow_field_name)
 
                         with self._profile_section('update_position'):
                             population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)

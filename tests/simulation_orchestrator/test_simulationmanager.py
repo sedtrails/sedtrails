@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit tests for the Simulation class.
 """
 
@@ -9,6 +9,7 @@ import pytest
 
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer.timer import Duration, Time
+from sedtrails.simulation_orchestrator import parallel_worker as _pw
 from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
 
@@ -83,6 +84,165 @@ class _CheckpointWriter:
     def write_checkpoint(self, *args, **kwargs):
         """Capture checkpoint arguments."""
         self.calls.append((args, kwargs))
+
+
+class TestSimulationManagerParallelConfig:
+    """Tests for local parallel configuration parsing."""
+
+    def test_parallel_worker_count_uses_config_before_slurm(self, monkeypatch):
+        """Explicit config should take precedence over scheduler environment."""
+        monkeypatch.setenv('SLURM_CPUS_PER_TASK', '16')
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller({'compute.n_workers': 4})
+
+        assert manager._parallel_worker_count() == 4
+
+    def test_parallel_worker_count_uses_slurm_fallback(self, monkeypatch):
+        """Scheduler CPU allocation should be used when config is unset."""
+        monkeypatch.setenv('SLURM_CPUS_PER_TASK', '8')
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller()
+
+        assert manager._parallel_worker_count() == 8
+
+    @pytest.mark.parametrize(
+        ('value', 'message'),
+        [
+            ('0', 'SLURM_CPUS_PER_TASK'),
+            ('many', 'SLURM_CPUS_PER_TASK'),
+        ],
+    )
+    def test_parallel_worker_count_rejects_invalid_slurm_values(self, monkeypatch, value, message):
+        """Invalid scheduler worker counts should not silently fall back to serial."""
+        monkeypatch.setenv('SLURM_CPUS_PER_TASK', value)
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller()
+
+        with pytest.raises(ConfigurationError, match=message):
+            manager._parallel_worker_count()
+
+    @pytest.mark.parametrize(
+        ('task_id', 'n_tasks', 'message'),
+        [
+            ('0', '0', 'SEDTRAILS_N_TASKS'),
+            ('2', '2', 'SEDTRAILS_TASK_ID'),
+            ('left', '2', 'SEDTRAILS_TASK_ID'),
+        ],
+    )
+    def test_parallel_task_context_rejects_invalid_environment(self, monkeypatch, task_id, n_tasks, message):
+        """Worker task IDs should be validated before output paths are resolved."""
+        monkeypatch.setenv('SEDTRAILS_TASK_ID', task_id)
+        monkeypatch.setenv('SEDTRAILS_N_TASKS', n_tasks)
+
+        with pytest.raises(ConfigurationError, match=message):
+            Simulation._parallel_task_context_from_env()
+
+    def test_run_parallel_clears_preload_when_pool_creation_fails(self, monkeypatch, tmp_path):
+        """A failed worker pool should not keep the parent input dataset referenced."""
+        import gc
+        import multiprocessing
+
+        class InputData:
+            nbytes = 1024
+
+            def load(self):
+                return None
+
+        class Plugin:
+            def __init__(self):
+                self.input_data = InputData()
+
+            def load(self):
+                return None
+
+        class FailingForkContext:
+            def Pool(self, processes):
+                raise RuntimeError('pool creation failed')
+
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller(
+            {
+                'compute.preload_input': True,
+                'inputs.read_interval': '1H',
+                'time.duration': '1H',
+            }
+        )
+        manager._config_file = 'config.yml'
+        manager.logger = SimpleNamespace(info=lambda *args, **kwargs: None, warning=lambda *args, **kwargs: None)
+        plugin = Plugin()
+        manager.format_converter = SimpleNamespace(format_plugin=plugin)
+
+        monkeypatch.setattr(manager, '_get_output_dir', lambda: tmp_path)
+        monkeypatch.setattr(multiprocessing, 'get_context', lambda method: FailingForkContext())
+        monkeypatch.setattr(_pw, '_warn_if_oom_risk', lambda *args, **kwargs: None)
+        monkeypatch.setattr(_pw, '_merge_outputs', lambda *args, **kwargs: pytest.fail('merge should not run'))
+        monkeypatch.setattr(gc, 'collect', lambda: 0)
+
+        with pytest.raises(RuntimeError, match='pool creation failed'):
+            manager._run_parallel(2)
+
+        assert _pw._PRELOADED_INPUT_DATA is None
+        assert plugin.input_data is None
+
+    def test_run_parallel_defaults_to_no_preload(self, monkeypatch, tmp_path):
+        """Parallel runs should not load the full input dataset unless requested."""
+        import gc
+        import multiprocessing
+
+        class Plugin:
+            input_data = object()
+
+            def load(self):
+                pytest.fail('default parallel execution should not preload input')
+
+        class FailingForkContext:
+            def Pool(self, processes):
+                raise RuntimeError('pool creation failed')
+
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller(
+            {
+                'inputs.read_interval': '1H',
+                'time.duration': '1H',
+            }
+        )
+        manager._config_file = 'config.yml'
+        manager.logger = SimpleNamespace(info=lambda *args, **kwargs: None, warning=lambda *args, **kwargs: None)
+        manager.format_converter = SimpleNamespace(format_plugin=Plugin())
+
+        monkeypatch.setattr(manager, '_get_output_dir', lambda: tmp_path)
+        monkeypatch.setattr(multiprocessing, 'get_context', lambda method: FailingForkContext())
+        monkeypatch.setattr(_pw, '_merge_outputs', lambda *args, **kwargs: pytest.fail('merge should not run'))
+        monkeypatch.setattr(gc, 'collect', lambda: 0)
+
+        with pytest.raises(RuntimeError, match='pool creation failed'):
+            manager._run_parallel(2)
+
+        assert _pw._PRELOADED_INPUT_DATA is None
+
+    def test_create_dashboard_disables_parallel_dashboard(self, monkeypatch):
+        """Parallel parent simulations should not create GUI dashboards."""
+        import sedtrails.simulation_orchestrator.simulation_manager as manager_module
+
+        manager = object.__new__(Simulation)
+        manager._enable_dashboard_override = None
+        manager._controller = _Controller(
+            {
+                'visualization.dashboard.enable': True,
+                'compute.n_workers': 2,
+            }
+        )
+        warning_calls = []
+        manager.logger = SimpleNamespace(warning=lambda *args, **kwargs: warning_calls.append(args))
+
+        monkeypatch.setattr(
+            manager_module,
+            'SimulationDashboard',
+            lambda *args, **kwargs: pytest.fail('parallel runs should not create dashboards'),
+        )
+
+        assert manager._create_dashboard() is None
+        assert warning_calls
 
 
 class TestSimulationManagerTimeConfig:

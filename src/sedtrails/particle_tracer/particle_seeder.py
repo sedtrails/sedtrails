@@ -1,4 +1,4 @@
-"""
+﻿"""
 Particle Seeding Tool
 =====================
 
@@ -277,6 +277,16 @@ def _log_seeding_box_volume(config, positions: list) -> None:
 
 
 class HasFieldCoordinates(Protocol):
+    """Protocol for objects that expose seeding coordinates.
+
+    Attributes
+    ----------
+    x : ndarray
+        Field x coordinates used to build particle grid geometry.
+    y : ndarray
+        Field y coordinates used to build particle grid geometry.
+    """
+
     x: ndarray
     y: ndarray
 
@@ -321,6 +331,39 @@ def _is_temporal_field(field_value: Any) -> bool:
 
 def _is_temporal_flow_field(flow_field: Dict) -> bool:
     return _is_temporal_field(flow_field) and isinstance(flow_field.get('lower'), dict)
+
+
+def _iter_expanded_particles(positions):
+    """Yield all expanded particles as ``(global_index, x, y)`` tuples."""
+    global_index = 0
+    for qty, x_coord, y_coord in positions:
+        for _ in range(int(qty)):
+            yield global_index, x_coord, y_coord
+            global_index += 1
+
+
+def _parallel_env_int(name: str, default: int) -> int:
+    """Return an integer parallel-runtime environment variable."""
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        raise ConfigurationError(f'{name} must be an integer, got {raw_value!r}.') from None
+
+
+def _parallel_task_context_from_env() -> tuple[int, int]:
+    """Return validated parallel task identity from the worker environment."""
+    task_id = _parallel_env_int('SEDTRAILS_TASK_ID', 0)
+    n_tasks = _parallel_env_int('SEDTRAILS_N_TASKS', 1)
+    if n_tasks < 1:
+        raise ConfigurationError('SEDTRAILS_N_TASKS must be greater than or equal to 1.')
+    if task_id < 0 or task_id >= n_tasks:
+        raise ConfigurationError(
+            'SEDTRAILS_TASK_ID must satisfy 0 <= SEDTRAILS_TASK_ID < SEDTRAILS_N_TASKS.'
+        )
+    return task_id, n_tasks
 
 
 @dataclass
@@ -860,39 +903,32 @@ class ParticleFactory:
         positions = StrategyClass.seed(config)
         _log_seeding_box_volume(config, positions)
 
-        # In parallel runs each worker takes every n_tasks-th position starting at task_id,
-        # giving non-overlapping deterministic subsets that together cover the full population.
-        task_id = int(os.environ.get('SEDTRAILS_TASK_ID', 0))
-        n_tasks = int(os.environ.get('SEDTRAILS_N_TASKS', 1))
-        if n_tasks > 1:
-            positions = positions[task_id::n_tasks]
-
+        # In parallel runs each worker keeps every n_tasks-th expanded particle
+        # starting at task_id, giving balanced non-overlapping deterministic subsets.
+        task_id, n_tasks = _parallel_task_context_from_env()
         # Build a dedicated local RNG for burial-depth sampling, isolated from
         # other RNG usage. Seeded from the strategy seed when available (e.g.
         # RandomStrategy) so the simulation stays reproducible. For strategies
         # without an explicit seed (point/grid/transect) strategy_seed is None
-        # and random.Random(None) seeds from system entropy — burial depths are
+        # and random.Random(None) seeds from system entropy - burial depths are
         # then non-reproducible across runs for those strategies.
         # TODO: add a dedicated burial_depth.seed config key for full reproducibility.
         strategy_seed = getattr(config, 'strategy_settings', {}).get('seed', None)
-        # In parallel runs, mix task_id into the seed so each worker draws a
-        # different burial-depth sequence — without this every worker would start
-        # from the same RNG state and produce identical (correlated) depths.
-        if n_tasks > 1 and strategy_seed is not None:
-            strategy_seed = hash((strategy_seed, task_id))
         burial_rng = random.Random(strategy_seed)
 
         particles = []
-        for qty, x, y in positions:
-            for _ in range(qty):
-                p = ParticleClass()
-                p.x = x
-                p.y = y
-                p.release_time = getattr(config, 'release_start', None)
+        for global_index, x, y in _iter_expanded_particles(positions):
+            burial_depth_value = _sample_burial_depth(burial_depth, rng=burial_rng)
+            if n_tasks > 1 and global_index % n_tasks != task_id:
+                continue
 
-                p.burial_depth = _sample_burial_depth(burial_depth, rng=burial_rng)
+            p = ParticleClass()
+            p.x = x
+            p.y = y
+            p.release_time = getattr(config, 'release_start', None)
+            p.burial_depth = burial_depth_value
 
-                particles.append(p)
+            particles.append(p)
 
         return particles
 
@@ -929,6 +965,8 @@ class ParticlePopulation:
         Particle x coordinates corresponding to the cached simplex ids.
     _particle_simplices_y : ndarray
         Particle y coordinates corresponding to the cached simplex ids.
+    _last_moved_particle_indices : ndarray or None
+        Particle indices updated by the latest position update.
     _current_time : ndarray
         The current time in the simulation, used for updating particle positions.
     _field_mixing_depth : ndarray
@@ -952,6 +990,7 @@ class ParticlePopulation:
     _particle_simplices: ndarray = field(init=False)
     _particle_simplices_x: ndarray = field(init=False)
     _particle_simplices_y: ndarray = field(init=False)
+    _last_moved_particle_indices: ndarray | None = field(init=False, default=None)
     _current_time: float = field(init=False)
     _field_mixing_depth: ndarray = field(init=False)  # TODO: reserved for later particle-behavior logic
     _field_transport_probability: ndarray = field(init=False)  # TODO: reserved for later pickup logic
@@ -980,6 +1019,7 @@ class ParticlePopulation:
         }
         self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
         self._mark_particle_simplices_current()
+        self._last_moved_particle_indices = None
         self._validate_seed_locations_inside_domain()
 
         rv = _compute_repr_volume(self.population_config, len(self.particles['x']))
@@ -1050,6 +1090,7 @@ class ParticlePopulation:
             self.particles[key] = self.particles[key][keep]
         self._particle_simplices = self._particle_simplices[keep]
         self._mark_particle_simplices_current()
+        self._last_moved_particle_indices = None
 
         pct = 100.0 * n_removed / n_total
         if n_removed == n_total:
@@ -1124,18 +1165,26 @@ class ParticlePopulation:
         self, current_time: Union[int, float], mixing_depth: Any, transport_probability: Any, bed_level: Any
     ) -> None:
         """
-        Updates field data information for particles in the population.
+        Update scalar field data for particles in the population.
 
         Parameters
         ----------
         current_time : float, int
             The current time in the simulation.
-        mixing_depth : ndarray
+        mixing_depth : ndarray or mapping
             The mixing depth of the flow field.
-        transport_probability : ndarray
+        transport_probability : ndarray, mapping, or scalar
             The probability of particle transport in the flow field.
-        bed_level : ndarray
+        bed_level : ndarray or mapping
             The bed level of the flow field.
+
+        Notes
+        -----
+        Static array fields are batched into one interpolation pass so their
+        cached simplex lookup is shared. Temporal fields are sampled through
+        their lower/upper slices because each field carries its own interpolation
+        weight. ``bed_level_previous`` is copied before the update so burial
+        depth can later distinguish temporal bed-level change from movement.
         """
 
         self._current_time = current_time
@@ -1162,7 +1211,7 @@ class ParticlePopulation:
                 tuple(batched_fields),
             )
             for name, values in zip(batched_names, particle_values, strict=True):
-                if np.isnan(values).all():
+                if self._values_are_all_nan(values):
                     continue
                 self.particles[name] = values
 
@@ -1195,6 +1244,50 @@ class ParticlePopulation:
             self._mark_particle_simplices_current()
         return particle_values
 
+    def _interpolate_particle_fields_at_indices(self, fields, particle_indices):
+        """Interpolate fields for selected particles and refresh their simplex ids."""
+        particle_indices = np.asarray(particle_indices, dtype=np.int64)
+        if particle_indices.size == 0:
+            return tuple(np.empty(0, dtype=float) for _ in fields)
+
+        n_particles = len(self.particles['x'])
+        if particle_indices.size == n_particles and np.array_equal(
+            particle_indices,
+            np.arange(n_particles, dtype=np.int64),
+        ):
+            return self._interpolate_particle_fields(fields)
+
+        simplex_ids = None
+        if self._particle_simplices.shape[0] == n_particles:
+            simplex_ids = self._particle_simplices[particle_indices]
+
+        particle_values, simplices = self._field_interpolator_multi_with_simplex(
+            tuple(fields),
+            self.particles['x'][particle_indices],
+            self.particles['y'][particle_indices],
+            simplex_ids=simplex_ids,
+        )
+        if simplices.shape[0] == particle_indices.shape[0] and self._particle_simplices.shape[0] == n_particles:
+            self._particle_simplices[particle_indices] = simplices
+        return particle_values
+
+    @staticmethod
+    def _values_are_all_nan(values) -> bool:
+        """Return whether all values are NaN, avoiding a full scan when possible."""
+        values = np.asarray(values)
+        if values.size == 0:
+            return True
+        first = values.ravel()[0]
+        return bool(np.isnan(first) and np.isnan(values).all())
+
+    def _status_array(self, name: str, n_particles: int) -> np.ndarray:
+        """Return a reusable boolean status array with the requested length."""
+        values = self.particles.get(name)
+        if not isinstance(values, np.ndarray) or values.dtype != bool or values.shape != (n_particles,):
+            values = np.empty(n_particles, dtype=bool)
+            self.particles[name] = values
+        return values
+
     def _update_particle_field(self, name: str, field_value) -> None:
         if field_value is None:
             return
@@ -1208,7 +1301,7 @@ class ParticlePopulation:
             weight = field_value['weight']
             if weight <= 0.0 or lower_values is upper_values:
                 lower_particle_values = self._interpolate_particle_fields((lower_values,))[0]
-                if np.isnan(lower_particle_values).all():
+                if self._values_are_all_nan(lower_particle_values):
                     return
                 self.particles[name] = lower_particle_values
                 return
@@ -1216,7 +1309,7 @@ class ParticlePopulation:
             lower_particle_values, upper_particle_values = self._interpolate_particle_fields(
                 (lower_values, upper_values),
             )
-            if np.isnan(lower_particle_values).all() and np.isnan(upper_particle_values).all():
+            if self._values_are_all_nan(lower_particle_values) and self._values_are_all_nan(upper_particle_values):
                 return
             self.particles[name] = lower_particle_values + weight * (upper_particle_values - lower_particle_values)
             return
@@ -1230,7 +1323,7 @@ class ParticlePopulation:
             return
 
         particle_values = self._interpolate_particle_fields((field_array,))[0]
-        if np.isnan(particle_values).all():
+        if self._values_are_all_nan(particle_values):
             return
 
         self.particles[name] = particle_values
@@ -1260,12 +1353,17 @@ class ParticlePopulation:
 
         Parameters
         ----------
-        bed_level : array_like or scalar
+        bed_level : array_like, mapping, or scalar
             Bed-level field used to update particle bed elevation and elevation
             ``z`` after movement.
 
         Notes
         -----
+        Temporal bed-level fields are re-sampled for all particles, including
+        particles that did not move, because the bed can change between field
+        slices. Static array fields use ``_last_moved_particle_indices`` to
+        update only the particles whose coordinates changed.
+
         This preserves the invariant required by ``update_burial_depth``: after
         this call ``particles['bed_level']`` holds BL at the *new* position at the
         *current* timestep, so it becomes the correct ``bed_level_previous``
@@ -1275,13 +1373,50 @@ class ParticlePopulation:
         if len(self.particles['x']) == 0:
             return
 
-        self._update_particle_field('bed_level', bed_level)
-        self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
+        n_particles = len(self.particles['x'])
+        if _is_temporal_field(bed_level):
+            self._update_particle_field('bed_level', bed_level)
+            self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
+            self._last_moved_particle_indices = np.empty(0, dtype=np.int64)
+            return
+
+        moved_indices = self._last_moved_particle_indices
+        if moved_indices is None or moved_indices.shape[0] == n_particles:
+            self._update_particle_field('bed_level', bed_level)
+            self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
+            self._last_moved_particle_indices = np.empty(0, dtype=np.int64)
+            return
+
+        if moved_indices.size == 0:
+            return
+
+        if self._can_batch_particle_field(bed_level):
+            moved_bed_level = self._interpolate_particle_fields_at_indices(
+                (np.asarray(bed_level),),
+                moved_indices,
+            )[0]
+        else:
+            self._update_particle_field('bed_level', bed_level)
+            self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
+            self._last_moved_particle_indices = np.empty(0, dtype=np.int64)
+            return
+
+        self.particles['bed_level'][moved_indices] = moved_bed_level
+        self.particles['z'][moved_indices] = (
+            self.particles['bed_level'][moved_indices] - self.particles['burial_depth'][moved_indices]
+        )
+        self._last_moved_particle_indices = np.empty(0, dtype=np.int64)
 
 
     def update_status(self) -> None:
-        """
-        updates status of particles in the population.
+        """Update boolean status arrays for particles in the population.
+
+        Notes
+        -----
+        The status arrays are reused in place when their shape and dtype match
+        the current population. The domain status uses cached simplex ids and
+        refreshes them only when the cached coordinates no longer match the
+        current particle positions.
         """
         n_particles = len(self.particles['x'])
         if n_particles == 0:
@@ -1296,42 +1431,48 @@ class ParticlePopulation:
                 self.particles[status_name] = np.zeros(0, dtype=bool)
             return
 
-        # Compute whether particles are transported (or trapped) based on transport probability
-        # Note: If "reduced_velocity" is chosen, "transport_probability" always equals one.
-        self.particles['status_transported'] = np.random.rand(n_particles) < self.particles['transport_probability']
-
         if not self._particle_simplices_match_positions():
             self._refresh_particle_simplices()
-        self.particles['status_domain'] = self._particle_simplices >= 0
+
+        status_transported = self._status_array('status_transported', n_particles)
+        status_domain = self._status_array('status_domain', n_particles)
+        status_buried = self._status_array('status_buried', n_particles)
+        status_released = self._status_array('status_released', n_particles)
+        status_alive = self._status_array('status_alive', n_particles)
+        status_mobile = self._status_array('status_mobile', n_particles)
+
+        # Compute whether particles are transported (or trapped) based on transport probability
+        # Note: If "reduced_velocity" is chosen, "transport_probability" always equals one.
+        np.less(np.random.rand(n_particles), self.particles['transport_probability'], out=status_transported)
+
+        np.greater_equal(self._particle_simplices, 0, out=status_domain)
 
         # New conditional logic based on transport_probability_method
         if self.population_config.population_config['transport_probability'] == 'no_probability':
             # For no_probability method, all particles are considered exposed (not buried)
-            self.particles['status_buried'] = np.zeros(n_particles, dtype=bool)
+            status_buried.fill(False)
         else:
             # For stochastic_transport and reduced_velocity methods, use burial_depth vs mixing_depth
 
             # if van westen method:
             # a particle is considered buried if it is deeper than or equal to the mixing depth
-            self.particles['status_buried'] = self.particles['burial_depth'] >= self.particles['mixing_depth']
+            np.greater_equal(self.particles['burial_depth'], self.particles['mixing_depth'], out=status_buried)
 
             # if soulsby method:
             # self.particles['status_buried'] = (this is where we implement Soulsby's F based on a and b)
 
         # Compute whether particles are released (or retained)
-        self.particles['status_released'] = self._current_time >= self.particles['release_time']
+        np.less_equal(self.particles['release_time'], self._current_time, out=status_released)
 
         # Compute whether particles are alive (or dead) (still TODO)
-        self.particles['status_alive'] = np.ones(n_particles, dtype=bool)
+        status_alive.fill(True)
 
         # Compute whether particles are mobile (or static) - combination of all status flags
-        self.particles['status_mobile'] = (
-            self.particles['status_domain']
-            & self.particles['status_alive']
-            & ~self.particles['status_buried']
-            & self.particles['status_released']
-            & self.particles['status_transported']
-        )
+        np.logical_not(status_buried, out=status_mobile)
+        np.logical_and(status_mobile, status_domain, out=status_mobile)
+        np.logical_and(status_mobile, status_alive, out=status_mobile)
+        np.logical_and(status_mobile, status_released, out=status_mobile)
+        np.logical_and(status_mobile, status_transported, out=status_mobile)
 
     def update_position(self, flow_field: Dict, current_timestep: float) -> None:
         """
@@ -1344,14 +1485,21 @@ class ParticlePopulation:
         current_timestep : float
             The current time step in the simulation in seconds.
 
+        Notes
+        -----
+        Only mobile particles are integrated. Their refreshed simplex ids and
+        particle indices are retained so static post-move bed-level updates can
+        avoid re-sampling particles that did not move.
         """
 
         if len(self.particles['x']) == 0:
+            self._last_moved_particle_indices = np.empty(0, dtype=np.int64)
             return
 
         ix = self.particles['status_mobile']  # Get indices of mobile particles
         particle_indices = np.flatnonzero(ix)
         if particle_indices.size == 0:
+            self._last_moved_particle_indices = np.empty(0, dtype=np.int64)
             return
 
         if _is_temporal_flow_field(flow_field):
@@ -1382,6 +1530,7 @@ class ParticlePopulation:
         self.particles['y'][ix] = new_y
         self._particle_simplices[particle_indices] = new_simplices
         self._mark_particle_simplices_current()
+        self._last_moved_particle_indices = particle_indices
 
 
 class ParticleSeeder:

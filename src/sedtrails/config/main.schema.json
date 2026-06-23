@@ -543,6 +543,11 @@
           "type": "integer",
           "minimum": 1,
           "description": "Number of parallel worker processes. Falls back to SLURM_CPUS_PER_TASK env var, then 1 (single-core)."
+        },
+        "preload_input": {
+          "type": "boolean",
+          "default": false,
+          "description": "Preload the input dataset in the parent before forking workers so Linux copy-on-write can share pages. Disabled by default to avoid full-input preload overhead on small runs; set true when reducing repeated worker reads is worth the upfront load cost."
         }
       }
     },
