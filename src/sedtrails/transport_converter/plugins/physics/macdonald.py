@@ -369,20 +369,21 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                 0.0,
                 np.maximum(water_depth, 0.0),
             )
-            
 
-            E_turb_hor, E_turb_vert = PhysicsPlugin.compute_turbulent_diffusion_coefficients(
-                water_depth=water_depth,
-                z_p=z_entrainment,
-                flow_velocity_magnitude=flow_velocity_magnitude,
-                shear_velocity=max_shear_velocity,
-                K_Et=getattr(self.config, 'q3d_horizontal_diffusion_factor', 0.15),
-            )
-            u_Dx, u_Dy, w_D = PhysicsPlugin.compute_random_walk_diffusion_velocities(
-                E_turb_hor=E_turb_hor,
-                E_turb_vert=E_turb_vert,
-                dt=timestep,
-            )
+            export_q3d_grid_diagnostics = bool(getattr(self.config, 'q3d_export_grid_diagnostics', False))
+            if export_q3d_grid_diagnostics:
+                E_turb_hor, E_turb_vert = PhysicsPlugin.compute_turbulent_diffusion_coefficients(
+                    water_depth=water_depth,
+                    z_p=z_entrainment,
+                    flow_velocity_magnitude=flow_velocity_magnitude,
+                    shear_velocity=max_shear_velocity,
+                    K_Et=getattr(self.config, 'q3d_horizontal_diffusion_factor', 0.15),
+                )
+                u_Dx, u_Dy, w_D = PhysicsPlugin.compute_random_walk_diffusion_velocities(
+                    E_turb_hor=E_turb_hor,
+                    E_turb_vert=E_turb_vert,
+                    dt=timestep,
+                )
             # calculate velocity divergence using KNN least-squares fit
             # this is just a first order approximation for the divergence, we could consider more sophisticated methods in the future
             divU, dudx, dvdy = PhysicsPlugin.divergence_scattered_knn_time(
@@ -404,15 +405,16 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             ) * (water_depth[wet] - z_entrainment[wet])
             w_zp = np.nan_to_num(w_zp, nan=0.0, posinf=0.0, neginf=0.0)
 
-            settling_velocity_field = np.full_like(w_zp, settling_velocity, dtype=float)
-            vertical_particle_velocity = w_zp - settling_velocity_field + w_D
-            vertical_particle_velocity = np.nan_to_num(
-                vertical_particle_velocity,
-                nan=0.0,
-                posinf=0.0,
-                neginf=0.0,
-            )
-            vertical_particle_velocity[~wet] = 0.0
+            if export_q3d_grid_diagnostics:
+                settling_velocity_field = np.full_like(w_zp, settling_velocity, dtype=float)
+                vertical_particle_velocity = w_zp - settling_velocity_field + w_D
+                vertical_particle_velocity = np.nan_to_num(
+                    vertical_particle_velocity,
+                    nan=0.0,
+                    posinf=0.0,
+                    neginf=0.0,
+                )
+                vertical_particle_velocity[~wet] = 0.0
 
             suspended_centroid_over_depth = PhysicsPlugin.safe_divide(z_s, water_depth)
             total_centroid_over_depth = PhysicsPlugin.safe_divide(z_c, water_depth)
@@ -461,15 +463,16 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             sedtrails_data.add_physics_field('turbulent_shear_stress', turbulent_shear)
             sedtrails_data.add_physics_field('turbulent_shields_number', turbulent_shields)
             sedtrails_data.add_physics_field('active_layer_thickness', h_active)
-            sedtrails_data.add_physics_field('diffusive_velocity_x', u_Dx)
-            sedtrails_data.add_physics_field('diffusive_velocity_y', u_Dy)
-            sedtrails_data.add_physics_field('diffusive_velocity_z', w_D)
-            sedtrails_data.add_physics_field('turbulent_diffusion_coefficient_horizontal', E_turb_hor)
-            sedtrails_data.add_physics_field('turbulent_diffusion_coefficient_vertical', E_turb_vert)
             sedtrails_data.add_physics_field('q3d_vertical_velocity_gradient', q3d_vertical_velocity_gradient)
-            sedtrails_data.add_physics_field('vertical_advection_velocity', w_zp)
-            sedtrails_data.add_physics_field('settling_velocity', settling_velocity_field)
-            sedtrails_data.add_physics_field('vertical_particle_velocity', vertical_particle_velocity)
+            if export_q3d_grid_diagnostics:
+                sedtrails_data.add_physics_field('diffusive_velocity_x', u_Dx)
+                sedtrails_data.add_physics_field('diffusive_velocity_y', u_Dy)
+                sedtrails_data.add_physics_field('diffusive_velocity_z', w_D)
+                sedtrails_data.add_physics_field('turbulent_diffusion_coefficient_horizontal', E_turb_hor)
+                sedtrails_data.add_physics_field('turbulent_diffusion_coefficient_vertical', E_turb_vert)
+                sedtrails_data.add_physics_field('vertical_advection_velocity', w_zp)
+                sedtrails_data.add_physics_field('settling_velocity', settling_velocity_field)
+                sedtrails_data.add_physics_field('vertical_particle_velocity', vertical_particle_velocity)
             sedtrails_data.add_physics_field(
                 'centroid_particle_velocity',
                 {

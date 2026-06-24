@@ -129,7 +129,15 @@ class NetCDFWriter:
         output_dataset.to_netcdf(output_path)
         return output_path
 
-    def create_dataset(self, N_particles, N_populations, N_timesteps, N_flowfields, name_strlen=24):
+    def create_dataset(
+        self,
+        N_particles,
+        N_populations,
+        N_timesteps,
+        N_flowfields,
+        name_strlen=24,
+        q3d_diagnostics='minimal',
+    ):
         """
         Create an xarray dataset with the SedTrails structure.
 
@@ -157,6 +165,7 @@ class NetCDFWriter:
             N_timesteps=N_timesteps,
             N_flowfields=N_flowfields,
             name_strlen=name_strlen,
+            q3d_diagnostics=q3d_diagnostics,
         )
 
     def add_metadata(self, dataset, populations, flow_field_names, use_transport_fields='D3D', max_suspended_velocity_factor=None, simulation_metadata=None):

@@ -604,101 +604,198 @@ class ParticlePopulation:
         self._update_particle_field('bed_level', bed_level)
 
     def _update_particle_field(self, name: str, field_value) -> None:
-        if field_value is None:
+        self._update_particle_fields({name: field_value})
+
+    def _particle_interpolation_target(self, indices=None):
+        if indices is None:
+            return None, self.particles['x'], self.particles['y'], len(self.particles['x'])
+
+        indices = np.asarray(indices)
+        if indices.dtype == bool:
+            indices = np.flatnonzero(indices)
+        else:
+            indices = indices.astype(np.int64, copy=False).ravel()
+
+        return indices, self.particles['x'][indices], self.particles['y'][indices], indices.size
+
+    def _assign_particle_field_values(self, name: str, values, indices=None) -> None:
+        values = np.asarray(values, dtype=float)
+        if indices is None:
+            self.particles[name] = values
             return
 
         n_particles = len(self.particles['x'])
+        existing = self.particles.get(name)
+        if existing is None or np.asarray(existing).shape != (n_particles,):
+            target = np.full(n_particles, np.nan, dtype=float)
+        else:
+            target = np.asarray(existing, dtype=float)
 
-        if _is_temporal_field(field_value):
-            lower_values = np.asarray(field_value['lower'])
-            upper_values = np.asarray(field_value['upper'])
-            if lower_values.size == 0:
-                return
+        target[indices] = values
+        self.particles[name] = target
 
-            weight = field_value['weight']
-            if lower_values.size == 1:
-                lower_value = float(lower_values.ravel()[0])
-                if weight <= 0.0 or lower_values is upper_values or upper_values.size != 1:
-                    self.particles[name] = np.full(n_particles, lower_value, dtype=float)
-                    return
+    def _update_particle_fields(self, field_values: Dict[str, Any], indices=None) -> None:
+        indices, x_points, y_points, target_size = self._particle_interpolation_target(indices)
+        if target_size == 0:
+            return
 
-                upper_value = float(upper_values.ravel()[0])
-                self.particles[name] = np.full(
-                    n_particles,
-                    lower_value + weight * (upper_value - lower_value),
-                    dtype=float,
+        arrays_to_interpolate = []
+        interpolation_jobs = []
+
+        for name, field_value in field_values.items():
+            if field_value is None:
+                continue
+
+            if _is_temporal_field(field_value):
+                lower_values = np.asarray(field_value['lower'])
+                upper_values = np.asarray(field_value['upper'])
+                if lower_values.size == 0:
+                    continue
+
+                weight = float(field_value['weight'])
+                lower_is_scalar = lower_values.size == 1
+                upper_is_scalar = upper_values.size == 1
+
+                if weight <= 0.0 or lower_values is upper_values or upper_values.size == 0:
+                    if lower_is_scalar:
+                        self._assign_particle_field_values(
+                            name,
+                            np.full(target_size, float(lower_values.ravel()[0]), dtype=float),
+                            indices=indices,
+                        )
+                    else:
+                        interpolation_jobs.append(('single', name))
+                        arrays_to_interpolate.append(lower_values)
+                    continue
+
+                if lower_is_scalar and upper_is_scalar:
+                    lower_value = float(lower_values.ravel()[0])
+                    upper_value = float(upper_values.ravel()[0])
+                    self._assign_particle_field_values(
+                        name,
+                        np.full(target_size, lower_value + weight * (upper_value - lower_value), dtype=float),
+                        indices=indices,
+                    )
+                    continue
+
+                if lower_is_scalar:
+                    interpolation_jobs.append(('lower_scalar_temporal', name, float(lower_values.ravel()[0]), weight))
+                    arrays_to_interpolate.append(upper_values)
+                    continue
+
+                if upper_is_scalar:
+                    interpolation_jobs.append(('upper_scalar_temporal', name, float(upper_values.ravel()[0]), weight))
+                    arrays_to_interpolate.append(lower_values)
+                    continue
+
+                interpolation_jobs.append(('temporal', name, weight))
+                arrays_to_interpolate.extend((lower_values, upper_values))
+                continue
+
+            if np.isscalar(field_value):
+                self._assign_particle_field_values(
+                    name,
+                    np.full(target_size, field_value, dtype=float),
+                    indices=indices,
                 )
-                return
+                continue
 
-            if weight <= 0.0 or lower_values is upper_values:
-                lower_particle_values = self._field_interpolator(lower_values, self.particles['x'], self.particles['y'])
-                if np.isnan(lower_particle_values).all():
-                    return
-                self.particles[name] = lower_particle_values
-                return
+            field_array = np.asarray(field_value)
+            if field_array.size == 0:
+                continue
+            if field_array.size == 1:
+                self._assign_particle_field_values(
+                    name,
+                    np.full(target_size, float(field_array.ravel()[0]), dtype=float),
+                    indices=indices,
+                )
+                continue
 
-            lower_particle_values, upper_particle_values = self._field_interpolator_multi(
-                (lower_values, upper_values),
-                self.particles['x'],
-                self.particles['y'],
-            )
-            if np.isnan(lower_particle_values).all() and np.isnan(upper_particle_values).all():
-                return
-            self.particles[name] = lower_particle_values + weight * (upper_particle_values - lower_particle_values)
+            interpolation_jobs.append(('single', name))
+            arrays_to_interpolate.append(field_array)
+
+        if not arrays_to_interpolate:
             return
 
-        if np.isscalar(field_value):
-            self.particles[name] = np.full(n_particles, field_value, dtype=float)
-            return
+        interpolated_values = self._field_interpolator_multi(tuple(arrays_to_interpolate), x_points, y_points)
+        value_index = 0
+        for job in interpolation_jobs:
+            kind = job[0]
+            name = job[1]
+            if kind == 'single':
+                particle_values = interpolated_values[value_index]
+                value_index += 1
+            elif kind == 'temporal':
+                weight = job[2]
+                lower_particle_values = interpolated_values[value_index]
+                upper_particle_values = interpolated_values[value_index + 1]
+                value_index += 2
+                if np.isnan(lower_particle_values).all() and np.isnan(upper_particle_values).all():
+                    continue
+                particle_values = lower_particle_values + weight * (upper_particle_values - lower_particle_values)
+            elif kind == 'lower_scalar_temporal':
+                lower_value = job[2]
+                weight = job[3]
+                upper_particle_values = interpolated_values[value_index]
+                value_index += 1
+                particle_values = lower_value + weight * (upper_particle_values - lower_value)
+            else:
+                upper_value = job[2]
+                weight = job[3]
+                lower_particle_values = interpolated_values[value_index]
+                value_index += 1
+                particle_values = lower_particle_values + weight * (upper_value - lower_particle_values)
 
-        field_array = np.asarray(field_value)
-        if field_array.size == 0:
-            return
-        if field_array.size == 1:
-            self.particles[name] = np.full(n_particles, float(field_array.ravel()[0]), dtype=float)
-            return
-
-        particle_values = self._field_interpolator(field_array, self.particles['x'], self.particles['y'])
-        if np.isnan(particle_values).all():
-            return
-
-        self.particles[name] = particle_values
+            if np.isnan(particle_values).all():
+                continue
+            self._assign_particle_field_values(name, particle_values, indices=indices)
     
-    def _update_particle_flow_field(self, prefix: str, flow_field: Dict) -> None:
+    def _update_particle_flow_field(self, prefix: str, flow_field: Dict, indices=None) -> None:
         # This method updates the particle flow field attributes (u, v, magnitude) at the particle positions, handling both temporal and non-temporal flow fields. 
         # This is because the particle level Macdonald needs flow direction and flow magnitude to compute particle motion.
         # For temporal flow fields, it performs interpolation between the lower and upper time steps based on the provided weight. 
         # The resulting flow field attributes are stored in the particles dictionary with keys prefixed by the given prefix (e.g., 'q3d_flow['u']', 'q3d_flow[v'], 'q3d_flow['magnitude']').
 
+        indices, x_points, y_points, target_size = self._particle_interpolation_target(indices)
+        if target_size == 0:
+            return
+
         if _is_temporal_flow_field(flow_field):
             weight = flow_field['weight']
-            lower_u, lower_v, lower_magnitude = self._field_interpolator_multi(
+            if weight <= 0.0 or flow_field['lower'] is flow_field['upper']:
+                lower_u, lower_v, lower_magnitude = self._field_interpolator_multi(
+                    (
+                        np.asarray(flow_field['lower']['u']),
+                        np.asarray(flow_field['lower']['v']),
+                        np.asarray(flow_field['lower']['magnitude']),
+                    ),
+                    x_points,
+                    y_points,
+                )
+                self._assign_particle_field_values(f'{prefix}_u', lower_u, indices=indices)
+                self._assign_particle_field_values(f'{prefix}_v', lower_v, indices=indices)
+                self._assign_particle_field_values(f'{prefix}_magnitude', lower_magnitude, indices=indices)
+                return
+
+            lower_u, lower_v, lower_magnitude, upper_u, upper_v, upper_magnitude = self._field_interpolator_multi(
                 (
                     np.asarray(flow_field['lower']['u']),
                     np.asarray(flow_field['lower']['v']),
                     np.asarray(flow_field['lower']['magnitude']),
-                ),
-                self.particles['x'],
-                self.particles['y'],
-            )
-            if weight <= 0.0 or flow_field['lower'] is flow_field['upper']:
-                self.particles[f'{prefix}_u'] = lower_u
-                self.particles[f'{prefix}_v'] = lower_v
-                self.particles[f'{prefix}_magnitude'] = lower_magnitude
-                return
-
-            upper_u, upper_v, upper_magnitude = self._field_interpolator_multi(
-                (
                     np.asarray(flow_field['upper']['u']),
                     np.asarray(flow_field['upper']['v']),
                     np.asarray(flow_field['upper']['magnitude']),
                 ),
-                self.particles['x'],
-                self.particles['y'],
+                x_points,
+                y_points,
             )
-            self.particles[f'{prefix}_u'] = lower_u + weight * (upper_u - lower_u)
-            self.particles[f'{prefix}_v'] = lower_v + weight * (upper_v - lower_v)
-            self.particles[f'{prefix}_magnitude'] = lower_magnitude + weight * (upper_magnitude - lower_magnitude)
+            self._assign_particle_field_values(f'{prefix}_u', lower_u + weight * (upper_u - lower_u), indices=indices)
+            self._assign_particle_field_values(f'{prefix}_v', lower_v + weight * (upper_v - lower_v), indices=indices)
+            self._assign_particle_field_values(
+                f'{prefix}_magnitude',
+                lower_magnitude + weight * (upper_magnitude - lower_magnitude),
+                indices=indices,
+            )
             return
 
         u, v, magnitude = self._field_interpolator_multi(
@@ -707,12 +804,12 @@ class ParticlePopulation:
                 np.asarray(flow_field['v']),
                 np.asarray(flow_field['magnitude']),
             ),
-            self.particles['x'],
-            self.particles['y'],
+            x_points,
+            y_points,
         )
-        self.particles[f'{prefix}_u'] = u
-        self.particles[f'{prefix}_v'] = v
-        self.particles[f'{prefix}_magnitude'] = magnitude
+        self._assign_particle_field_values(f'{prefix}_u', u, indices=indices)
+        self._assign_particle_field_values(f'{prefix}_v', v, indices=indices)
+        self._assign_particle_field_values(f'{prefix}_magnitude', magnitude, indices=indices)
 
     @staticmethod
     def _loglaw_velocity_at_z(shear_velocity, z, roughness_height):
@@ -1018,6 +1115,7 @@ class ParticlePopulation:
             'centroid': 'centroid_floor',
             'centroid_floor_method': 'centroid_floor',
             'rouse': 'rouse_profile',
+            'rouse_sample': 'rouse_profile',
             'rouse_sampling': 'rouse_profile',
         }
         scheme = aliases.get(scheme, scheme)
@@ -1027,6 +1125,21 @@ class ParticlePopulation:
                 f"{scheme!r}. Expected geometric, centroid_floor, or rouse_profile."
             )
         return scheme
+
+    @staticmethod
+    def _normalize_q3d_diagnostics_level(level):
+        level = str(level or 'minimal').strip().lower().replace('-', '_')
+        aliases = {
+            'basic': 'minimal',
+            'standard': 'minimal',
+            'reduced': 'minimal',
+            'all': 'full',
+            'debug': 'full',
+        }
+        level = aliases.get(level, level)
+        if level not in {'minimal', 'full'}:
+            raise ValueError(f"Unsupported q3d_diagnostics level {level!r}. Expected minimal or full.")
+        return level
 
     @staticmethod
     def _sample_rouse_profile_height(water_depth, rouse_number, rng=None):
@@ -1109,6 +1222,7 @@ class ParticlePopulation:
         q3d_entrainment_frequency: Any = None,
         q3d_vertical_update_scheme: str = 'geometric',
         q3d_motion_substeps: int = 1,
+        q3d_diagnostics: str = 'minimal',
         rng: Any = None,
     ) -> None:
         """
@@ -1188,6 +1302,10 @@ class ParticlePopulation:
         q3d_motion_substeps : int
             Number of smaller Q3D motion updates inside one particle timestep.
             A value of 1 gives the original single-step update.
+        q3d_diagnostics : str
+            Q3D particle diagnostics level. minimal stores the essential Q3D
+            particle velocities/statuses and exported centroid velocity; full
+            also stores intermediate diffusion and hydraulic diagnostic arrays.
         rng : random generator, optional
             Random source used for turbulent random-walk velocities.
 
@@ -1233,6 +1351,8 @@ class ParticlePopulation:
             raise ValueError(f'q3d_motion_substeps must be >= 1, got {q3d_motion_substeps!r}')
         dt_sub = dt / substeps
         vertical_update_scheme = self._normalize_q3d_vertical_update_scheme(q3d_vertical_update_scheme)
+        diagnostics_level = self._normalize_q3d_diagnostics_level(q3d_diagnostics)
+        save_full_diagnostics = diagnostics_level == 'full'
         if vertical_update_scheme == 'rouse_profile' and rouse_number is None:
             raise ValueError('rouse_number is required when q3d_vertical_update_scheme is rouse_profile.')
 
@@ -1247,22 +1367,27 @@ class ParticlePopulation:
 
         # Use hydrodynamic flow for movement direction and depth-averaged |U|.
         self._update_particle_flow_field('q3d_flow', hydrodynamic_flow_field)
-        self._update_particle_field('bed_level', bed_level_field)
-        self._update_particle_field('max_shear_velocity', max_shear_velocity)
-        self._update_particle_field('total_roughness_height', total_roughness_height)
-        self._update_particle_field('total_transport_centroid_elevation', total_transport_centroid_elevation)
-        self._update_particle_field('q3d_velocity_deficit_coefficient', q3d_velocity_deficit_coefficient)
-        self._update_particle_field('q3d_vertical_velocity_gradient', q3d_vertical_velocity_gradient)
-        self._update_particle_field('turbulent_shields_number', turbulent_shields_number)
-        self._update_particle_field('critical_shields_number', critical_shields_number)
-        self._update_particle_field('settling_velocity', settling_velocity)
-        self._update_particle_field('water_depth', water_depth)
-        self._update_particle_field('skin_roughness_height', skin_roughness_height)
-        self._update_particle_field('q3d_entrainment_height_above_bed', entrainment_height_above_bed)
+        initial_particle_fields = {
+            'bed_level': bed_level_field,
+            'max_shear_velocity': max_shear_velocity,
+            'total_roughness_height': total_roughness_height,
+            'total_transport_centroid_elevation': total_transport_centroid_elevation,
+            'q3d_velocity_deficit_coefficient': q3d_velocity_deficit_coefficient,
+            'q3d_vertical_velocity_gradient': q3d_vertical_velocity_gradient,
+            'turbulent_shields_number': turbulent_shields_number,
+            'critical_shields_number': critical_shields_number,
+            'settling_velocity': settling_velocity,
+            'water_depth': water_depth,
+            'skin_roughness_height': skin_roughness_height,
+            'q3d_entrainment_height_above_bed': entrainment_height_above_bed,
+        }
         if rouse_number is not None:
-            self._update_particle_field('rouse_number', rouse_number)
+            initial_particle_fields['rouse_number'] = rouse_number
         if q3d_entrainment_frequency is not None:
-            self._update_particle_field('q3d_entrainment_frequency', q3d_entrainment_frequency)
+            initial_particle_fields['q3d_entrainment_frequency'] = q3d_entrainment_frequency
+        if M_b is not None:
+            initial_particle_fields['q3d_wave_breaking_factor'] = M_b
+        self._update_particle_fields(initial_particle_fields)
 
         # Required fields after interpolation/broadcasting. Hydrodynamic flow is
         # required for direction; centroid velocity is diagnostics only.
@@ -1398,13 +1523,8 @@ class ParticlePopulation:
         random_source = np.random if rng is None else rng
         particle_u = np.zeros(n_particles, dtype=float)
         particle_v = np.zeros(n_particles, dtype=float)
-        horizontal_diffusion = np.zeros(n_particles, dtype=float)
-        vertical_diffusion = np.zeros(n_particles, dtype=float)
         vertical_advection = np.zeros(n_particles, dtype=float)
         vertical_velocity = np.zeros(n_particles, dtype=float)
-        random_horizontal_x = np.zeros(n_particles, dtype=float)
-        random_horizontal_y = np.zeros(n_particles, dtype=float)
-        random_vertical = np.zeros(n_particles, dtype=float)
         deposited_now = np.zeros(n_particles, dtype=bool)
         height_above_bed = np.maximum(np.nan_to_num(z - bed_level, nan=0.0), 0.0)
         first_substep_diagnostics_saved = False
@@ -1413,24 +1533,25 @@ class ParticlePopulation:
         diagnostic_modified_v = np.zeros(n_particles, dtype=float)
         diagnostic_particle_u = np.zeros(n_particles, dtype=float)
         diagnostic_particle_v = np.zeros(n_particles, dtype=float)
-        diagnostic_horizontal_diffusion_velocity_x = np.zeros(n_particles, dtype=float)
-        diagnostic_horizontal_diffusion_velocity_y = np.zeros(n_particles, dtype=float)
-        diagnostic_vertical_diffusion_velocity = np.zeros(n_particles, dtype=float)
-        diagnostic_vertical_advection = np.zeros(n_particles, dtype=float)
         diagnostic_vertical_velocity = np.zeros(n_particles, dtype=float)
-        diagnostic_horizontal_diffusion = np.zeros(n_particles, dtype=float)
-        diagnostic_vertical_diffusion = np.zeros(n_particles, dtype=float)
-        diagnostic_bed_level = bed_level.copy()
-        diagnostic_water_depth = water_depth.copy()
-        diagnostic_skin_roughness = skin_roughness.copy()
-        diagnostic_shear_velocity = np.zeros(n_particles, dtype=float)
-        diagnostic_total_roughness = np.zeros(n_particles, dtype=float)
-        diagnostic_z_c = np.zeros(n_particles, dtype=float)
-        diagnostic_deficit = np.zeros(n_particles, dtype=float)
-        diagnostic_vertical_velocity_gradient = np.zeros(n_particles, dtype=float)
-        diagnostic_settling_velocity = np.zeros(n_particles, dtype=float)
-        diagnostic_flow_magnitude = np.zeros(n_particles, dtype=float)
-        diagnostic_rouse_number = np.zeros(n_particles, dtype=float)
+        if save_full_diagnostics:
+            diagnostic_horizontal_diffusion_velocity_x = np.zeros(n_particles, dtype=float)
+            diagnostic_horizontal_diffusion_velocity_y = np.zeros(n_particles, dtype=float)
+            diagnostic_vertical_diffusion_velocity = np.zeros(n_particles, dtype=float)
+            diagnostic_vertical_advection = np.zeros(n_particles, dtype=float)
+            diagnostic_horizontal_diffusion = np.zeros(n_particles, dtype=float)
+            diagnostic_vertical_diffusion = np.zeros(n_particles, dtype=float)
+            diagnostic_bed_level = bed_level.copy()
+            diagnostic_water_depth = water_depth.copy()
+            diagnostic_skin_roughness = skin_roughness.copy()
+            diagnostic_shear_velocity = np.zeros(n_particles, dtype=float)
+            diagnostic_total_roughness = np.zeros(n_particles, dtype=float)
+            diagnostic_z_c = np.zeros(n_particles, dtype=float)
+            diagnostic_deficit = np.zeros(n_particles, dtype=float)
+            diagnostic_vertical_velocity_gradient = np.zeros(n_particles, dtype=float)
+            diagnostic_settling_velocity = np.zeros(n_particles, dtype=float)
+            diagnostic_flow_magnitude = np.zeros(n_particles, dtype=float)
+            diagnostic_rouse_number = np.zeros(n_particles, dtype=float)
         vertical_scheme_codes = {'geometric': 0, 'centroid_floor': 1, 'rouse_profile': 2}
 
         for substep_index in range(substeps):
@@ -1438,213 +1559,303 @@ class ParticlePopulation:
             # for this substep. Particles that deposit in one substep stop moving in
             # the next substep of the same outer timestep.
             active = eligible & is_suspended & ~is_deposited
-            active_count = int(np.count_nonzero(active))
+            active_indices = np.flatnonzero(active)
+            active_count = active_indices.size
             if active_count == 0:
                 break
 
-            # After the first substep, particles have new x/y locations. Refresh
-            # motion fields there before computing the next particle-level velocity.
-            if substep_index:
-                self._update_particle_flow_field('q3d_flow', hydrodynamic_flow_field)
-                self._update_particle_field('bed_level', bed_level_field)
-                self._update_particle_field('max_shear_velocity', max_shear_velocity)
-                self._update_particle_field('total_roughness_height', total_roughness_height)
-                self._update_particle_field(
-                    'total_transport_centroid_elevation',
-                    total_transport_centroid_elevation,
-                )
-                self._update_particle_field('q3d_velocity_deficit_coefficient', q3d_velocity_deficit_coefficient)
-                self._update_particle_field('q3d_vertical_velocity_gradient', q3d_vertical_velocity_gradient)
-                self._update_particle_field('settling_velocity', settling_velocity)
-                self._update_particle_field('water_depth', water_depth_field)
-                self._update_particle_field('skin_roughness_height', skin_roughness_height_field)
-                if vertical_update_scheme == 'rouse_profile':
-                    self._update_particle_field('rouse_number', rouse_number)
-
-            bed_level = np.asarray(self.particles['bed_level'], dtype=float)
-            water_depth = np.maximum(np.nan_to_num(self.particles['water_depth'], nan=0.0), 0.0)
-            skin_roughness = np.maximum(np.nan_to_num(self.particles['skin_roughness_height'], nan=0.0), 0.0)
-            deposition_threshold = 0.25 * skin_roughness
+            bed_level_current = np.asarray(self.particles['bed_level'], dtype=float)
+            water_depth_current = np.asarray(self.particles['water_depth'], dtype=float)
+            skin_roughness_current = np.asarray(self.particles['skin_roughness_height'], dtype=float)
 
             # z_p is the key Q3D state: current particle height above the local bed.
-            z_p = np.clip(np.nan_to_num(z - bed_level, nan=0.0), 0.0, water_depth)
-            shear_velocity = np.nan_to_num(self.particles['max_shear_velocity'], nan=0.0)
-            total_roughness = np.maximum(np.nan_to_num(self.particles['total_roughness_height'], nan=0.0), 1e-12)
-            z_c = np.clip(
-                np.nan_to_num(self.particles['total_transport_centroid_elevation'], nan=0.0),
-                1e-12,
-                np.maximum(water_depth, 1e-12),
+            bed_active = bed_level_current[active_indices]
+            water_active = np.maximum(np.nan_to_num(water_depth_current[active_indices], nan=0.0), 0.0)
+            skin_active = np.maximum(np.nan_to_num(skin_roughness_current[active_indices], nan=0.0), 0.0)
+            z_p_active = np.clip(np.nan_to_num(z[active_indices] - bed_active, nan=0.0), 0.0, water_active)
+            shear_velocity_active = np.nan_to_num(
+                np.asarray(self.particles['max_shear_velocity'], dtype=float)[active_indices],
+                nan=0.0,
             )
-            deficit = np.clip(np.nan_to_num(self.particles['q3d_velocity_deficit_coefficient'], nan=1.0), 0.0, 1.0)
+            total_roughness_active = np.maximum(
+                np.nan_to_num(np.asarray(self.particles['total_roughness_height'], dtype=float)[active_indices], nan=0.0),
+                1e-12,
+            )
+            z_c_active = np.clip(
+                np.nan_to_num(
+                    np.asarray(self.particles['total_transport_centroid_elevation'], dtype=float)[active_indices],
+                    nan=0.0,
+                ),
+                1e-12,
+                np.maximum(water_active, 1e-12),
+            )
+            deficit_active = np.clip(
+                np.nan_to_num(
+                    np.asarray(self.particles['q3d_velocity_deficit_coefficient'], dtype=float)[active_indices],
+                    nan=1.0,
+                ),
+                0.0,
+                1.0,
+            )
 
             # Compute reduced horizontal speed from the log-law velocity at z_p.
-            u_zp = self._loglaw_velocity_at_z(shear_velocity, z_p, total_roughness)
-            u_1p4zc = self._loglaw_velocity_at_z(shear_velocity, 1.4 * z_c, total_roughness)
-            horizontal_speed = self._apply_q3d_velocity_deficit(u_zp, u_1p4zc, z_p, z_c, deficit)
+            u_zp_active = self._loglaw_velocity_at_z(shear_velocity_active, z_p_active, total_roughness_active)
+            u_1p4zc_active = self._loglaw_velocity_at_z(
+                shear_velocity_active,
+                1.4 * z_c_active,
+                total_roughness_active,
+            )
+            horizontal_speed_active = self._apply_q3d_velocity_deficit(
+                u_zp_active,
+                u_1p4zc_active,
+                z_p_active,
+                z_c_active,
+                deficit_active,
+            )
 
             # Convert scalar particle speed to x/y components using the local
             # depth-averaged hydrodynamic flow direction.
-            flow_u = np.nan_to_num(self.particles['q3d_flow_u'], nan=0.0)
-            flow_v = np.nan_to_num(self.particles['q3d_flow_v'], nan=0.0)
-            flow_magnitude = np.maximum(np.nan_to_num(self.particles['q3d_flow_magnitude'], nan=0.0), 1e-12)
-            modified_u = horizontal_speed * _safe_divide(flow_u, flow_magnitude)
-            modified_v = horizontal_speed * _safe_divide(flow_v, flow_magnitude)
+            flow_u_active = np.nan_to_num(
+                np.asarray(self.particles['q3d_flow_u'], dtype=float)[active_indices],
+                nan=0.0,
+            )
+            flow_v_active = np.nan_to_num(
+                np.asarray(self.particles['q3d_flow_v'], dtype=float)[active_indices],
+                nan=0.0,
+            )
+            flow_magnitude_active = np.maximum(
+                np.nan_to_num(np.asarray(self.particles['q3d_flow_magnitude'], dtype=float)[active_indices], nan=0.0),
+                1e-12,
+            )
+            modified_u_active = horizontal_speed_active * _safe_divide(flow_u_active, flow_magnitude_active)
+            modified_v_active = horizontal_speed_active * _safe_divide(flow_v_active, flow_magnitude_active)
 
             # Compute turbulent diffusivities and draw random-walk velocities for
             # this substep. Using dt_sub here preserves the diffusion scaling:
             # random displacement is velocity * dt_sub = O(sqrt(E * dt_sub)).
-            horizontal_diffusion, vertical_diffusion = self._turbulent_diffusion_coefficients(
-                water_depth,
-                z_p,
-                flow_magnitude,
-                shear_velocity,
+            M_b_active = None
+            if M_b is not None and 'q3d_wave_breaking_factor' in self.particles:
+                M_b_active = np.nan_to_num(
+                    np.asarray(self.particles['q3d_wave_breaking_factor'], dtype=float)[active_indices],
+                    nan=1.0,
+                )
+            horizontal_diffusion_active, vertical_diffusion_active = self._turbulent_diffusion_coefficients(
+                water_active,
+                z_p_active,
+                flow_magnitude_active,
+                shear_velocity_active,
                 K_Et=K_Et,
                 K_Ev=K_Ev,
-                M_b=M_b,
+                M_b=M_b_active,
                 E_turb_hor_min=E_turb_hor_min,
                 E_turb_vert_min=E_turb_vert_min,
             )
-            random_horizontal_x.fill(0.0)
-            random_horizontal_y.fill(0.0)
-            random_vertical.fill(0.0)
-            random_horizontal_x[active] = (
+            random_horizontal_x_active = (
                 2.0
                 * (random_source.random(active_count) - 0.5)
-                * np.sqrt(6.0 * horizontal_diffusion[active] / dt_sub)
+                * np.sqrt(6.0 * horizontal_diffusion_active / dt_sub)
             )
-            random_horizontal_y[active] = (
+            random_horizontal_y_active = (
                 2.0
                 * (random_source.random(active_count) - 0.5)
-                * np.sqrt(6.0 * horizontal_diffusion[active] / dt_sub)
+                * np.sqrt(6.0 * horizontal_diffusion_active / dt_sub)
             )
-            random_vertical[active] = (
+            random_vertical_active = (
                 2.0
                 * (random_source.random(active_count) - 0.5)
-                * np.sqrt(6.0 * vertical_diffusion[active] / dt_sub)
+                * np.sqrt(6.0 * vertical_diffusion_active / dt_sub)
             )
 
-            particle_u = np.nan_to_num(modified_u + random_horizontal_x, nan=0.0, posinf=0.0, neginf=0.0)
-            particle_v = np.nan_to_num(modified_v + random_horizontal_y, nan=0.0, posinf=0.0, neginf=0.0)
-
-            # Vertical velocity combines continuity advection, settling, and
-            # vertical random walk at the old position for this substep.
-            vertical_advection = np.nan_to_num(self.particles['q3d_vertical_velocity_gradient'], nan=0.0) * (
-                water_depth - z_p
-            )
-            settling = np.nan_to_num(self.particles['settling_velocity'], nan=0.0)
-            vertical_velocity = np.nan_to_num(
-                vertical_advection - settling + random_vertical,
+            particle_u_active = np.nan_to_num(
+                modified_u_active + random_horizontal_x_active,
                 nan=0.0,
                 posinf=0.0,
                 neginf=0.0,
             )
-            particle_u[~active] = 0.0
-            particle_v[~active] = 0.0
-            modified_u[~active] = 0.0
-            modified_v[~active] = 0.0
-            vertical_velocity[~active] = 0.0
-            vertical_advection[~active] = 0.0
+            particle_v_active = np.nan_to_num(
+                modified_v_active + random_horizontal_y_active,
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0,
+            )
+            particle_u.fill(0.0)
+            particle_v.fill(0.0)
+            particle_u[active_indices] = particle_u_active
+            particle_v[active_indices] = particle_v_active
+
+            # Vertical velocity combines continuity advection, settling, and
+            # vertical random walk at the old position for this substep.
+            vertical_gradient_active = np.nan_to_num(
+                np.asarray(self.particles['q3d_vertical_velocity_gradient'], dtype=float)[active_indices],
+                nan=0.0,
+            )
+            vertical_advection_active = vertical_gradient_active * (water_active - z_p_active)
+            settling_active = np.nan_to_num(
+                np.asarray(self.particles['settling_velocity'], dtype=float)[active_indices],
+                nan=0.0,
+            )
+            vertical_velocity_active = np.nan_to_num(
+                vertical_advection_active - settling_active + random_vertical_active,
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0,
+            )
+            vertical_velocity.fill(0.0)
+            vertical_advection.fill(0.0)
+            vertical_velocity[active_indices] = vertical_velocity_active
+            vertical_advection[active_indices] = vertical_advection_active
 
             # Snapshot first-substep diagnostics. Final x/y/z/status still
             # describe the end of the outer timestep.
             if not first_substep_diagnostics_saved:
-                diagnostic_z_p = z_p.copy()
-                diagnostic_modified_u = modified_u.copy()
-                diagnostic_modified_v = modified_v.copy()
-                diagnostic_particle_u = particle_u.copy()
-                diagnostic_particle_v = particle_v.copy()
-                diagnostic_horizontal_diffusion_velocity_x = random_horizontal_x.copy()
-                diagnostic_horizontal_diffusion_velocity_y = random_horizontal_y.copy()
-                diagnostic_vertical_diffusion_velocity = random_vertical.copy()
-                diagnostic_vertical_advection = vertical_advection.copy()
-                diagnostic_vertical_velocity = vertical_velocity.copy()
-                diagnostic_horizontal_diffusion = horizontal_diffusion.copy()
-                diagnostic_vertical_diffusion = vertical_diffusion.copy()
-                diagnostic_bed_level = bed_level.copy()
-                diagnostic_water_depth = water_depth.copy()
-                diagnostic_skin_roughness = skin_roughness.copy()
-                diagnostic_shear_velocity = shear_velocity.copy()
-                diagnostic_total_roughness = total_roughness.copy()
-                diagnostic_z_c = z_c.copy()
-                diagnostic_deficit = deficit.copy()
-                diagnostic_vertical_velocity_gradient = np.nan_to_num(
-                    self.particles['q3d_vertical_velocity_gradient'],
-                    nan=0.0,
-                ).copy()
-                diagnostic_settling_velocity = settling.copy()
-                diagnostic_flow_magnitude = flow_magnitude.copy()
-                if 'rouse_number' in self.particles:
-                    diagnostic_rouse_number = np.nan_to_num(self.particles['rouse_number'], nan=0.0).copy()
+                diagnostic_z_p[active_indices] = z_p_active
+                diagnostic_modified_u[active_indices] = modified_u_active
+                diagnostic_modified_v[active_indices] = modified_v_active
+                diagnostic_particle_u[active_indices] = particle_u_active
+                diagnostic_particle_v[active_indices] = particle_v_active
+                diagnostic_vertical_velocity[active_indices] = vertical_velocity_active
+                if save_full_diagnostics:
+                    diagnostic_horizontal_diffusion_velocity_x[active_indices] = random_horizontal_x_active
+                    diagnostic_horizontal_diffusion_velocity_y[active_indices] = random_horizontal_y_active
+                    diagnostic_vertical_diffusion_velocity[active_indices] = random_vertical_active
+                    diagnostic_vertical_advection[active_indices] = vertical_advection_active
+                    diagnostic_horizontal_diffusion[active_indices] = horizontal_diffusion_active
+                    diagnostic_vertical_diffusion[active_indices] = vertical_diffusion_active
+                    diagnostic_bed_level[active_indices] = bed_active
+                    diagnostic_water_depth[active_indices] = water_active
+                    diagnostic_skin_roughness[active_indices] = skin_active
+                    diagnostic_shear_velocity[active_indices] = shear_velocity_active
+                    diagnostic_total_roughness[active_indices] = total_roughness_active
+                    diagnostic_z_c[active_indices] = z_c_active
+                    diagnostic_deficit[active_indices] = deficit_active
+                    diagnostic_vertical_velocity_gradient[active_indices] = vertical_gradient_active
+                    diagnostic_settling_velocity[active_indices] = settling_active
+                    diagnostic_flow_magnitude[active_indices] = flow_magnitude_active
+                    if 'rouse_number' in self.particles:
+                        diagnostic_rouse_number[active_indices] = np.nan_to_num(
+                            np.asarray(self.particles['rouse_number'], dtype=float)[active_indices],
+                            nan=0.0,
+                        )
                 first_substep_diagnostics_saved = True
 
             # Horizontal move first, then re-interpolate bed/depth at the new
             # x/y location before applying the selected vertical update scheme.
-            bed_level_old_active = bed_level[active].copy()
-            z_p_old_active = z_p[active].copy()
-            z_old_active = z[active].copy()
+            bed_level_old_active = bed_active.copy()
+            z_p_old_active = z_p_active.copy()
+            z_old_active = z[active_indices].copy()
             self._advect_particles_with_velocity(active, particle_u, particle_v, dt_sub)
 
-            self._update_particle_field('bed_level', bed_level_field)
-            self._update_particle_field('water_depth', water_depth_field)
-            self._update_particle_field('skin_roughness_height', skin_roughness_height_field)
-            if vertical_update_scheme in {'centroid_floor', 'rouse_profile'}:
-                self._update_particle_field('total_transport_centroid_elevation', total_transport_centroid_elevation)
+            post_advection_fields = {
+                'bed_level': bed_level_field,
+                'water_depth': water_depth_field,
+                'skin_roughness_height': skin_roughness_height_field,
+            }
+            needs_next_substep_fields = substep_index < substeps - 1
+            if vertical_update_scheme in {'centroid_floor', 'rouse_profile'} or needs_next_substep_fields:
+                post_advection_fields['total_transport_centroid_elevation'] = total_transport_centroid_elevation
             if vertical_update_scheme == 'rouse_profile':
-                self._update_particle_field('rouse_number', rouse_number)
+                post_advection_fields['rouse_number'] = rouse_number
+            if needs_next_substep_fields:
+                self._update_particle_flow_field('q3d_flow', hydrodynamic_flow_field, indices=active_indices)
+                post_advection_fields.update(
+                    {
+                        'max_shear_velocity': max_shear_velocity,
+                        'total_roughness_height': total_roughness_height,
+                        'q3d_velocity_deficit_coefficient': q3d_velocity_deficit_coefficient,
+                        'q3d_vertical_velocity_gradient': q3d_vertical_velocity_gradient,
+                    }
+                )
+                if M_b is not None:
+                    post_advection_fields['q3d_wave_breaking_factor'] = M_b
+            self._update_particle_fields(post_advection_fields, indices=active_indices)
 
-            bed_level = np.asarray(self.particles['bed_level'], dtype=float)
-            water_depth = np.maximum(np.nan_to_num(self.particles['water_depth'], nan=0.0), 0.0)
-            skin_roughness = np.maximum(np.nan_to_num(self.particles['skin_roughness_height'], nan=0.0), 0.0)
-            deposition_threshold = 0.25 * skin_roughness
+            bed_level_new_active = np.asarray(self.particles['bed_level'], dtype=float)[active_indices]
+            water_depth_new_active = np.maximum(
+                np.nan_to_num(np.asarray(self.particles['water_depth'], dtype=float)[active_indices], nan=0.0),
+                0.0,
+            )
+            skin_roughness_new_active = np.maximum(
+                np.nan_to_num(
+                    np.asarray(self.particles['skin_roughness_height'], dtype=float)[active_indices],
+                    nan=0.0,
+                ),
+                0.0,
+            )
+            deposition_threshold_active = 0.25 * skin_roughness_new_active
 
             if vertical_update_scheme in {'centroid_floor', 'rouse_profile'}:
-                z_c_new = np.nan_to_num(self.particles['total_transport_centroid_elevation'], nan=0.0)
+                z_c_new_active = np.nan_to_num(
+                    np.asarray(self.particles['total_transport_centroid_elevation'], dtype=float)[active_indices],
+                    nan=0.0,
+                )
             else:
-                z_c_new = np.zeros_like(water_depth)
+                z_c_new_active = np.zeros(active_count, dtype=float)
             if vertical_update_scheme == 'rouse_profile':
-                rouse_number_new = np.nan_to_num(self.particles['rouse_number'], nan=0.0)
+                rouse_number_new_active = np.nan_to_num(
+                    np.asarray(self.particles['rouse_number'], dtype=float)[active_indices],
+                    nan=0.0,
+                )
             else:
-                rouse_number_new = np.zeros_like(water_depth)
+                rouse_number_new_active = np.zeros(active_count, dtype=float)
 
             height_after_vertical = self._q3d_height_after_vertical_update(
                 vertical_update_scheme,
                 z_p_old=z_p_old_active,
                 z_old=z_old_active,
                 bed_level_old=bed_level_old_active,
-                bed_level_new=bed_level[active],
-                water_depth_new=water_depth[active],
-                vertical_velocity=vertical_velocity[active],
-                settling_velocity=settling[active],
-                transport_centroid_elevation_new=z_c_new[active],
-                rouse_number_new=rouse_number_new[active],
+                bed_level_new=bed_level_new_active,
+                water_depth_new=water_depth_new_active,
+                vertical_velocity=vertical_velocity_active,
+                settling_velocity=settling_active,
+                transport_centroid_elevation_new=z_c_new_active,
+                rouse_number_new=rouse_number_new_active,
                 dt=dt_sub,
                 rng=random_source,
             )
-            z[active] = bed_level[active] + height_after_vertical
+            z[active_indices] = bed_level_new_active + height_after_vertical
 
             # Deposit particles that return to the near-bed roughness threshold.
-            height_above_bed = z - bed_level
-            deposited_this_substep = (
-                active
-                & np.isfinite(height_above_bed)
-                & (height_above_bed <= deposition_threshold)
-            )
+            height_active = z[active_indices] - bed_level_new_active
+            deposited_active = np.isfinite(height_active) & (height_active <= deposition_threshold_active)
+            deposited_indices = active_indices[deposited_active]
 
-            z[deposited_this_substep] = bed_level[deposited_this_substep]
-            height_above_bed = np.maximum(z - bed_level, 0.0)
-            is_deposited = is_deposited | deposited_this_substep
-            burial_depth[active | deposited_this_substep] = 0.0
-            is_buried[active | deposited_this_substep] = False
+            if deposited_indices.size:
+                z[deposited_indices] = bed_level_new_active[deposited_active]
+                height_active[deposited_active] = 0.0
+                is_deposited[deposited_indices] = True
+                is_suspended[deposited_indices] = False
+                deposited_now[deposited_indices] = True
 
-            is_suspended[active] = height_above_bed[active] > deposition_threshold[active]
-            is_suspended[deposited_this_substep] = False
-            deposited_now |= deposited_this_substep
+            height_active = np.maximum(height_active, 0.0)
+            burial_depth[active_indices] = 0.0
+            is_buried[active_indices] = False
+            is_suspended[active_indices] = height_active > deposition_threshold_active
+            is_suspended[deposited_indices] = False
+            height_above_bed[active_indices] = height_active
 
             # TO implement - somewhere here we should also eventually update the burial depth of particles that are deposited but not buried, and set their is_buried flag to False. This will allow them to be entrained again in the future without needing a separate burial update step to reset their state.
+
+        bed_level = np.asarray(self.particles['bed_level'], dtype=float)
+        height_above_bed = np.maximum(np.nan_to_num(z - bed_level, nan=0.0), 0.0)
 
         # ------------------------------------------------------------------
         # 6. Store updated particle state and diagnostics.
         # ------------------------------------------------------------------
+        centroid_u = np.nan_to_num(
+            self.particles.get('centroid_particle_velocity_u', np.zeros(n_particles, dtype=float)),
+            nan=0.0,
+        )
+        centroid_v = np.nan_to_num(
+            self.particles.get('centroid_particle_velocity_v', np.zeros(n_particles, dtype=float)),
+            nan=0.0,
+        )
+        centroid_magnitude = np.nan_to_num(
+            self.particles.get('centroid_particle_velocity_magnitude', np.zeros(n_particles, dtype=float)),
+            nan=0.0,
+        )
+        self.particles['centroid_particle_velocity_x'] = centroid_u
+        self.particles['centroid_particle_velocity_y'] = centroid_v
+        self.particles['centroid_particle_velocity'] = centroid_magnitude
         self.particles['z'] = z
         self.particles['z_p'] = height_above_bed
         self.particles['q3d_diagnostic_z_p_first_substep'] = diagnostic_z_p
@@ -1657,28 +1868,51 @@ class ParticlePopulation:
         self.particles['horizontal_particle_velocity_x'] = diagnostic_particle_u
         self.particles['horizontal_particle_velocity_y'] = diagnostic_particle_v
         self.particles['horizontal_particle_velocity'] = np.hypot(diagnostic_particle_u, diagnostic_particle_v)
-        self.particles['horizontal_diffusion_velocity_x'] = diagnostic_horizontal_diffusion_velocity_x
-        self.particles['horizontal_diffusion_velocity_y'] = diagnostic_horizontal_diffusion_velocity_y
-        self.particles['horizontal_diffusion_velocity'] = np.hypot(
-            diagnostic_horizontal_diffusion_velocity_x,
-            diagnostic_horizontal_diffusion_velocity_y,
-        )
-        self.particles['vertical_advection_velocity'] = diagnostic_vertical_advection
-        self.particles['vertical_diffusion_velocity'] = diagnostic_vertical_diffusion_velocity
         self.particles['vertical_particle_velocity'] = diagnostic_vertical_velocity
-        self.particles['vertical_diffusion_coefficient'] = diagnostic_vertical_diffusion
-        self.particles['horizontal_diffusion_coefficient'] = diagnostic_horizontal_diffusion
-        self.particles['diagnostic_bed_level'] = diagnostic_bed_level
-        self.particles['diagnostic_water_depth'] = diagnostic_water_depth
-        self.particles['diagnostic_skin_roughness_height'] = diagnostic_skin_roughness
-        self.particles['diagnostic_max_shear_velocity'] = diagnostic_shear_velocity
-        self.particles['diagnostic_total_roughness_height'] = diagnostic_total_roughness
-        self.particles['diagnostic_total_transport_centroid_elevation'] = diagnostic_z_c
-        self.particles['diagnostic_q3d_velocity_deficit_coefficient'] = diagnostic_deficit
-        self.particles['diagnostic_q3d_vertical_velocity_gradient'] = diagnostic_vertical_velocity_gradient
-        self.particles['diagnostic_settling_velocity'] = diagnostic_settling_velocity
-        self.particles['diagnostic_q3d_flow_magnitude'] = diagnostic_flow_magnitude
-        self.particles['diagnostic_rouse_number'] = diagnostic_rouse_number
+        if save_full_diagnostics:
+            self.particles['horizontal_diffusion_velocity_x'] = diagnostic_horizontal_diffusion_velocity_x
+            self.particles['horizontal_diffusion_velocity_y'] = diagnostic_horizontal_diffusion_velocity_y
+            self.particles['horizontal_diffusion_velocity'] = np.hypot(
+                diagnostic_horizontal_diffusion_velocity_x,
+                diagnostic_horizontal_diffusion_velocity_y,
+            )
+            self.particles['vertical_advection_velocity'] = diagnostic_vertical_advection
+            self.particles['vertical_diffusion_velocity'] = diagnostic_vertical_diffusion_velocity
+            self.particles['vertical_diffusion_coefficient'] = diagnostic_vertical_diffusion
+            self.particles['horizontal_diffusion_coefficient'] = diagnostic_horizontal_diffusion
+            self.particles['diagnostic_bed_level'] = diagnostic_bed_level
+            self.particles['diagnostic_water_depth'] = diagnostic_water_depth
+            self.particles['diagnostic_skin_roughness_height'] = diagnostic_skin_roughness
+            self.particles['diagnostic_max_shear_velocity'] = diagnostic_shear_velocity
+            self.particles['diagnostic_total_roughness_height'] = diagnostic_total_roughness
+            self.particles['diagnostic_total_transport_centroid_elevation'] = diagnostic_z_c
+            self.particles['diagnostic_q3d_velocity_deficit_coefficient'] = diagnostic_deficit
+            self.particles['diagnostic_q3d_vertical_velocity_gradient'] = diagnostic_vertical_velocity_gradient
+            self.particles['diagnostic_settling_velocity'] = diagnostic_settling_velocity
+            self.particles['diagnostic_q3d_flow_magnitude'] = diagnostic_flow_magnitude
+            self.particles['diagnostic_rouse_number'] = diagnostic_rouse_number
+        else:
+            for field_name in (
+                'horizontal_diffusion_velocity_x',
+                'horizontal_diffusion_velocity_y',
+                'horizontal_diffusion_velocity',
+                'vertical_advection_velocity',
+                'vertical_diffusion_velocity',
+                'vertical_diffusion_coefficient',
+                'horizontal_diffusion_coefficient',
+                'diagnostic_bed_level',
+                'diagnostic_water_depth',
+                'diagnostic_skin_roughness_height',
+                'diagnostic_max_shear_velocity',
+                'diagnostic_total_roughness_height',
+                'diagnostic_total_transport_centroid_elevation',
+                'diagnostic_q3d_velocity_deficit_coefficient',
+                'diagnostic_q3d_vertical_velocity_gradient',
+                'diagnostic_settling_velocity',
+                'diagnostic_q3d_flow_magnitude',
+                'diagnostic_rouse_number',
+            ):
+                self.particles.pop(field_name, None)
         self.particles['q3d_vertical_update_scheme_code'] = np.full(
             n_particles,
             vertical_scheme_codes[vertical_update_scheme],

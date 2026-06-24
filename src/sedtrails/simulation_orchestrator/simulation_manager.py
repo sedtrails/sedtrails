@@ -513,12 +513,14 @@ class Simulation:
         total_particles = sum([len(pop.particles['x']) for pop in populations])
         estimated_timesteps = (simulation_time.duration.seconds // simulation_time.time_step.seconds) + 1
         max_timesteps = estimated_timesteps * 2  # Initial buffer
+        q3d_diagnostics = getattr(getattr(self.physics_converter, 'config', None), 'q3d_diagnostics', 'minimal')
 
         xr_data = self.data_manager.writer.create_dataset(
             N_particles=total_particles,
             N_populations=len(populations),
             N_timesteps=max_timesteps,
             N_flowfields=len(flow_field_names) if flow_field_names else 1,
+            q3d_diagnostics=q3d_diagnostics,
         )
 
         # Initialize metadata using DataManager's writer (composition)
@@ -799,6 +801,7 @@ class Simulation:
                                 q3d_motion_substeps=getattr(
                                     self.physics_converter.config, 'q3d_motion_substeps', 1
                                 ),
+                                q3d_diagnostics=q3d_diagnostics,
                             )
                     else:
                         # Update particle position

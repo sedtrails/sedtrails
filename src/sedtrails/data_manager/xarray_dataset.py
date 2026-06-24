@@ -2,7 +2,14 @@ import numpy as np
 import xarray as xr
 
 
-def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfields, name_strlen=24):
+def create_sedtrails_dataset(
+    N_particles,
+    N_populations,
+    N_timesteps,
+    N_flowfields,
+    name_strlen=24,
+    q3d_diagnostics='minimal',
+):
     ds = xr.Dataset(
         {
             # Population metadata - initialize with empty/default values
@@ -25,6 +32,9 @@ def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfiel
             # Q3D diagnostics. These velocity/parameter fields are stored from
             # the first Q3D substep; x/y/z/status are stored after all substeps.
             'q3d_diagnostic_z_p_first_substep': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'centroid_particle_velocity_x': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'centroid_particle_velocity_y': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
+            'centroid_particle_velocity': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
             'modified_centroid_particle_velocity_x': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
             'modified_centroid_particle_velocity_y': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
             'modified_centroid_particle_velocity': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
@@ -86,6 +96,34 @@ def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfiel
             'name_strlen': np.arange(name_strlen),
         },
     )
+
+    q3d_diagnostics = str(q3d_diagnostics or 'minimal').strip().lower().replace('-', '_')
+    if q3d_diagnostics != 'full':
+        q3d_full_only_fields = (
+            'horizontal_diffusion_velocity_x',
+            'horizontal_diffusion_velocity_y',
+            'horizontal_diffusion_velocity',
+            'vertical_advection_velocity',
+            'vertical_diffusion_velocity',
+            'horizontal_diffusion_coefficient',
+            'vertical_diffusion_coefficient',
+            'diagnostic_bed_level',
+            'diagnostic_water_depth',
+            'diagnostic_skin_roughness_height',
+            'diagnostic_max_shear_velocity',
+            'diagnostic_total_roughness_height',
+            'diagnostic_total_transport_centroid_elevation',
+            'diagnostic_q3d_velocity_deficit_coefficient',
+            'diagnostic_q3d_vertical_velocity_gradient',
+            'diagnostic_settling_velocity',
+            'diagnostic_q3d_flow_magnitude',
+            'diagnostic_rouse_number',
+            'turbulent_shields_number',
+            'critical_shields_number',
+        )
+        drop_names = [name for name in q3d_full_only_fields if name in ds]
+        if drop_names:
+            ds = ds.drop_vars(drop_names)
 
     return ds
 
@@ -213,6 +251,9 @@ def collect_timestep_data(ds, populations, timestep, current_time):
 
         q3d_float_fields = (
             'q3d_diagnostic_z_p_first_substep',
+            'centroid_particle_velocity_x',
+            'centroid_particle_velocity_y',
+            'centroid_particle_velocity',
             'modified_centroid_particle_velocity_x',
             'modified_centroid_particle_velocity_y',
             'modified_centroid_particle_velocity',
@@ -244,6 +285,8 @@ def collect_timestep_data(ds, populations, timestep, current_time):
             'q3d_entrainment_height_above_bed',
         )
         for field_name in q3d_float_fields:
+            if field_name not in ds:
+                continue
             ds[field_name][particle_slice, timestep] = population.particles.get(
                 field_name,
                 np.full(num_particles, np.nan),
@@ -257,6 +300,8 @@ def collect_timestep_data(ds, populations, timestep, current_time):
             'deposited_now',
         )
         for field_name in q3d_int_fields:
+            if field_name not in ds:
+                continue
             ds[field_name][particle_slice, timestep] = population.particles.get(
                 field_name,
                 np.zeros(num_particles, dtype=int),

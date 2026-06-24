@@ -148,7 +148,7 @@
 				},
 				"q3d_vertical_update_scheme": {
 				  "type": "string",
-				  "enum": ["geometric", "centroid_floor", "rouse_sample"],
+				  "enum": ["geometric", "centroid_floor", "rouse_profile", "rouse_sample"],
 				  "default": "geometric",
 				  "description": "Q3D vertical position update scheme. geometric applies the bed-change correction z_p,new = z_p,old + w dt + bed_old - bed_new; centroid_floor applies settling only in absolute z and prevents suspended particles from falling below the new total-transport centroid; rouse_sample samples the new height above bed from a Rouse-shaped distribution using the MacDonald rouse_number field."
 				},
@@ -157,6 +157,17 @@
 				  "minimum": 1,
 				  "default": 1,
 				  "description": "Number of Q3D horizontal/vertical particle motion substeps per outer particle timestep. A value of 1 gives the original single-step update."
+				},
+				"q3d_diagnostics": {
+				  "type": "string",
+				  "enum": ["minimal", "full"],
+				  "default": "minimal",
+				  "description": "Q3D particle output level. minimal stores core Q3D motion/status fields and exported centroid velocity; full also stores intermediate diffusion and hydraulic diagnostic arrays."
+				},
+				"q3d_export_grid_diagnostics": {
+				  "type": "boolean",
+				  "default": false,
+				  "description": "If true, MacDonald Q3D also exports grid-level diffusion and vertical velocity diagnostic fields that are redundant with the particle-level Q3D calculation."
 				}
             },
             "description": "Macdonald method for particle tracking"
