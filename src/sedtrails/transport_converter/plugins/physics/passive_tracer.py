@@ -20,6 +20,15 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
     def add_physics(self, sedtrails_data: SedtrailsData, *args, **kwargs) -> None:
         """
         Add flow fields for passive tracer
+
+        Parameters
+        ----------
+        sedtrails_data : SedtrailsData
+            SedTRAILS data object to process.
+        *args : object
+            Additional positional arguments passed through to the implementation.
+        **kwargs : object
+            Additional keyword arguments passed through to the implementation.
         """
         flow_velocity_x = sedtrails_data.depth_avg_flow_velocity['x']
         flow_velocity_y = sedtrails_data.depth_avg_flow_velocity['y']

@@ -3,7 +3,7 @@
 
 Developers and contributors can set up a local development environment to work on the SedTRAILS codebase. Follow the steps below to get started.
 
-1. Make sure Python (3.13 or newer) and a code editor (e.g., Visual Studio Code) is installed.
+1. Make sure Python 3.10 or newer, up to but not including Python 3.14, and a code editor (e.g., Visual Studio Code) are installed.
 
 1. Fork the SedTRAILS repository on GitHub to your own account. If it is your first time using contritubing to SedTRAILS, please read the [contributing guidelines](contribution.md). 
 
@@ -54,19 +54,23 @@ sedtrails -h
 
 ## Simulation Test
 
-To fullly test your development environment, you can run a sample simulation using a provided dataset.
+To fully test your development environment, you can run a sample simulation using the tracked example configuration.
 
 1. Download the dataset file named `inlet_sedtrails.nc` from [this link](https://surfdrive.surf.nl/files/index.php/s/VUGKZm7QexAXuD9?path=%2Fdfm).
 
-2. Change the directory:
+2. From the repository root, create a local sample-data directory and place the downloaded dataset there:
 ```bash
-cd examples
+mkdir -p sample-data
 ```
 
-3. In the file `config.example.yaml`, update the directory for `input_data` to read the downloaded dataset: `input_data: ./<path-to/inlet_sedtrails.nc`
+3. In `examples/sedtrails-example.yaml`, set `inputs.data` to the downloaded dataset:
 
+```yaml
+inputs:
+  data: ./sample-data/inlet_sedtrails.nc
+```
 
 4. Run the model:
 ```bash
-sedtrails run -c config.example.yaml
+sedtrails run -c examples/sedtrails-example.yaml
 ```

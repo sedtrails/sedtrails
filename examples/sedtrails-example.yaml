@@ -4,8 +4,20 @@ general:
     reference_date: 1970-01-01  # Default reference date for the input model
     morfac: 1  # Morphological acceleration factor for time decompression
 inputs:
-  data: ./sample-data/inlet_sedtrails.nc
+  data: ../sample-data/inlet_sedtrails.nc
   read_interval: 10D  # Time chunk size for reading input data
+  repeat_eulerian_fields: true  # Repeat forcing after a valid start inside the input time range
+# Optional domain controls for islands/cutouts and boundary actions.
+# Tekal .pol paths are resolved relative to this configuration file.
+# domain:
+#   pol_file: ./outer_domain.pol
+#   inner_boundary_pol_files:
+#     - ./islands.pol
+#   boundary_class_pol_files:
+#     open:
+#       - ./offshore_boundary_edges.pol
+#     land:
+#       - ./coastline_boundary_edges.pol
 time:
   start:  2016-09-21 19:20:00
   timestep: 60S
@@ -13,7 +25,7 @@ time:
   cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
 particles:
   populations:
-    - name: populaton_1
+    - name: population_1
       particle_type: sand
       characteristics:
         grain_size: 0.00025 
@@ -61,5 +73,5 @@ outputs:
   save_interval: 1H
 visualization:
   dashboard:
-    enable: true
+    enable: false
     update_interval: 1H

@@ -17,6 +17,9 @@ CLAUDE.md
 # AutoDocs
 docs/apidocs/sedtrails/*
 
+# Analytical benchmark outputs
+tests/analytical/output/
+
 
 # Mac OS X metadata files
 **/.DS_Store
@@ -184,3 +187,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+/examples/output
+results/particle_trajectories.png

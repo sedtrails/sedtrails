@@ -13,7 +13,7 @@
                 "diffusion_coefficient": {
                     "type": "number",
                     "default": 0.0,
-                    "description": "random walk diffusion coefficient for passive particles"
+                    "description": "random walk diffusion coefficient (horizontal diffusivity K_h) for passive particles"
                 }
             },
             "required": [
@@ -60,46 +60,13 @@
                 "size"
             ]
         },
-        "bio_characteristics": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "buoyancy": {
-                    "type": "number",
-                    "default": 0.95,
-                    "description": "buoyancy factor for biological particles (relative to water)"
-                }
-            },
-            "required": [
-                "buoyancy"
-            ]
-        },
-        "gravel_characteristics": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "density": {
-                    "type": "number",
-                    "default": 2800.0,
-                    "description": "density of gravel particles [kg/m3]"
-                },
-                "grain_size": {
-                    "type": "number",
-                    "default": 0.01,
-                    "description": "grain size of gravel particles [m]"
-                }
-            },
-            "required": [
-                "density",
-                "grain_size"
-            ]
-        },
         "van_westen_method": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
                 "flow_field_name": {
                     "type": "array",
+                    "minItems": 1,
                     "items": {
                         "type": "string"
                     },
@@ -109,8 +76,17 @@
                     "type": "number",
                     "default": 0.2,
                     "description": "beta parameter for van Westen method"
+                },
+                "suspended_velocity_method": {
+                    "type": "string",
+                    "enum": ["soulsby_2011", "macdonald_2006"],
+                    "default": "soulsby_2011",
+                    "description": "Method for computing suspended sediment velocity. 'soulsby_2011': Rouse-profile ratio (van Westen et al. 2025). 'macdonald_2006': log-profile at suspended sediment centroid height (MacDonald 2006, Eqs. 27-29)."
                 }
             },
+            "required": [
+                "flow_field_name"
+            ],
             "description": "van Westen method for particle tracking"
         },
         "macdonald_method": {
@@ -178,6 +154,7 @@
             "properties": {
                 "flow_field_name": {
                     "type": "array",
+                    "minItems": 1,
                     "items": {
                         "type": "string"
                     },
@@ -219,6 +196,9 @@
                     "description": "Initial state of Freedom Factor (0 = trapped, 1 = free) [-]"
                 }
             },
+            "required": [
+                "flow_field_name"
+            ],
             "description": "Soulsby method for particle tracking"
         },
         "passive_method": {
@@ -227,9 +207,13 @@
             "properties": {
                 "flow_field_name": {
                     "type": "array",
+                    "minItems": 1,
                     "items": {
                         "type": "string"
                     },
+                    "default": [
+                        "depth_avg_flow_velocity"
+                    ],
                     "description": "List of flow field names to use for passive tracer method"
                 }
             },
@@ -240,19 +224,17 @@
         "name": {
             "type": "string",
             "default": "particle",
-            "description": "name of the particle population, e.g., 'sediment', 'sand-01', 'mud-a', 'bio-1'"
+            "description": "name of the particle population, e.g., 'sediment', 'sand-01', 'mud-a'"
         },
         "particle_type": {
             "type": "string",
             "enum": [
                 "passive",
                 "sand",
-                "mud",
-                "bio",
-                "gravel"
+                "mud"
             ],
             "default": "passive",
-            "description": "type of particles for population (e.g., 'passive', 'sand', 'mud', 'bio', 'gravel')"
+            "description": "type of particles for population (supported values: 'passive', 'sand', 'mud')"
         },
         "characteristics": {
             "type": "object",
@@ -265,9 +247,6 @@
                 "vanwesten": {
                     "$ref": "#/$defs/van_westen_method"
                 },
-                "vanwesten_bl": {
-                    "$ref": "#/$defs/van_westen_bl_method"
-                },
                 "soulsby": {
                     "$ref": "#/$defs/soulsby_method"
                 },
@@ -279,13 +258,15 @@
                 }
             },
             "minProperties": 1,
+            "maxProperties": 1,
             "default": {
-                "soulsby": {
-                    "f": 0.1,
-                    "r": 0.8
+                "passive_tracer": {
+                    "flow_field_name": [
+                        "depth_avg_flow_velocity"
+                    ]
                 }
             },
-            "description": "At least one tracer method must be specified"
+            "description": "Exactly one tracer method must be specified"
         },
         "transport_probability": {
             "type": "string",
@@ -385,7 +366,7 @@
                 "lifespan": {
                     "type": "number",
                     "default": 9e+99,
-                    "description": "life span of particles in seconds. Not applicable for biologial particles"
+                    "description": "life span of particles in seconds"
                 },
                 "release_start": {
                     "type": "string",
@@ -394,6 +375,11 @@
                 "release_stop": {
                     "type": "string",
                     "description": "release stop time, e.g., '2020-01-01 01:00:00'. If empty, then release stops immediately after the first particles are released."
+                },
+                "remove_permanently_buried": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "If true, particles whose initial burial depth exceeds the maximum possible exposure depth (max_erosion + max_mixing_depth) at their location are removed before the simulation starts (computed automatically by the simulation when enabled)."
                 },
                 "strategy": {
                     "type": "object",
@@ -484,15 +470,28 @@
                         },
                         "random": {
                             "type": "object",
+                            "description": "Random area release. Define the release area with `bbox` or `poly`; legacy `pol_file` is not supported here. Use `poly: path/to/file.pol` for polygon files. If both `bbox` and `poly` are provided, the polygon is used.",
                             "additionalProperties": false,
                             "properties": {
-                                "pol_file": {
-                                    "type": "string",
-                                    "description": "path to Deltares '.pol' file with bounding polygon for random point generation"
-                                },
                                 "bbox": {
                                     "type": "string",
                                     "description": "bounding box for random point generation, as 'xmin,ymin xmax,ymax'"
+                                },
+                                "poly": {
+                                    "description": "polygon boundary for random point generation; either a path to a polygon file (.pol, CSV, or plain text) or an inline list of 'x,y' coordinate strings (minimum 3 vertices)",
+                                    "oneOf": [
+                                        {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "description": "path to polygon file (.pol, CSV, or plain text)"
+                                        },
+                                        {
+                                            "type": "array",
+                                            "items": { "type": "string" },
+                                            "minItems": 3,
+                                            "description": "inline polygon as a list of 'x,y' or 'x y' coordinate strings"
+                                        }
+                                    ]
                                 },
                                 "nlocations": {
                                     "type": "integer",
@@ -518,43 +517,49 @@
                             "required": [
                                 "nlocations"
                             ],
-                            "oneOf": [
-                                {
-                                    "required": [
-                                        "bbox"
-                                    ]
-                                },
-                                {
-                                    "required": [
-                                        "pol_file"
-                                    ]
-                                }
+                            "anyOf": [
+                                { "required": ["bbox"] },
+                                { "required": ["poly"] }
                             ]
                         },
                         "grid": {
                             "type": "object",
+                            "description": "Regular grid area release. Define the release area with `bbox` or `poly`; legacy `pol_file` is not supported here. Use `poly: path/to/file.pol` for polygon files. If both `bbox` and `poly` are provided, the polygon is used.",
+                            "additionalProperties": false,
                             "properties": {
-                                "pol_file": {
+                                "bbox": {
                                     "type": "string",
-                                    "description": "path to tekal '.pol' file with bounding polygon for cluster analysis"
+                                    "description": "bounding box for grid generation, as 'xmin,ymin xmax,ymax'"
+                                },
+                                "poly": {
+                                    "description": "polygon boundary for grid generation; either a path to a polygon file (.pol, CSV, or plain text) or an inline list of 'x,y' coordinate strings (minimum 3 vertices)",
+                                    "oneOf": [
+                                        {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "description": "path to polygon file (.pol, CSV, or plain text)"
+                                        },
+                                        {
+                                            "type": "array",
+                                            "items": { "type": "string" },
+                                            "minItems": 3,
+                                            "description": "inline polygon as a list of 'x,y' or 'x y' coordinate strings"
+                                        }
+                                    ]
                                 },
                                 "separation": {
                                     "type": "object",
+                                    "additionalProperties": false,
                                     "properties": {
                                         "dx": {
                                             "type": "number",
                                             "default": 100.0,
-                                            "description": "square grid cells where dx=dy"
+                                            "description": "grid spacing in x-direction [m]"
                                         },
                                         "dy": {
                                             "type": "number",
                                             "default": 100.0,
-                                            "description": "square grid cells where dx=dy"
-                                        },
-                                        "jitter_pct": {
-                                            "type": "number",
-                                            "default": 0.1,
-                                            "description": "fraction of grid cell size to jitter by"
+                                            "description": "grid spacing in y-direction [m]"
                                         }
                                     },
                                     "required": [
@@ -573,17 +578,12 @@
                                     "description": "Do you want to save cluster check plots?"
                                 }
                             },
-                            "oneOf": [
-                                {
-                                    "required": [
-                                        "pol_file"
-                                    ]
-                                },
-                                {
-                                    "required": [
-                                        "separation"
-                                    ]
-                                }
+                            "required": [
+                                "separation"
+                            ],
+                            "anyOf": [
+                                { "required": ["bbox"] },
+                                { "required": ["poly"] }
                             ]
                         },
                         "file_points": {
@@ -706,38 +706,6 @@
                 "properties": {
                     "characteristics": {
                         "$ref": "#/$defs/mud_characteristics"
-                    }
-                }
-            }
-        },
-        {
-            "if": {
-                "properties": {
-                    "particle_type": {
-                        "const": "bio"
-                    }
-                }
-            },
-            "then": {
-                "properties": {
-                    "characteristics": {
-                        "$ref": "#/$defs/bio_characteristics"
-                    }
-                }
-            }
-        },
-        {
-            "if": {
-                "properties": {
-                    "particle_type": {
-                        "const": "gravel"
-                    }
-                }
-            },
-            "then": {
-                "properties": {
-                    "characteristics": {
-                        "$ref": "#/$defs/gravel_characteristics"
                     }
                 }
             }

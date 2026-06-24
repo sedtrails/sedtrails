@@ -2,13 +2,13 @@
 
 SedTRAILS supports a plugin system that allows users to extend its functionality by 
 writing plugins for the *Transport Converter*. 
-Plugins can be writen for the Format and Physics Converters. 
+Plugins can be written for the Format and Physics Converters. 
 
 This document provides an overview of how to create and integrate plugins into SedTRAILS. We use the case of creating a plugin for the Physics Converter as an example.
 
 ## Creating a Plugin
 
-We assume you have set up a development environment for SedTRAILS. If you haven't done this yet, please refer to the [Developer Guide](./developer/dev-environment.md).
+We assume you have set up a development environment for SedTRAILS. If you haven't done this yet, please refer to the [Developer Guide](dev-environment.md).
 In essence, a plugin for the  Physics Converter must implement a class that inherits from `BasePhysicsPlugin` and implements the `add_physics` method.
 The `add_physics` method takes as input a `SedtrailsData` object, which contains data to perform the physics calculations, and add the results (physics conversiont) to the `SedtrailsData` object itself.
 To **create a physics plugin for SedTRAILS**, follow these steps:
@@ -56,7 +56,7 @@ The `add_physics` method is where you implement the logic for your physics calcu
 
 ## Registering a Plugin
 
-Once you have created your plugin, you need to register it in the JSON schema in `src/sedtrails/config/population.schema.json` for the simulaition configuration file.
+Once you have created your plugin, you need to register it in the JSON schema in `src/sedtrails/config/population.schema.json` for the simulation configuration file.
 To register your plugin: 
 
 1. Add a new definition in the `$defs` section of the schema. The naming convention for the definition should be `<your_plugin_name>_method`. And proceed to define the names data types of the parameters your plugin will required, under `properties`. Such parameters will be passed as attributes of the `config` dataclass in the plugin class. User will only be able to set these parameters in the simulation configuration file. For example, if your plugin is named `my_plugin`, you would add the following to the `$defs` section:
@@ -67,14 +67,14 @@ To register your plugin:
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "parmeter1": {
+                "parameter1": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     },
                     "description": "the name of a parameter for my plugin"
                 },
-                "paramter2": {
+                "parameter2": {
                     "type": "number",
                     "default": 0.2,
                     "description": "the name of another parameter"

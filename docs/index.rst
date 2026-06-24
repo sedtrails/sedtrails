@@ -6,9 +6,9 @@
 SedTRAILS documentation
 =======================
 
-.. image:: https://img.shields.io/badge/License-MIT-yellow.svg
-   :target: https://opensource.org/licenses/MIT
-   :alt: License: MIT
+.. image:: https://img.shields.io/badge/License-GPLv3-blue.svg
+   :target: https://www.gnu.org/licenses/gpl-3.0
+   :alt: License: GPLv3
 
 .. image:: https://img.shields.io/badge/tu_delft-DCC-black?style=flat&label=TU%20Delft&labelColor=%23000000%20&color=%2300A6D6
    :target: https://dcc.tudelft.nl
@@ -35,7 +35,7 @@ Features
 --------
 * Lagrangian particle tracking for sediment transport simulation.
 * Dashboard for interactive visualization of simulation results in real-time.
-* Support for Delft3D Flexible Mesh (D3D-FM) hydrodynamic model outputs.
+* Support for D-Flow FM, XBeach, and SFINCS hydrodynamic model outputs.
 * Support for various physics convertion methods.
 * Terminal user interface (CLI) for easy setup and execution of simulations.
 * Modular design for easy integration and extension.
@@ -55,7 +55,9 @@ Features
    user/installation
    user/simulations
    user/output
+   user/visualization
    user/dashboard
+   user/input-formats
    user/seeding
 
 .. toctree::
@@ -63,6 +65,7 @@ Features
    :caption: Tutorials
 
    tutorials/tutorial1
+   tutorials/loop-simulations
 
 .. toctree::
    :maxdepth: 2
@@ -71,6 +74,7 @@ Features
    developer/contribution
    developer/dev-environment
    developer/plugins
+   developer/benchmarks
    developer/adding-unit-tests
    developer/architecture
 

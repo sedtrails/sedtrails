@@ -22,14 +22,43 @@ POROSITY = 0.4  # [-]
 GRAIN_DIAMETER = 2.5e-4  # m (250 μm)
 # Morphological acceleration factor
 MORFAC = 1.0
+# Bertin (2008) mixing layer empirical coefficient
+BERTIN_COEFFICIENT = 0.041
 
 
 @dataclass
 class PhysicsConfig:
-    """Configuration parameters for physics calculations."""
+    """Configuration parameters for physics calculations.
+
+    Attributes
+    ----------
+    tracer_method : str
+        Name of the active sediment tracer physics method.
+    suspended_velocity_method : str
+        Method used to compute suspended sediment velocity.
+    gravity : float
+        Gravitational acceleration in m/s^2.
+    von_karman_constant : float
+        Von Karman constant.
+    kinematic_viscosity : float
+        Kinematic viscosity in m^2/s.
+    water_density : float
+        Water density in kg/m^3.
+    particle_density : float
+        Particle density in kg/m^3.
+    porosity : float
+        Bed porosity.
+    grain_diameter : float
+        Representative grain diameter in meters.
+    morfac : float
+        Morphological acceleration factor.
+    bertin_coefficient : float
+        Empirical coefficient for Bertin-style mixing layer thickness.
+    """
 
     # Physics methods
     tracer_method: str = 'vanwesten'  # name of method for
+    suspended_velocity_method: str = 'soulsby_2011'  # default suspended velocity method
     gravity: float = GRAVITY
     von_karman_constant: float = VON_KARMAN_CONSTANT
     kinematic_viscosity: float = KINEMATIC_VISCOSITY
@@ -38,6 +67,7 @@ class PhysicsConfig:
     porosity: float = POROSITY
     grain_diameter: float = GRAIN_DIAMETER
     morfac: float = MORFAC
+    bertin_coefficient: float = BERTIN_COEFFICIENT
 
     @classmethod
     def from_dict(
@@ -49,35 +79,62 @@ class PhysicsConfig:
         2) base config dict,
         3) method-specific tracer_config (flattened into attributes).
         Supports tracer_config passed either as a flat dict, or nested under the method name.
+
+        Parameters
+        ----------
+        config : Optional[Dict[str, Any]]
+            Configuration mapping used by the operation.
+        tracer_config : Optional[Dict[str, Any]]
+            Tracer-method-specific configuration mapping.
+
+        Returns
+        -------
+        'PhysicsConfig'
+            Constructed physics configuration.
         """
         # Start from defaults
         obj = cls()
+
         # Apply base config
         if config:
             if isinstance(config, cls):
-                base = asdict(config)  # deep copy dataclass fields
+                base = asdict(config)
             elif isinstance(config, dict):
                 base = config
             else:
                 base = {k: v for k, v in vars(config).items() if not k.startswith('_')}
             for k, v in base.items():
                 setattr(obj, k, v)
+
         # Apply method-specific (flatten) from tracer_config
         if tracer_config:
-            method = getattr(config, 'tracer_method', 'vanwesten')
-            # If tracer_config is nested like {"soulsby": {...}}, pick the active method
-            if isinstance(tracer_config.get(method, None), dict):
+            method = obj.tracer_method
+            if isinstance(tracer_config.get(method), dict):
                 method_params = tracer_config[method]
-                for k, v in method_params.items():
-                    setattr(obj, k, v)
+            elif any(isinstance(value, dict) for value in tracer_config.values()):
+                available_methods = sorted(key for key, value in tracer_config.items() if isinstance(value, dict))
+                raise ValueError(
+                    f'Nested tracer_config was provided, but it does not contain settings '
+                    f"for the active tracer_method '{method}'. "
+                    f'Available method keys: {available_methods}'
+                )
             else:
-                # Otherwise assume tracer_config is already flat
-                for k, v in tracer_config.items():
-                    setattr(obj, k, v)
+                method_params = tracer_config
+
+            for k, v in method_params.items():
+                setattr(obj, k, v)
         return obj
 
     # Optional: expose a dict view when needed
     def as_dict(self) -> Dict[str, Any]:
+        """
+        Return as dict.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary containing the requested values.
+        """
         return dict(self.__dict__)
 
 
@@ -106,7 +163,14 @@ class PhysicsConverter:
 
     @property
     def grain_properties(self):
-        """Get the calculated grain properties."""
+        """
+        Get the calculated grain properties.
+
+        Returns
+        -------
+        dict
+            Calculated grain-property values.
+        """
 
         # lazy grain properties calculation
         if not self._grain_properties:
@@ -144,12 +208,18 @@ class PhysicsConverter:
 
     @property
     def physics_plugin(self, tracer_method: Optional[str] = None):
-        """Get the physics plugin instance based on the configured method.
+        """
+        Get the physics plugin instance based on the configured method.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         tracer_method : str, optional
             The tracer method to use for physics calculations. If None, uses the configured method.
+
+        Returns
+        -------
+        object
+            Loaded physics plugin instance.
         """
 
         import importlib  # lazy import for performance
@@ -167,17 +237,15 @@ class PhysicsConverter:
                     f'Ensure the module exists and is correctly named.'
                 ) from e
             else:
-                self._physics_plugin = plugin_module.PhysicsPlugin(
-                    self.config, self.tracer_config
-                )  # all classes should be called the PhysicsPlugin
+                self._physics_plugin = plugin_module.PhysicsPlugin(self.config, self.tracer_config)
         return self._physics_plugin
 
     def convert_physics(self, sedtrails_data, transport_probability_method: str = None) -> None:
         """
         Converts and adds physics calculations to existing SedtrailsData object using the tracer method.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         sedtrails_data : SedtrailsData
             Existing SedtrailsData object to be enhanced with physics calculations.
         transport_probability_method : str, optional
@@ -190,4 +258,4 @@ class PhysicsConverter:
             plugin = self._physics_plugin
 
         # Use empty dict as default if no config provided
-        plugin.add_physics(sedtrails_data, self.grain_properties, transport_probability_method or {})
+        plugin.add_physics(sedtrails_data, self.grain_properties, transport_probability_method or 'no_probability')

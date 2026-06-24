@@ -6,11 +6,13 @@ channels:
 dependencies:
   - python=3.13
   - numpy<2.2,>=1.24
+  - scipy
   - numba
   - pandas
   - matplotlib
   - xarray
-  - typer>=0.15.0,<1.0
+  - netCDF4
+  - typer>=0.16.0,<1.0
   - pytest
   - flake8
   - sphinx=8.2.0
@@ -23,4 +25,3 @@ dependencies:
   - referencing>=0.36.2
   - pip:
     - sphinx-autodoc2>=0.5.0
-  

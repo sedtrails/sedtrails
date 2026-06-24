@@ -4,8 +4,19 @@ general:
     reference_date: 2024-05-01  # Default reference date for the input model
     morfac: 1  # Morphological acceleration factor for time decompression
 inputs:
-  data: ./sample-data/sfincs_map.nc
+  data: ../sample-data/sfincs_map.nc
   read_interval: 30M  # Time chunk size for reading input data
+# Optional domain controls for islands/cutouts and boundary actions.
+# Tekal .pol paths are resolved relative to this configuration file.
+# domain:
+#   pol_file: ./outer_domain.pol
+#   inner_boundary_pol_files:
+#     - ./islands.pol
+#   boundary_class_pol_files:
+#     open:
+#       - ./offshore_boundary_edges.pol
+#     land:
+#       - ./coastline_boundary_edges.pol
 time:
   start:  2024-05-01 00:00:00
   timestep: 60S

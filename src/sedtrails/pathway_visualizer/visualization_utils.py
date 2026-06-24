@@ -16,8 +16,8 @@ def plot_flow_field(
     """
     Plot flow field with magnitude as contour and vectors for direction.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     flow_data : dict
         Dictionary containing 'x', 'y', 'u', 'v', and 'magnitude' arrays
     title : str, optional
@@ -33,8 +33,8 @@ def plot_flow_field(
     save_path : str, optional
         Path to save the figure. If None, figure is not saved.
 
-    Returns:
-    --------
+    Returns
+    -------
     tuple
         (fig, ax) matplotlib figure and axis objects
     """
@@ -106,8 +106,8 @@ def plot_particle_trajectory(
     """
     Plot flow field with particle trajectory overlay.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     flow_data : dict
         Dictionary containing 'x', 'y', 'u', 'v', and 'magnitude' arrays
     trajectory_x, trajectory_y : array_like
@@ -127,8 +127,8 @@ def plot_particle_trajectory(
     save_path : str, optional
         Path to save the figure. If None, figure is not saved.
 
-    Returns:
-    --------
+    Returns
+    -------
     tuple
         (fig, ax) matplotlib figure and axis objects
     """

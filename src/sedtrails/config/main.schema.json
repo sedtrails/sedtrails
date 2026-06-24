@@ -87,15 +87,6 @@
       "default": "free",
       "description": "'trapped' = particle is trapped, 'free' = particle is free"
     },
-    "delft3d4_vertical_layer_type": {
-      "type": "string",
-      "enum": [
-        "lowest",
-        "max"
-      ],
-      "default": "lowest",
-      "description": "vertical sigma or z-layer of model in Delft3D4 ('lowest' = lowest layer, 'max' = surface)"
-    },
     "numerical_scheme_type": {
       "type": "string",
       "enum": [
@@ -112,13 +103,11 @@
           "type": "string",
           "enum": [
             "fm_netcdf",
-            "d3d4",
             "xbeach",
-            "aeolis",
             "sfincs"
           ],
           "default": "fm_netcdf",
-          "description": "'fm_netcdf' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis, 'sfincs' = SFINCS"
+          "description": "'fm_netcdf' = D-Flow FM, 'xbeach' = XBeach, 'sfincs' = SFINCS"
         },
         "reference_date": {
           "type": "string",
@@ -154,14 +143,9 @@
           "default": true,
           "description": "true: pre-process; false: use existing files with default names"
         },
-        "compute_pathways": {
-          "type": "boolean",
-          "default": true,
-          "description": "true: (re)run everything; false: load existing pathways"
-        },
         "input_model": {
           "$ref": "#/$defs/input_model_type",
-          "description": "input model for the simulations (e.g., fm_netcdf, d3d4, xbeach, aeolis)"
+          "description": "input model for the simulations (supported formats: fm_netcdf, xbeach, sfincs)"
         },
         "n_runs": {
           "type": "integer",
@@ -171,6 +155,11 @@
           "type": "boolean",
           "default": false,
           "description": "display all metadata"
+        },
+        "report_domain_exit_updates": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, log per-timestep messages when particles newly leave the domain or beach on land. Final domain-exit and beaching summaries are controlled by the CLI report-domain-exits option."
         },
         "numerical_scheme": {
           "$ref": "#/$defs/numerical_scheme_type",
@@ -185,12 +174,17 @@
       "properties": {
         "data": {
           "type": "string",
-          "description": "path to D-Flow data file"
+          "description": "path to the input flow-field data file"
         },
         "read_interval": {
           "type": "string",
           "default": "30D12H25M0S",
           "description": "time chunk size for reading input data; e.g., '30D12H25M0S' for 30 days, 12 hours, and 25 minutes."
+        },
+        "repeat_eulerian_fields": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, Eulerian flow fields repeat from the first input timestamp after simulation time exceeds the forcing time range. If false, the final available fields are reused."
         },
         "comp_dir": {
           "type": "string",
@@ -217,19 +211,37 @@
           "type": "string",
           "description": "path to Detares a '.pol' file contatining geometries definitions for the domain of interest."
         },
-        "subset_m": {
-          "type": "integer",
-          "default": 0,
-          "description": "limits of d3d4 model domain in m-direction (0=all)"
+        "inner_boundary_pol_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "paths to Deltares/Tekal '.pol' files containing island or cutout polygons to exclude from the active particle-tracking mesh."
         },
-        "subset_n": {
-          "type": "integer",
-          "default": 0,
-          "description": "limits of d3d4 model domain in n-direction (0=all)"
-        },
-        "subset_t": {
-          "type": "string",
-          "description": "limits of d3d4 model domain in t-direction (time). Given as minimum:maximum, e.g. 49:124"
+        "boundary_class_pol_files": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "open": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "description": "paths to Deltares/Tekal '.pol' files containing polygons that select active boundary edges to classify as open/offshore boundaries."
+            },
+            "land": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "description": "paths to Deltares/Tekal '.pol' files containing polygons that select active boundary edges to classify as land/cutout boundaries."
+            }
+          },
+          "default": {},
+          "description": "User override polygons for active boundary edge classes. Edge midpoints inside these polygons are classified by boundary class."
         },
         "flow_field_data": {
           "type": "object",
@@ -239,30 +251,6 @@
               "$ref": "#/$defs/fm_format_type",
               "default": "sedtrails_nc",
               "description": "format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
-            },
-            "delft3d4": {
-              "type": "object",
-              "properties": {
-                "nested": {
-                  "type": "boolean",
-                  "default": false,
-                  "description": "is Delft3D model nested? (Y=true, N=false)"
-                },
-                "nested_pol_file": {
-                  "type": "string",
-                  "description": "path to Deltares 'pol' file containing a polygon inside which to include fine nested model and exclude coarser main model"
-                },
-                "depth_average_flow": {
-                  "type": "boolean",
-                  "default": true,
-                  "description": "use depth-averaged flow from Delft3D? (Y=true, N=false)"
-                },
-                "vertical_layer": {
-                  "$ref": "#/$defs/delft3d4_vertical_layer_type",
-                  "default": "lowest",
-                  "description": "vertical sigma or z-layer of model (lowest = lowest layer, max = surface)"
-                }
-              }
             }
           },
           "anyOf": [
@@ -270,19 +258,8 @@
               "required": [
                 "fm"
               ]
-            },
-            {
-              "required": [
-                "delft3d4"
-              ]
             }
-          ],
-          "not": {
-            "required": [
-              "fm",
-              "delft3d4"
-            ]
-          }
+          ]
         }
       },
       "anyOf": [
@@ -296,21 +273,13 @@
             "subset_x",
             "subset_y"
           ]
-        },
-        {
-          "required": [
-            "subset_m",
-            "subset_n"
-          ]
         }
       ],
       "not": {
         "required": [
           "pol_file",
           "subset_x",
-          "subset_y",
-          "subset_m",
-          "subset_n"
+          "subset_y"
         ]
       }
     },
@@ -398,7 +367,12 @@
             "diffusion_coefficient": {
               "type": "number",
               "default": 0.1,
-              "description": "random walk diffusion coefficient"
+              "description": "random walk diffusion coefficient (horizontal diffusivity K_h)"
+            },
+            "bertin_coefficient": {
+              "type": "number",
+              "default": 0.041,
+              "description": "Empirical coefficient c in the Bertin (2008) mixing layer formula: d_mix = c * sqrt(max(tau_max - tau_cr, 0)) [m / (N/m^2)^0.5]. Default 0.041 matches the original publication."
             }
           }
         },
@@ -467,42 +441,6 @@
         "populations"
       ]
     },
-    "pathways": {
-      "type": "object",
-      "unevaluatedProperties": false,
-      "properties": {
-        "polygon_query": {
-          "type": "boolean",
-          "default": true,
-          "description": "query pathways to/from a given polygon?"
-        },
-        "polygon_name": {
-          "type": "string",
-          "description": "name of polygon to query"
-        },
-        "analyze": {
-          "type": "boolean",
-          "default": false,
-          "description": "analyze pathways? (Y=true, N=false)"
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "polygon_query": {
-                "const": true
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "polygon_name"
-            ]
-          }
-        }
-      ]
-    },
     "outputs": {
       "type": "object",
       "additionalProperties": false,
@@ -512,34 +450,135 @@
           "default": "1H",
           "description": "save interval for output files, e.g., '1H' for 1 hour."
         },
+        "sync_interval": {
+          "type": "string",
+          "description": "optional cadence for flushing streaming NetCDF output to disk. Defaults to outputs.save_interval. Use a longer interval to reduce filesystem sync overhead."
+        },
         "store_tracks": {
           "type": "boolean",
           "default": true,
-          "description": "store full particle tracks? (Y=true, N=false)"
+          "description": "store full particle tracks; set false for compact final-state output"
         },
         "directory": {
           "type": "string",
           "default": "./output",
           "description": "path to directory for storing the results of the simulation"
         },
+        "netcdf": {
+          "type": "object",
+          "additionalProperties": false,
+          "default": {
+            "coordinate_dtype": "float32",
+            "status_dtype": "uint8",
+            "compression": "auto",
+            "compression_auto_threshold_mb": 1024,
+            "compression_level": 1,
+            "shuffle": true,
+            "time_chunk": 1,
+            "particle_chunk": 65536,
+            "sync_interval": 10,
+            "reopen_interval": null,
+            "checkpoint": true,
+            "checkpoint_interval": 0
+          },
+          "properties": {
+            "coordinate_dtype": {
+              "type": "string",
+              "enum": [
+                "float32",
+                "float64"
+              ],
+              "default": "float32",
+              "description": "floating point precision for trajectory coordinate variables"
+            },
+            "status_dtype": {
+              "type": "string",
+              "enum": [
+                "uint8",
+                "int32"
+              ],
+              "default": "uint8",
+              "description": "integer precision for trajectory status flag variables"
+            },
+            "compression": {
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "auto"
+                  ]
+                }
+              ],
+              "default": "auto",
+              "description": "compress chunked NetCDF variables: true, false, or auto based on estimated output size"
+            },
+            "compression_auto_threshold_mb": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 1024,
+              "description": "estimated uncompressed output size in MiB at which compression auto mode enables compression"
+            },
+            "compression_level": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9,
+              "default": 1,
+              "description": "zlib compression level for NetCDF output; 0 disables compression"
+            },
+            "shuffle": {
+              "type": "boolean",
+              "default": true,
+              "description": "enable HDF5 shuffle filter when NetCDF compression is enabled"
+            },
+            "time_chunk": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "description": "number of saved timesteps per NetCDF chunk"
+            },
+            "particle_chunk": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 65536,
+              "description": "number of particles per NetCDF chunk"
+            },
+            "sync_interval": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 10,
+              "description": "flush NetCDF output every N saved samples; 0 flushes only on close"
+            },
+            "reopen_interval": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "default": null,
+              "description": "proactively close and reopen NetCDF output every N saved samples; null or 0 disables this"
+            },
+            "checkpoint": {
+              "type": "boolean",
+              "default": true,
+              "description": "write a compact sedtrails_checkpoint.nc restart file"
+            },
+            "checkpoint_interval": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "description": "refresh checkpoint every N saved samples; 0 writes only the final checkpoint"
+            }
+          }
+        },
         "store_end_positions": {
           "type": "boolean",
           "default": false,
-          "description": "store end only positions? (Y=true, N=false), Will store only the last position of each particle at the end of the simulation."
+          "description": "store only the last position of each particle at the end of the simulation"
         }
-      },
-      "oneOf": [
-        {
-          "required": [
-            "store_tracks"
-          ]
-        },
-        {
-          "required": [
-            "store_end_positions"
-          ]
-        }
-      ]
+      }
     },
     "visualization": {
       "$ref": "urn:sedtrails:config:visualization.schema.json"

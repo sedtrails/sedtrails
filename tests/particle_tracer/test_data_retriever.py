@@ -78,6 +78,19 @@ def test_scalar_field_bounds_defer_full_grid_interpolation():
     np.testing.assert_allclose(bounds['upper'], [2.0, 3.0, 4.0, 3.0])
 
 
+def test_scalar_field_bounds_time_independent_field():
+    """Checks that a time-independent field (bed_level) returns the full spatial array, not a scalar."""
+    retriever = FieldDataRetriever(build_sedtrails_data())
+
+    bounds = retriever.get_scalar_field_bounds(2.5, 'bed_level')
+
+    # bed_level is time-independent (shape (4,)); both bounds should be the full spatial array
+    assert bounds['lower'].ndim == 1
+    assert len(bounds['lower']) == 4
+    np.testing.assert_allclose(bounds['lower'], [0.0, 1.0, 2.0, 1.0])
+    np.testing.assert_allclose(bounds['upper'], [0.0, 1.0, 2.0, 1.0])
+
+
 def test_flow_max_velocity_bound_is_conservative():
     """Verifies max-velocity bound is conservative relative to exact interpolation."""
     retriever = FieldDataRetriever(build_sedtrails_data())

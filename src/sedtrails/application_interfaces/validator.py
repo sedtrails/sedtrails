@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -29,7 +30,21 @@ class SedtrailsYamlLoader(yaml.SafeLoader):
 
 # Add a constructor that treats timestamps as strings instead of datetime objects
 def construct_timestamp_as_string(loader, node):
-    """Construct timestamp nodes as strings instead of datetime objects."""
+    """
+    Construct timestamp nodes as strings instead of datetime objects.
+
+    Parameters
+    ----------
+    loader : object
+        YAML loader instance.
+    node : object
+        YAML scalar node to construct.
+
+    Returns
+    -------
+    str
+        Scalar timestamp text constructed from the YAML node.
+    """
     return loader.construct_scalar(node)
 
 
@@ -53,6 +68,7 @@ class YAMLConfigValidator:
         """
 
         self.config: Dict[str, Any] = {}
+        self.raw_config: Dict[str, Any] = {}
         self._applied_defaults: bool = False
         self.__registry = None
         self.__validator = self._validator()
@@ -122,24 +138,27 @@ class YAMLConfigValidator:
         return self._apply_defaults_with_resolver(schema_content, config_data, self.__validator)
 
     def _apply_defaults_with_resolver(
-        self, schema_content: Dict[str, Any], config_data: Dict[str, Any], validator: jsonschema.Draft202012Validator
+        self,
+        schema_content: Dict[str, Any],
+        config_data: Dict[str, Any],
+        validator: jsonschema.Draft202012Validator,
+        schema_root: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Internal method that applies defaults with access to the schema resolver.
         """
+        if schema_root is None:
+            schema_root = schema_content
+
         schema_type = schema_content.get('type')
 
         # Handle $ref references
         if '$ref' in schema_content:
-            # Resolve the reference using the validator's schema resolver
-            try:
-                resolver = self.__registry.resolver()
-                resolved = resolver.lookup(schema_content['$ref'])
-                resolved_schema = resolved.contents
-                return self._apply_defaults_with_resolver(resolved_schema, config_data, validator)
-            except Exception as e:
-                print(f'Warning: Could not resolve $ref {schema_content["$ref"]}: {e}')
-                return config_data
+            resolved_schema = self._resolve_schema_reference(schema_content, schema_root)
+            if resolved_schema is not schema_content:
+                resolved_root = self._schema_root_for_reference(schema_content, resolved_schema, schema_root)
+                return self._apply_defaults_with_resolver(resolved_schema, config_data, validator, resolved_root)
+            return config_data
 
         if schema_type == 'object' and isinstance(config_data, dict):
             properties = schema_content.get('properties', {})
@@ -149,41 +168,111 @@ class YAMLConfigValidator:
                 if conditional_key in schema_content:
                     for sub_schema in schema_content[conditional_key]:
                         if conditional_key == 'allOf' or self._schema_matches(sub_schema, config_data, validator):
-                            config_data = self._apply_defaults_with_resolver(sub_schema, config_data, validator)
+                            config_data = self._apply_defaults_with_resolver(
+                                sub_schema, config_data, validator, schema_root
+                            )
 
             for key, prop_schema in properties.items():
+                resolved_prop_schema = self._resolve_schema_reference(prop_schema, schema_root)
+                resolved_prop_root = self._schema_root_for_reference(prop_schema, resolved_prop_schema, schema_root)
                 if key not in config_data:
+                    can_create_missing_container = self._can_create_missing_container(schema_content)
                     # Create missing property with default value
                     if 'default' in prop_schema:
                         config_data[key] = self._deep_copy_default(prop_schema['default'])
-                    elif prop_schema.get('type') == 'object':
+                    elif 'default' in resolved_prop_schema and (
+                        resolved_prop_schema.get('type') not in {'object', 'array'} or can_create_missing_container
+                    ):
+                        config_data[key] = self._deep_copy_default(resolved_prop_schema['default'])
+                    elif can_create_missing_container and resolved_prop_schema.get('type') == 'object':
                         # Create empty object and apply defaults recursively
                         config_data[key] = {}
-                        config_data[key] = self._apply_defaults_with_resolver(prop_schema, config_data[key], validator)
+                        config_data[key] = self._apply_defaults_with_resolver(
+                            resolved_prop_schema, config_data[key], validator, resolved_prop_root
+                        )
                     elif (
-                        prop_schema.get('type') == 'array'
-                        and 'items' in prop_schema
-                        and 'default' in prop_schema['items']
+                        can_create_missing_container
+                        and resolved_prop_schema.get('type') == 'array'
+                        and 'items' in resolved_prop_schema
+                        and self._array_items_define_default(resolved_prop_schema, resolved_prop_root)
                     ):
                         # Handle arrays with default items
                         config_data[key] = []
                 else:
                     # Property exists, apply defaults recursively if it's an object or array
-                    if prop_schema.get('type') == 'object' and isinstance(config_data[key], dict):
-                        config_data[key] = self._apply_defaults_with_resolver(prop_schema, config_data[key], validator)
-                    elif prop_schema.get('type') == 'array' and isinstance(config_data[key], list):
-                        item_schema = prop_schema.get('items', {})
+                    if resolved_prop_schema.get('type') == 'object' and isinstance(config_data[key], dict):
+                        config_data[key] = self._apply_defaults_with_resolver(
+                            resolved_prop_schema, config_data[key], validator, resolved_prop_root
+                        )
+                    elif resolved_prop_schema.get('type') == 'array' and isinstance(config_data[key], list):
+                        raw_item_schema = resolved_prop_schema.get('items', {})
+                        item_schema = self._resolve_schema_reference(raw_item_schema, resolved_prop_root)
+                        item_schema_root = self._schema_root_for_reference(
+                            raw_item_schema, item_schema, resolved_prop_root
+                        )
                         for i, item in enumerate(config_data[key]):
                             if isinstance(item, dict) and item_schema.get('type') == 'object':
-                                config_data[key][i] = self._apply_defaults_with_resolver(item_schema, item, validator)
+                                config_data[key][i] = self._apply_defaults_with_resolver(
+                                    item_schema, item, validator, item_schema_root
+                                )
 
         elif schema_type == 'array' and isinstance(config_data, list):
-            item_schema = schema_content.get('items', {})
+            raw_item_schema = schema_content.get('items', {})
+            item_schema = self._resolve_schema_reference(raw_item_schema, schema_root)
+            item_schema_root = self._schema_root_for_reference(raw_item_schema, item_schema, schema_root)
             for i, item in enumerate(config_data):
                 if isinstance(item, dict) and item_schema.get('type') == 'object':
-                    config_data[i] = self._apply_defaults_with_resolver(item_schema, item, validator)
+                    config_data[i] = self._apply_defaults_with_resolver(item_schema, item, validator, item_schema_root)
 
         return config_data
+
+    @staticmethod
+    def _can_create_missing_container(schema_content: Dict[str, Any]) -> bool:
+        """Return whether missing object or array properties should be materialized."""
+        choice_keywords = {'anyOf', 'oneOf', 'maxProperties'}
+        return not any(keyword in schema_content for keyword in choice_keywords)
+
+    def _array_items_define_default(self, schema_content: Dict[str, Any], schema_root: Dict[str, Any]) -> bool:
+        """Return whether an array schema's items define a default."""
+        raw_item_schema = schema_content.get('items', {})
+        item_schema = self._resolve_schema_reference(raw_item_schema, schema_root)
+        return 'default' in item_schema
+
+    def _resolve_schema_reference(
+        self, schema_content: Dict[str, Any], schema_root: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Resolve a schema ``$ref`` if present."""
+        if '$ref' not in schema_content:
+            return schema_content
+
+        ref = schema_content['$ref']
+        if ref.startswith('#/') and schema_root is not None:
+            try:
+                resolved_schema = schema_root
+                for part in ref[2:].split('/'):
+                    resolved_schema = resolved_schema[part]
+            except (KeyError, TypeError):
+                print(f'Warning: Could not resolve $ref {ref}')
+                return schema_content
+            return resolved_schema
+
+        try:
+            resolver = self.__registry.resolver()
+            resolved = resolver.lookup(ref)
+        except Exception as e:
+            print(f'Warning: Could not resolve $ref {ref}: {e}')
+            return schema_content
+
+        return resolved.contents
+
+    @staticmethod
+    def _schema_root_for_reference(
+        schema_content: Dict[str, Any], resolved_schema: Dict[str, Any], schema_root: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        ref = schema_content.get('$ref')
+        if ref and not ref.startswith('#/'):
+            return resolved_schema
+        return schema_root
 
     def _schema_matches(
         self, schema: Dict[str, Any], data: Dict[str, Any], validator: jsonschema.Draft202012Validator
@@ -217,6 +306,11 @@ class YAMLConfigValidator:
     def schema_content(self) -> Dict[str, Any]:
         """
         Property to access the root schema content.
+
+        Returns
+        -------
+        Dict[str, Any]
+            The schema content value.
         """
         return self._get_root_schema_content()
 
@@ -287,6 +381,7 @@ class YAMLConfigValidator:
                 yaml_data: Dict[str, Any] = yaml.load(f, Loader=SedtrailsYamlLoader)
         except Exception as e:
             raise YamlParsingError(f'Error reading YAML file: {e}') from e
+        self.raw_config = deepcopy(yaml_data)
 
         # Validate the YAML data against the schema
         try:
@@ -301,7 +396,7 @@ class YAMLConfigValidator:
 
         # Apply default values from the schema
         try:
-            config_with_defaults = self._apply_defaults(self.schema_content, yaml_data.copy())
+            config_with_defaults = self._apply_defaults(self.schema_content, deepcopy(yaml_data))
             self.config = config_with_defaults
             self._applied_defaults = True
         except Exception as e:
@@ -417,6 +512,6 @@ class YAMLConfigValidator:
 if __name__ == '__main__':
     validator = YAMLConfigValidator()
 
-    data = validator.validate_yaml('examples/config.example.yaml')
+    data = validator.validate_yaml('examples/sedtrails-example.yaml')
 
     print(f'Validated data: {data}')

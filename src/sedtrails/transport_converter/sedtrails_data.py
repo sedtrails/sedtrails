@@ -94,6 +94,7 @@ class SedtrailsData:
     node_x: np.ndarray | None = None
     node_y: np.ndarray | None = None
     face_node_connectivity: np.ndarray | None = None
+    particle_face_connectivity: np.ndarray | None = None
     face_node_fill_value: int = -1
 
     def __post_init__(self):
@@ -115,9 +116,18 @@ class SedtrailsData:
             self.node_y = np.asarray(self.node_y)
         if self.face_node_connectivity is not None:
             self.face_node_connectivity = np.asarray(self.face_node_connectivity, dtype=np.int64)
+        if self.particle_face_connectivity is not None:
+            self.particle_face_connectivity = np.asarray(self.particle_face_connectivity, dtype=np.int64)
 
     def mesh_geometry(self) -> Dict[str, Any] | None:
-        """Return optional face-node mesh geometry for visualization code."""
+        """
+        Return optional face-node mesh geometry for visualization code.
+
+        Returns
+        -------
+        Dict[str, Any] | None
+            Dictionary containing the requested values.
+        """
         if self.node_x is None or self.node_y is None or self.face_node_connectivity is None:
             return None
 
@@ -196,17 +206,22 @@ class SedtrailsData:
         else:
             min_resolution = float(np.min(positive_distances))
 
-        # Compute outer envelope using convex hull; fallback to bbox on failure
-        try:
-            hull = ConvexHull(unique_coords)
-            outer_envelope = unique_coords[hull.vertices].tolist()
-        except Exception as e:
-            warnings.warn(f'Convex hull failed ({e}); using bounding box instead.', stacklevel=1)
-            min_x = float(np.min(unique_coords[:, 0]))
-            max_x = float(np.max(unique_coords[:, 0]))
-            min_y = float(np.min(unique_coords[:, 1]))
-            max_y = float(np.max(unique_coords[:, 1]))
+        min_x = float(np.min(unique_coords[:, 0]))
+        max_x = float(np.max(unique_coords[:, 0]))
+        min_y = float(np.min(unique_coords[:, 1]))
+        max_y = float(np.max(unique_coords[:, 1]))
+
+        # Compute outer envelope using convex hull; degenerate grids have no 2D
+        # hull, so use the bounding box directly instead of warning on expected input.
+        if unique_coords.shape[0] < 3 or np.linalg.matrix_rank(unique_coords - unique_coords.mean(axis=0)) < 2:
             outer_envelope = [[min_x, min_y], [min_x, max_y], [max_x, max_y], [max_x, min_y]]
+        else:
+            try:
+                hull = ConvexHull(unique_coords)
+                outer_envelope = unique_coords[hull.vertices].tolist()
+            except Exception as e:
+                warnings.warn(f'Convex hull failed ({e}); using bounding box instead.', stacklevel=1)
+                outer_envelope = [[min_x, min_y], [min_x, max_y], [max_x, max_y], [max_x, min_y]]
 
         # Add to metadata
         self.metadata.add('min_resolution', min_resolution)
@@ -236,17 +251,43 @@ class SedtrailsData:
         setattr(self, name, data)
 
     def has_physics_field(self, name: str) -> bool:
-        """Check if a specific physics field exists."""
+        """
+        Check if a specific physics field exists.
+
+        Parameters
+        ----------
+        name : str
+            Name of the requested object.
+
+        Returns
+        -------
+        bool
+            Boolean result of the check.
+        """
 
         return name in self._physics_fields
 
     def get_physics_fields(self) -> list:
-        """Get list of available physics field names."""
+        """
+        Get list of available physics field names.
+
+        Returns
+        -------
+        list
+            Computed value returned by the function.
+        """
 
         return list(self._physics_fields.keys())
 
     def has_physics_data(self) -> bool:
-        """Check if any physics fields have been added."""
+        """
+        Check if any physics fields have been added.
+
+        Returns
+        -------
+        bool
+            Boolean result of the check.
+        """
 
         return len(self._physics_fields) > 0
 
@@ -279,7 +320,7 @@ class SedtrailsData:
             'reference_date': self.reference_date,
             'x': self.x,
             'y': self.y,
-            'bed_level': self.bed_level,  # typically time-independent
+            'bed_level': self._get_time_slice_or_static(self.bed_level, time_index),
             'fractions': self.fractions,
         }
 
@@ -335,3 +376,12 @@ class SedtrailsData:
                 data[name] = value[time_index]
 
         return data
+
+    def _get_time_slice_or_static(self, value: np.ndarray, time_index: int) -> np.ndarray:
+        """Return a time slice when the first axis matches times, otherwise static data."""
+        if value is None:
+            return value
+        array = np.asarray(value)
+        if array.ndim > 1 and array.shape[0] == len(self.times):
+            return array[time_index]
+        return value

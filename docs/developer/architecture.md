@@ -43,7 +43,7 @@ The System Context diagram provides the highest-level view of SedTRAILS, showing
 - **Eulerian Flow Modeling System**: Provides flow field data (water and wind) from various modeling systems
 - **Local File System**: Handles input/output operations for configuration files, flow data, and simulation results
 
-The system reads flow field data in various formats (NetCDF, Delft3D binaries) and produces outputs in standard formats (NetCDF, CSV, TXT).
+The system reads supported NetCDF-based flow-field data through the active D-Flow FM, XBeach, and SFINCS converters and writes simulation trajectory results as NetCDF.
 
 ---
 
@@ -57,7 +57,7 @@ The Container diagram shows the major applications and data stores that make up 
 ### Core Containers
 
 #### 1. **SedTRAILS Application Interface**
-A Python-based interface that provides access to SedTRAILS functionality through both CLI and programmatic APIs. Enables users to run simulations, visualize results, and analyze data.
+A Python-based interface that provides access to SedTRAILS functionality through both CLI and programmatic APIs. Enables users to configure and run simulations, inspect NetCDF files, create restart configurations, and visualize particle tracks. Statistical and network analysis commands are currently stubs.
 
 #### 2. **Simulation Orchestrator**
 Coordinates and manages the execution of simulation tasks, including initialization, time-stepping, and termination procedures. Acts as the central coordinator for all simulation activities.
@@ -78,7 +78,7 @@ A GUI (Python/Qt) for visualizing simulation results in real-time during executi
 Generates plots and animations of simulated particle pathways for post-processing analysis.
 
 #### 8. **Simulation Analysis Application**
-Provides tools for post-processing simulation outputs, conducting statistical analysis, and performing connectivity network analyses.
+Contains early post-processing scaffolding. The public CLI and API currently mark statistical and network analysis as not implemented; trajectory plotting utilities are available through the visualizer modules.
 
 #### 9. **Simulation Cache and Recovery**
 Handles simulation interruption recovery, allows restarts, and reuses simulation inputs/outputs to avoid redundant computations.
@@ -112,7 +112,7 @@ The Application Interface provides user access to SedTRAILS functionality throug
 2. **Application Interface (API)**
    - Python API exposing functions and classes for programmatic access
    - Enables configuration and execution of simulations through code
-   - Provides access to visualization and analysis functionalities
+   - Provides access to visualization helpers; analysis entry points are currently stubs
 
 3. **Configuration Controller**
    - Reads simulation configuration files (YAML)
@@ -273,7 +273,7 @@ The data manager receives particle pathway data from the tracer and converted fl
 (simulation-analysis-application)=
 ### Simulation Analysis Application
 
-The Analysis Application provides post-processing capabilities for simulation outputs.
+The Analysis Application is currently early scaffolding. The public CLI and API expose analysis entry points, but statistical and network analysis commands raise `NotImplementedError` in the current runtime.
 
 ![Analysis Application Components](../_static/img/architecture/SedtrailComponentsAnalysis.png)
 
@@ -284,23 +284,21 @@ The Analysis Application provides post-processing capabilities for simulation ou
    - Provides data to analysis modules
 
 2. **Results Writer**
-   - Writes analysis results to files
-   - Supports various output formats
+   - Intended to write analysis results to files
+   - Not currently wired to completed CLI/API analysis workflows
 
 3. **Statistics Module**
-   - Tools for statistical analysis of simulation data
-   - Calculates relevant metrics and distributions
+   - Placeholder for statistical analysis of simulation data
 
 4. **Connectivity Network Module**
-   - Tools for connectivity network analysis
-   - Analyzes particle pathway networks
+   - Placeholder for connectivity network analysis
 
 5. **Analysis Manager**
    - Coordinates analysis tasks
    - Manages data flow between components
    - Provides unified interface to application API
 
-Users access analysis functionality through the Application Interface, which communicates with the Analysis Manager. The manager coordinates between the reader, analysis modules (statistics and connectivity), and the writer to produce analysis results.
+Current users should treat this area as planned functionality unless they are working directly on the analysis implementation. Post-processing trajectory plots are available through the visualizer modules.
 
 ---
 
@@ -351,13 +349,13 @@ The Cache and Recovery system provides checkpoint/restart capabilities, making t
 
 ## Technology Stack
 
-- **Primary Language**: Python 3.10-3.13
+- **Primary Language**: Python >=3.10, <3.14
 - **GUI Framework**: Qt (Simulation Dashboard)
-- **Data Formats**: NetCDF (primary), CSV, TXT
+- **Data Formats**: NetCDF trajectory output
 - **Configuration**: YAML with JSON schema validation
 - **CLI Framework**: Typer
-- **Parallel Processing**: Python multiprocessing
-- **Scientific Computing**: NumPy, with Numba acceleration
+- **Acceleration**: Numba-accelerated numerical kernels
+- **Scientific Computing**: NumPy, SciPy, xarray, netCDF4, and xugrid
 
 ---
 
@@ -365,8 +363,8 @@ The Cache and Recovery system provides checkpoint/restart capabilities, making t
 
 SedTRAILS can be used in multiple ways:
 
-1. **Command Line**: Using the CLI for batch simulations and analysis
+1. **Command Line**: Using the CLI for batch simulations, configuration helpers, restart configuration, and trajectory plotting
 2. **Python API**: Primary interface for Python users who want to use SedTRAILS
 programmatically.
 
-The system integrates with various Eulerian flow modeling systems (Delft3D, FM NetCDF, etc.) and provides standardized outputs for analysis and visualization.
+The system integrates with supported Eulerian flow-field outputs through the active D-Flow FM, XBeach, and SFINCS converters and provides NetCDF trajectory output for visualization and downstream post-processing.

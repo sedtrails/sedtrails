@@ -1,0 +1,89 @@
+# Inlet SedTRAILS example
+#
+# Intended use from the examples directory:
+#   cd examples
+#   sedtrails run -c inlet_sedtrails_example.yaml
+#
+# The input file path below follows that working-directory convention.
+
+general:
+  preprocess: true
+  compute_pathways: true
+  numerical_scheme: rk4
+  display_input_metadata: false
+  input_model:
+    format: fm_netcdf
+    reference_date: 1970-01-01
+    morfac: 1
+
+inputs:
+  data: ../sample-data/inlet_sedtrails.nc
+  read_interval: 12H
+  repeat_eulerian_fields: true
+
+# The inlet sample is useful for testing boundary behavior. Leave these
+# commented until matching Tekal polygons are available next to this file.
+domain:
+  boundary_class_pol_files:
+    open:
+      - ./offshore.pol
+    # land:
+    #   - ./inlet_land_boundary.pol
+
+time:
+  start: 2016-09-21 19:20:00
+  timestep: 60S
+  duration: 3D
+  cfl_condition: 0.7
+
+physics:
+  constants:
+    grain_diameter: 0.00025
+    rho_s: 2650.0
+    rho_w: 1027.0
+    porosity: 0.4
+    diffusion_coefficient: 0.05
+  bed_slope:
+    calculate: true
+    resolution: 100.0
+    bedslope_check_plot: false
+
+particles:
+  populations:
+    - name: medium-sand-core
+      particle_type: sand
+      characteristics:
+        grain_size: 0.00035
+        density: 2650.0
+      tracer_methods:
+        soulsby:
+          flow_field_name:
+            - grain_velocity
+          tracer_grain_size: 0.00035
+          background_grain_size: 0.00025
+          soulsby_b_e: 1.7e-07
+          soulsby_theta_s: 0.1
+          soulsby_gamma_e: 0.1
+          soulsby_mu_d: 0.5
+          soulsby_freedom_factor: 1
+      transport_probability: no_probability
+      seeding:
+        burial_depth:
+          constant: 0.0
+        release_start: 2016-09-21 19:30:00
+        quantity: 1
+        strategy:
+          random:
+            bbox: "39600,16900 40400,17600"
+            seed: 7
+            nlocations: 15
+
+outputs:
+  directory: ./results/inlet_sedtrails_example
+  store_tracks: true
+  save_interval: 30M
+
+visualization:
+  dashboard:
+    enable: true
+    update_interval: 1H

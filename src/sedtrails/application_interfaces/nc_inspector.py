@@ -34,7 +34,14 @@ class NetCDFInspector:
                 raise RuntimeError(f'Error reading NetCDF file: {e}') from e
 
     def print_metadata(self) -> None:
-        """Print comprehensive metadata about the NetCDF dataset."""
+        """
+        Print comprehensive metadata about the NetCDF dataset.
+
+        Returns
+        -------
+        None
+            This method returns None after printing dataset metadata.
+        """
 
         if self.data is None:
             raise RuntimeError('No data loaded. Unable to print metadata.')
@@ -83,6 +90,11 @@ class NetCDFInspector:
         ----------
         ds : xr.Dataset
             The xarray Dataset containing sedTRAILS results.
+
+        Returns
+        -------
+        None
+            This method returns None after printing population metadata.
         """
 
         if self.data is None:

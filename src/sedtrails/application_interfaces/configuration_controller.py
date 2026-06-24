@@ -27,6 +27,11 @@ class Controller(ABC):
     def load_config(self, config_file: str) -> None:
         """
         Reads the configuration file and applies default values.
+
+        Parameters
+        ----------
+        config_file : str
+            Path to the SedTRAILS configuration file.
         """
 
         pass
@@ -35,6 +40,11 @@ class Controller(ABC):
     def get_config(self) -> Dict[str, Any]:
         """
         Returns the current configuration.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary containing the requested values.
         """
 
         pass
@@ -43,6 +53,18 @@ class Controller(ABC):
     def get(self, keys: str, default=None) -> Any:
         """
         Retrieves a value from the configuration data using a dot-separated key.
+
+        Parameters
+        ----------
+        keys : str
+            Dot-separated configuration key path to retrieve.
+        default : object
+            Fallback value used when the requested key is absent.
+
+        Returns
+        -------
+        Any
+            Requested value.
         """
 
         pass
@@ -73,6 +95,7 @@ class ConfigurationController(Controller):
 
         self.config: str = config_file
         self.config_data = {}
+        self.raw_config_data = {}
 
     def load_config(self, config_file: str) -> None:
         """
@@ -83,6 +106,11 @@ class ConfigurationController(Controller):
 
         config_file : str
             The path to the configuration file to read.
+
+        Returns
+        -------
+        None
+            This method returns None after updating the controller state.
         """
 
         if self.config is None and config_file is None:
@@ -91,6 +119,7 @@ class ConfigurationController(Controller):
             self.config = config_file
             validator = YAMLConfigValidator()
             self.config_data = validator.validate_yaml(config_file)
+            self.raw_config_data = validator.raw_config
 
         return None
 
@@ -142,3 +171,29 @@ class ConfigurationController(Controller):
         config_data = deepcopy(self.get_config())
 
         return find_value(config_data, keys, default)
+
+    def has_configured_value(self, keys: str) -> bool:
+        """
+        Return whether a dot-separated key was present in the source configuration.
+
+        Parameters
+        ----------
+        keys : str
+            Dot-separated configuration key path to test.
+
+        Returns
+        -------
+        bool
+            True when every key segment exists in the raw user configuration,
+            before schema defaults are applied.
+        """
+
+        if not hasattr(self, 'raw_config_data') or self.raw_config_data is None:
+            self.get_config()
+
+        current = self.raw_config_data
+        for key in keys.split('.'):
+            if not isinstance(current, dict) or key not in current:
+                return False
+            current = current[key]
+        return True

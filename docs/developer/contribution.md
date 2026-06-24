@@ -30,7 +30,7 @@ The figure below summarizes the workflow our team follows for developing SedTRAI
 
 ## C. You want to make changes to the code base
 
-SedTRAILS is been developed for **Python 3.11**
+SedTRAILS requires **Python 3.10 or newer**, up to but not including Python 3.14. The minimum is set by Python 3.10 language features used in the codebase.
 
 ### Announce your plan
 
@@ -40,7 +40,7 @@ SedTRAILS is been developed for **Python 3.11**
 
 ### Set up a local development environment to work on your changes
 
-If you are a part of the SedTRAILS team and have write access to the SedTRAILS GitHub repository, skip to the section [Develop your contribution](CONTRIBUTING.md#develop-your-contribution). If you are a first-time contributor, follow the below steps:
+If you are a part of the SedTRAILS team and have write access to the SedTRAILS GitHub repository, skip to the "Develop your contribution" section below. If you are a first-time contributor, follow the below steps:
 
 1. Go to the [SedTRAILS GitHub repository](https://github.com/sedtrails/sedtrails) and click on 'Fork'. This will create a copy of the SedTRAILS repository in your GitHub account. 
             
@@ -122,7 +122,7 @@ We use Sphinx and Markdown to write documentation for the SedTRAILS. The root of
 
 1. [Announce your plan.](https://github.com/sedtrails/sedtrails/blob/dev/CONTRIBUTING.md#announce-your-plan)
 2. Follow the same steps to set up a development environment for [making changes to the code base](https://github.com/sedtrails/sedtrails/blob/dev/CONTRIBUTING.md#set-up-a-local-development-environment-to-work-on-your-changes).
-3. Install the dependencies in `docs/requirements.txt` using `pip install -r docs/requirments.txt` (Sphnix will also be installed).
+3. Install the dependencies in `docs/requirements.txt` using `pip install -r docs/requirements.txt` (Sphinx will also be installed).
 4. Update the documentation using Markdown. If unfamiliar with writing Markdown for MyST consult their [guides and documentation](https://myst-parser.readthedocs.io/en/latest/syntax/optional.html).
 5. Make sure your contributions are built without errors. Go to the `docs` directory in the terminal with `cd docs/`. Then, build the documentation using `make html`.
 6. [Submit your contribution](https://github.com/sedtrails/sedtrails/blob/dev/CONTRIBUTING.md#submitting-your-contribution) for review.

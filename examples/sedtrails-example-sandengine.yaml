@@ -1,0 +1,50 @@
+general:
+  input_model: 
+    format: fm_netcdf
+    reference_date: 2011-08-01  # Default reference date for the input model
+    morfac: 1  # Morphological acceleration factor for time decompression
+inputs:
+  data: ../sample-data/sandengine_sedtrails.nc
+  read_interval: 10D  # Time chunk size for reading input data
+time:
+  start:  2011-08-01 00:00:00
+  timestep: 3600S
+  duration: 250D
+  cfl_condition: 0.9  # CFL condition for adaptive timestep (0 = disabled)
+particles:
+  populations:
+    - name: population_1
+      particle_type: sand
+      characteristics:
+        grain_size: 0.00025 
+        density: 2650.0  
+      tracer_methods:
+        vanwesten:
+          suspended_velocity_method: macdonald_2006
+          flow_field_name:
+            - bed_load_velocity
+            - suspended_velocity
+      transport_probability: reduced_velocity  # Options: no_probability, stochastic_transport, reduced_velocity
+      seeding:
+        burial_depth:
+          random: 5.
+        release_start: 2011-08-01 00:00:00
+        quantity: 1
+        remove_permanently_buried: true
+        strategy:
+          random:
+            poly:
+              - "70280,448980"
+              - "68440,450690"
+              - "74170,455400"
+              - "75080,454360"
+            seed: 42
+            nlocations: 100000
+outputs:
+  directory: ./results
+  store_tracks: true
+  save_interval: 10D
+visualization:
+  dashboard:
+    enable: false
+    update_interval: 1D

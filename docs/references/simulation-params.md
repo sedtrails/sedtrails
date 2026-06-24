@@ -14,9 +14,8 @@ In the current version, not all parameters may be fully implemented. Please refe
 4. [Time Configuration](#time-configuration)
 5. [Physics Parameters](#physics-parameters)
 6. [Particle Populations](#particle-populations)
-7. [Pathway Analysis](#pathway-analysis)
-8. [Output Settings](#output-settings)
-9. [Visualization](#visualization)
+7. [Output Settings](#output-settings)
+8. [Visualization](#visualization)
 
 ---
 
@@ -28,10 +27,10 @@ Controls basic simulation behavior and model configuration.
 | Parameter                | Type    | Required | Default | Description                                                                                          |
 | ------------------------ | ------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
 | `preprocess`             | boolean | Optional | `true`  | Enable preprocessing of input data. Set to `false` to use existing processed files.                  |
-| `compute_pathways`       | boolean | Optional | `true`  | Enable pathway computation. Set to `false` to load existing pathway results.                         |
 | `input_model`            | object  | Optional | -       | Configuration for the input flow model. See [Input Model Configuration](#input-model-configuration). |
 | `n_runs`                 | integer | Optional | `1`     | Number of simulation runs to execute.                                                                |
 | `display_input_metadata` | boolean | Optional | `false` | Display all metadata from input files during loading.                                                |
+| `report_domain_exit_updates` | boolean | Optional | `false` | Log per-timestep messages when particles newly leave the domain or beach on land. Final totals remain controlled by the CLI domain-exit reporting option. |
 | `numerical_scheme`       | string  | Optional | `rk4`   | Numerical integration method. Options: `rk4` (Runge-Kutta 4th order), `euler` (Euler method).        |
 
 (input-model-configuration)=
@@ -39,10 +38,13 @@ Controls basic simulation behavior and model configuration.
 
 Nested under `general.input_model`:
 
+When configuration defaults are applied, `general.input_model` is created if it
+is omitted and populated with the nested defaults below.
+
 | Parameter        | Type   | Required | Default      | Description                                                                                                          |
 | ---------------- | ------ | -------- | ------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `format`         | string | Optional | `fm_netcdf`  | Input model format. Options: `fm_netcdf` (D-Flow FM), `d3d4` (Delft3D-4), `xbeach`, `aeolis`.                        |
-| `reference_date` | string | Optional | `1970-01-01` | Reference date for time series in input data (format: `YYYY-MM-DD HH`). Used to convert model times to actual dates. |
+| `format`         | string | Optional | `fm_netcdf`  | Input model format. Options: `fm_netcdf` (D-Flow FM), `xbeach` (XBeach), `sfincs` (SFINCS).                          |
+| `reference_date` | string | Optional | `1970-01-01` | Reference date for time series in input data. Accepted formats include `YYYY-MM-DD` and `YYYY-MM-DD HH:MM:SS`. Used as the time origin for simulation and particle `release_start`. |
 | `morfac`         | number | Optional | `1`          | Morphological acceleration factor for time decompression. Value of 1 means no acceleration.                          |
 
 **Example:**
@@ -50,11 +52,11 @@ Nested under `general.input_model`:
 ```yaml
 general:
   preprocess: true
-  compute_pathways: true
+  report_domain_exit_updates: false
   numerical_scheme: rk4
   input_model:
     format: fm_netcdf
-    reference_date: "2020-01-01 00"
+    reference_date: "2020-01-01 00:00:00"
     morfac: 1.0
 ```
 
@@ -65,11 +67,12 @@ general:
 
 Specifies paths to input data and reading parameters.
 
-| Parameter       | Type   | Required     | Default       | Description                                                                                                   |
-| --------------- | ------ | ------------ | ------------- | ------------------------------------------------------------------------------------------------------------- |
-| `data`          | string | **Required** | -             | Path to the flow field data file (e.g., D-Flow FM NetCDF output).                                             |
-| `read_interval` | string | Optional     | `30D12H25M0S` | Time chunk size for reading input data. Format: `DDdHHhMMmSSs` (e.g., `30D` for 30 days, `12H` for 12 hours). |
-| `comp_dir`      | string | Optional     | -             | Path to directory containing complementary validation data.                                                   |
+| Parameter                 | Type    | Required     | Default       | Description                                                                                                                                   |
+| ------------------------- | ------- | ------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data`                    | string  | **Required** | -             | Path to the flow field data file (e.g., D-Flow FM NetCDF output).                                                                             |
+| `read_interval`           | string  | Optional     | `30D12H25M0S` | Time chunk size for reading input data. Format: `DDdHHhMMmSSs` (e.g., `30D` for 30 days, `12H` for 12 hours).                                 |
+| `repeat_eulerian_fields`  | boolean | Optional     | `false`       | Repeat Eulerian flow fields only after a valid simulation start inside the forcing window. If `false`, reuse the final fields after the forcing period is exhausted. |
+| `comp_dir`                | string  | Optional     | -             | Path to directory containing complementary validation data.                                                                                   |
 
 **Example:**
 
@@ -77,6 +80,7 @@ Specifies paths to input data and reading parameters.
 inputs:
   data: /path/to/flow_model_output.nc
   read_interval: "15D"
+  repeat_eulerian_fields: true
   comp_dir: /path/to/validation_data/
 ```
 
@@ -85,46 +89,94 @@ inputs:
 (domain-definition)=
 ## Domain Definition
 
-Defines the spatial extent of the simulation area. You must specify **one** of the following methods to define the domain.
+Defines optional custom domain controls. If the `domain` section is omitted, SedTRAILS uses the active grid from the input model without extra cutouts or boundary-class overrides.
+
+If the `domain` section is present, you must specify **exactly one** of the following methods to define the active extent:
 
 ⚠️ **Mutually Exclusive Options**: Choose only ONE method from the following:
 - **Method 1**: `pol_file` - Use a polygon file
 - **Method 2**: `subset_x` and `subset_y` - Use coordinate ranges
-- **Method 3**: `subset_m` and `subset_n` - Use grid indices (Delft3D-4 only)
 
-| Parameter         | Type    | Required     | Default | Description                                                                                               |
-| ----------------- | ------- | ------------ | ------- | --------------------------------------------------------------------------------------------------------- |
-| `pol_file`        | string  | Conditional* | -       | Path to Deltares `.pol` file containing domain boundary polygon.                                          |
-| `subset_x`        | string  | Conditional* | -       | X-coordinate range as `min:max` (e.g., `35000:52000`).                                                    |
-| `subset_y`        | string  | Conditional* | -       | Y-coordinate range as `min:max` (e.g., `12000:150000`).                                                   |
-| `subset_m`        | integer | Conditional* | `0`     | M-direction limits for Delft3D-4 models (`0` = all).                                                      |
-| `subset_n`        | integer | Conditional* | `0`     | N-direction limits for Delft3D-4 models (`0` = all).                                                      |
-| `subset_t`        | string  | Optional     | -       | Time range as `min:max` indices (e.g., `49:124`).                                                         |
-| `flow_field_data` | object  | Optional     | -       | Flow field format-specific settings. See [Flow Field Data Configuration](#flow-field-data-configuration). |
+Do not include an empty `domain: {}` block. `inner_boundary_pol_files` and `boundary_class_pol_files` do not define the simulation extent by themselves. They can be used with either domain method above. This means `pol_file` can be omitted when `subset_x` and `subset_y` are present, and boundary classes will still be applied. If no custom extent, inner boundaries, or boundary classes are needed, omit the `domain` section entirely.
 
-*Conditional: One method must be specified.
+| Parameter                  | Type    | Required     | Default | Description                                                                                               |
+| -------------------------- | ------- | ------------ | ------- | --------------------------------------------------------------------------------------------------------- |
+| `pol_file`                 | string  | Conditional* | -       | Path to Deltares `.pol` file containing domain boundary polygon.                                          |
+| `subset_x`                 | string  | Conditional* | -       | X-coordinate range as `min:max` (e.g., `35000:52000`).                                                    |
+| `subset_y`                 | string  | Conditional* | -       | Y-coordinate range as `min:max` (e.g., `12000:150000`).                                                   |
+| `inner_boundary_pol_files` | array   | Optional     | `[]`    | Tekal `.pol` files with island or cutout polygons to remove from the active particle-tracking mesh.       |
+| `boundary_class_pol_files` | object  | Optional     | `{}`    | User override Tekal `.pol` files that classify active boundary edges as `open` or `land`.                 |
+| `flow_field_data`          | object  | Optional     | -       | Flow field format-specific settings. See [Flow Field Data Configuration](#flow-field-data-configuration). |
+
+*Conditional: if `domain` is present, one extent method must be specified. Use either `pol_file` or both `subset_x` and `subset_y`; omit the entire `domain` section when no custom domain controls are needed.
+
+### Inner Boundaries and Boundary Actions
+
+For FM and SFINCS inputs, SedTRAILS can use Tekal polygon files to mask islands/cutouts. For FM, SFINCS, and XBeach inputs, SedTRAILS can use Tekal polygon files to distinguish open offshore boundaries from land boundaries.
+
+`inner_boundary_pol_files` removes candidate faces or triangles whose centroids fall inside any configured polygon. This creates holes in the active particle mesh. Particles inside those holes are not treated as valid in-domain particles.
+
+`boundary_class_pol_files` classifies active mesh boundary edges. Each class can point to one or more Tekal `.pol` files, and each file may contain multiple polygon blocks. Boundary edge classification uses the midpoint of each active boundary edge:
+
+- `open`: particles crossing this edge are marked as having left the model domain and are removed from later movement calculations.
+- `land`: particles crossing this edge are marked as beached for that timestep, remain at their last valid in-domain position, and can become mobile again on a later timestep if hydrodynamic and transport conditions permit.
+
+If an edge midpoint is selected by both `open` and `land` override polygons, `land` takes priority. The source match is still kept in diagnostics.
+
+Boundary-class polygons therefore do not need to be thin lines that exactly trace the boundary. A wider swath is allowed as long as it selects only the intended boundary-edge midpoints. Avoid polygons that are so wide they also contain midpoints from neighboring or unrelated open/land edges.
+
+**Example:**
+
+```yaml
+domain:
+  pol_file: ./outer_domain.pol
+  inner_boundary_pol_files:
+    - ./islands.pol
+    - ./harbour_cutouts.pol
+  boundary_class_pol_files:
+    open:
+      - ./offshore_open_edges.pol
+      - ./lateral_open_edges.pol
+    land:
+      - ./coastline_edges.pol
+      - ./island_edges.pol
+```
+
+The same boundary-class configuration can be used with a rectangular subset instead of `pol_file`:
+
+```yaml
+domain:
+  subset_x: "35000:65000"
+  subset_y: "12000:45000"
+  boundary_class_pol_files:
+    open:
+      - ./offshore_open_edges.pol
+    land:
+      - ./coastline_edges.pol
+```
+
+Relative polygon paths are resolved relative to the YAML configuration file.
+
+The converted flow field metadata stores diagnostics under:
+
+- `inner_boundary_pol_files`
+- `inner_boundary_polygon_count`
+- `inner_boundary_masked_face_count`
+- `inner_boundary_active_face_count`
+- `boundary_edge_classification`
+
+The `boundary_edge_classification` metadata contains edge node ids, edge midpoints, assigned edge classes, source matches, polygon counts, and class counts.
 
 (flow-field-data-configuration)=
 ### Flow Field Data Configuration
 
-Nested under `domain.flow_field_data`. **Choose ONE format**:
-
-⚠️ **Mutually Exclusive**: Specify either `fm` OR `delft3d4`, not both.
+Nested under `domain.flow_field_data`. This section currently exposes D-Flow FM-specific settings.
 
 #### D-Flow FM Settings (`fm`)
 
 | Parameter | Type   | Required    | Default        | Description                                                             |
 | --------- | ------ | ----------- | -------------- | ----------------------------------------------------------------------- |
 | `fm`      | string | Conditional | `sedtrails_nc` | Format of D-Flow FM output files. Options: `sedtrails_nc`, `merged_nc`. |
-
-#### Delft3D-4 Settings (`delft3d4`)
-
-| Parameter            | Type    | Required | Default  | Description                                                            |
-| -------------------- | ------- | -------- | -------- | ---------------------------------------------------------------------- |
-| `nested`             | boolean | Optional | `false`  | Is the model nested (fine grid within coarse grid)?                    |
-| `nested_pol_file`    | string  | Optional | -        | Path to `.pol` file defining the fine nested model region.             |
-| `depth_average_flow` | boolean | Optional | `true`   | Use depth-averaged flow velocities.                                    |
-| `vertical_layer`     | string  | Optional | `lowest` | Which vertical layer to use. Options: `lowest` (bed), `max` (surface). |
 
 **Example:**
 
@@ -189,7 +241,7 @@ Nested under `physics.constants`:
 | `rho_w`                 | number | Optional | `1027.0`  | Water density [kg/m³]. Default valid for 10°C and 35 ppt salinity.               |
 | `rho_s`                 | number | Optional | `2650.0`  | Sediment particle density [kg/m³]. Default is quartz density.                    |
 | `friction_angle`        | number | Optional | `30.0`    | Friction angle of sediment [degrees].                                            |
-| `diffusion_coefficient` | number | Optional | `0.1`     | Random walk diffusion coefficient for turbulent dispersion.                      |
+| `diffusion_coefficient` | number | Optional | `0.1`     | Random walk diffusion coefficient (horizontal diffusivity $K_h$) for turbulent dispersion. |
 
 ### Bed Shear Stress
 
@@ -241,7 +293,7 @@ The `particles` section contains an array of `populations`, where each populatio
 | Parameter               | Type   | Required     | Default          | Description                                                                                                |
 | ----------------------- | ------ | ------------ | ---------------- | ---------------------------------------------------------------------------------------------------------- |
 | `name`                  | string | **Required** | `particle`       | Unique name for this population (e.g., `sediment-fine`, `sand-01`).                                        |
-| `particle_type`         | string | **Required** | `passive`        | Type of particle. Options: `passive`, `sand`, `mud`, `bio`, `gravel`.                                      |
+| `particle_type`         | string | **Required** | `passive`        | Type of particle. Options: `passive`, `sand`, `mud`.                                                       |
 | `characteristics`       | object | **Required** | -                | Type-specific particle properties. See [Particle Characteristics](#particle-characteristics).              |
 | `tracer_methods`        | object | **Required** | -                | Transport calculation method(s). See [Tracer Methods](#tracer-methods).                                    |
 | `transport_probability` | string | Optional     | `no_probability` | How to apply transport probability. Options: `no_probability`, `stochastic_transport`, `reduced_velocity`. |
@@ -257,7 +309,7 @@ The `characteristics` object varies by `particle_type`:
 
 | Parameter               | Type   | Required     | Default | Description                        |
 | ----------------------- | ------ | ------------ | ------- | ---------------------------------- |
-| `diffusion_coefficient` | number | **Required** | `0.0`   | Random walk diffusion coefficient. |
+| `diffusion_coefficient` | number | **Required** | `0.0`   | Random walk diffusion coefficient (horizontal diffusivity $K_h$). |
 
 #### Sand Particles
 
@@ -273,37 +325,36 @@ The `characteristics` object varies by `particle_type`:
 | `density` | number | **Required** | `2000.0`  | Particle density [kg/m³].                       |
 | `size`    | number | **Required** | `0.00005` | Grain diameter [m]. Default is 0.05 mm (50 μm). |
 
-#### Bio Particles
-
-| Parameter  | Type   | Required     | Default | Description                              |
-| ---------- | ------ | ------------ | ------- | ---------------------------------------- |
-| `buoyancy` | number | **Required** | `0.95`  | Buoyancy factor relative to water (0-1). |
-
-#### Gravel Particles
-
-| Parameter    | Type   | Required     | Default  | Description                           |
-| ------------ | ------ | ------------ | -------- | ------------------------------------- |
-| `density`    | number | **Required** | `2800.0` | Particle density [kg/m³].             |
-| `grain_size` | number | **Required** | `0.01`   | Grain diameter [m]. Default is 10 mm. |
-
 (tracer-methods)=
 ### Tracer Methods
 
-At least one tracer method must be specified. Multiple methods can be used simultaneously.
+Exactly one tracer method must be specified per population. Supported method keys are `vanwesten`, `soulsby`, and `passive_tracer`.
 
 #### Van Westen Method
 
 | Parameter         | Type   | Required | Default | Description                                                                           |
 | ----------------- | ------ | -------- | ------- | ------------------------------------------------------------------------------------- |
-| `flow_field_name` | array  | Optional | -       | List of flow field names to use (e.g., `["bedload_velocity", "suspended_velocity"]`). |
+| `flow_field_name` | array  | **Required** | -       | List of flow field names to use (e.g., `["bed_load_velocity", "suspended_velocity"]`). |
 | `beta`            | number | Optional | `0.2`   | Beta parameter for Van Westen formulation.                                            |
 
 #### Soulsby Method
 
-| Parameter | Type   | Required | Default | Description                          |
-| --------- | ------ | -------- | ------- | ------------------------------------ |
-| `f`       | number | Optional | `0.1`   | f parameter for Soulsby formulation. |
-| `r`       | number | Optional | `0.8`   | r parameter for Soulsby formulation. |
+| Parameter                 | Type   | Required     | Default  | Description                                                      |
+| ------------------------- | ------ | ------------ | -------- | ---------------------------------------------------------------- |
+| `flow_field_name`         | array  | **Required** | -        | List of flow field names to use, commonly `["grain_velocity"]`.  |
+| `tracer_grain_size`       | number | Optional     | `0.0002` | Grain size of tracer sediment [m].                               |
+| `background_grain_size`   | number | Optional     | `0.0002` | Grain size of background sediment [m].                           |
+| `soulsby_b_e`             | number | Optional     | `1.7e-7` | Maximum free-to-trapped transition probability per second [1/s]. |
+| `soulsby_theta_s`         | number | Optional     | `0.1`    | Transition scale value [-].                                      |
+| `soulsby_gamma_e`         | number | Optional     | `0.1`    | Long-term equilibrium proportion of free particles [-].          |
+| `soulsby_mu_d`            | number | Optional     | `0.5`    | Dynamic friction coefficient [-].                                |
+| `soulsby_freedom_factor`  | number | Optional     | `1`      | Initial freedom factor (`0` = trapped, `1` = free).              |
+
+#### Passive Tracer Method
+
+| Parameter         | Type  | Required | Default                       | Description                                           |
+| ----------------- | ----- | -------- | ----------------------------- | ----------------------------------------------------- |
+| `flow_field_name` | array | Optional | `["depth_avg_flow_velocity"]` | List of flow field names to use for passive tracers. |
 
 (particle-seeding)=
 ### Particle Seeding
@@ -317,7 +368,7 @@ Controls where, when, and how particles are released.
 | `per_timestep`  | boolean | Optional     | `false`         | Release particles every time step (continuous release).                                       |
 | `release_type`  | string  | Optional     | `instantaneous` | Release timing. Options: `instantaneous`, `continuous`.                                       |
 | `lifespan`      | number  | Optional     | `9e+99`         | Maximum particle lifetime [seconds]. Use very large value for unlimited.                      |
-| `release_start` | string  | Optional     | -               | Release start time (format: `YYYY-MM-DD HH:MM:SS`). Defaults to simulation start.             |
+| `release_start` | string  | Optional     | simulation start | Release start time for the population (format: `YYYY-MM-DD HH:MM:SS`). Converted to seconds relative to `general.input_model.reference_date`. |
 | `release_stop`  | string  | Optional     | -               | Release stop time for continuous release. Defaults to immediate stop after first release.     |
 | `burial_depth`  | object  | Optional     | -               | Initial burial depth configuration. See [Burial Depth](#burial-depth).                        |
 | `strategy`      | object  | **Required** | -               | Spatial release strategy. See [Release Strategies](#release-strategies).                      |
@@ -336,6 +387,8 @@ Controls where, when, and how particles are released.
 #### Release Strategies
 
 Choose **ONE** strategy. Each strategy has different required parameters.
+
+For random and grid release areas, use `poly` for polygon files or inline polygon vertices, and `bbox` for rectangular areas.
 
 ##### Point Release
 
@@ -366,31 +419,33 @@ Releases particles along line segments (transects).
 
 ##### Random Release
 
-Releases particles at random locations within a bounding area.
+Releases particles at random locations within a rectangular or polygonal area.
 
-⚠️ **Mutually Exclusive**: Specify either `pol_file` OR `bbox`.
+⚠️ **Area Required**: Specify `poly` or `bbox`. For polygon files, use `poly: ./release_area.pol`. If both `poly` and `bbox` are supplied, `poly` takes precedence.
 
-| Parameter          | Type    | Required     | Default | Description                                       |
-| ------------------ | ------- | ------------ | ------- | ------------------------------------------------- |
-| `pol_file`         | string  | Conditional  | -       | Path to `.pol` file defining bounding polygon.    |
-| `bbox`             | string  | Conditional  | -       | Bounding box as `xmin,ymin xmax,ymax`.            |
-| `nlocations`       | integer | **Required** | `1`     | Number of random points to generate.              |
-| `seed`             | number  | Optional     | `42`    | Random number generator seed for reproducibility. |
-| `show_check_plots` | boolean | Optional     | `false` | Display diagnostic plots.                         |
-| `save_check_plots` | boolean | Optional     | `false` | Save diagnostic plots.                            |
+| Parameter          | Type            | Required     | Default | Description                                                                                         |
+| ------------------ | --------------- | ------------ | ------- | --------------------------------------------------------------------------------------------------- |
+| `poly`             | string or array | Conditional  | -       | Polygon boundary as a path to a `.pol`, CSV, or text file, or an inline list of coordinate strings. |
+| `bbox`             | string          | Conditional  | -       | Bounding box as `xmin,ymin xmax,ymax`.                                                              |
+| `nlocations`       | integer         | **Required** | `1`     | Number of random points to generate.                                                                |
+| `seed`             | number          | Optional     | `42`    | Random number generator seed for reproducibility.                                                   |
+| `show_check_plots` | boolean         | Optional     | `false` | Display diagnostic plots.                                                                           |
+| `save_check_plots` | boolean         | Optional     | `false` | Save diagnostic plots.                                                                              |
 
 ##### Grid Release
 
-Releases particles on a regular grid.
+Releases particles on a regular grid within a rectangular or polygonal area.
 
-| Parameter               | Type    | Required     | Default | Description                                             |
-| ----------------------- | ------- | ------------ | ------- | ------------------------------------------------------- |
-| `pol_file`              | string  | Optional     | -       | Path to `.pol` file defining bounding polygon for grid. |
-| `separation.dx`         | number  | **Required** | `100.0` | Grid spacing in x-direction [m].                        |
-| `separation.dy`         | number  | **Required** | `100.0` | Grid spacing in y-direction [m].                        |
-| `separation.jitter_pct` | number  | Optional     | `0.1`   | Random jitter as fraction of grid spacing (0-1).        |
-| `show_check_plots`      | boolean | Optional     | `false` | Display diagnostic plots.                               |
-| `save_check_plots`      | boolean | Optional     | `false` | Save diagnostic plots.                                  |
+⚠️ **Area Required**: Specify `poly` or `bbox`. For polygon files, use `poly: ./release_area.pol`. If both `poly` and `bbox` are supplied, `poly` takes precedence.
+
+| Parameter          | Type            | Required     | Default | Description                                                                                         |
+| ------------------ | --------------- | ------------ | ------- | --------------------------------------------------------------------------------------------------- |
+| `poly`             | string or array | Conditional  | -       | Polygon boundary as a path to a `.pol`, CSV, or text file, or an inline list of coordinate strings. |
+| `bbox`             | string          | Conditional  | -       | Bounding box as `xmin,ymin xmax,ymax`.                                                              |
+| `separation.dx`    | number          | **Required** | `100.0` | Grid spacing in x-direction [m].                                                                    |
+| `separation.dy`    | number          | **Required** | `100.0` | Grid spacing in y-direction [m].                                                                    |
+| `show_check_plots` | boolean         | Optional     | `false` | Display diagnostic plots.                                                                           |
+| `save_check_plots` | boolean         | Optional     | `false` | Save diagnostic plots.                                                                              |
 
 ##### File Points Release
 
@@ -426,7 +481,7 @@ particles:
         grain_size: 0.00025  # 0.25 mm
       tracer_methods:
         vanwesten:
-          flow_field_name: ["bedload_velocity"]
+          flow_field_name: ["bed_load_velocity"]
           beta: 0.2
       transport_probability: reduced_velocity
       seeding:
@@ -447,40 +502,17 @@ particles:
         grain_size: 0.0005  # 0.5 mm
       tracer_methods:
         soulsby:
-          f: 0.1
-          r: 0.8
+          flow_field_name: ["grain_velocity"]
+          tracer_grain_size: 0.0005
+          background_grain_size: 0.0005
       seeding:
         quantity: 50
         strategy:
           grid:
-            pol_file: ./domain_boundary.pol
+            poly: ./domain_boundary.pol
             separation:
               dx: 500
               dy: 500
-```
-
----
-
-(pathway-analysis)=
-## Pathway Analysis
-
-Optional settings for analyzing particle pathways relative to specific areas.
-
-| Parameter       | Type    | Required     | Default | Description                                                       |
-| --------------- | ------- | ------------ | ------- | ----------------------------------------------------------------- |
-| `polygon_query` | boolean | Optional     | `true`  | Query pathways to/from a given polygon.                           |
-| `polygon_name`  | string  | Conditional* | -       | Name of polygon to query (required if `polygon_query` is `true`). |
-| `analyze`       | boolean | Optional     | `false` | Enable pathway analysis.                                          |
-
-*Required if `polygon_query` is `true`.
-
-**Example:**
-
-```yaml
-pathways:
-  polygon_query: true
-  polygon_name: inlet_channel
-  analyze: true
 ```
 
 ---
@@ -490,14 +522,13 @@ pathways:
 
 Controls what results are saved and where.
 
-⚠️ **Mutually Exclusive**: Choose either `store_tracks` OR `store_end_positions`.
-
 | Parameter             | Type    | Required    | Default    | Description                                                                                             |
 | --------------------- | ------- | ----------- | ---------- | ------------------------------------------------------------------------------------------------------- |
 | `directory`           | string  | Optional    | `./output` | Path to directory for storing simulation results.                                                       |
-| `save_interval`       | string  | Optional    | `1H`       | How often to save output during simulation (format: `DDdHHhMMmSSs`).                                    |
-| `store_tracks`        | boolean | Conditional | `true`     | Store complete particle trajectories over time. Creates larger files but enables full pathway analysis. |
-| `store_end_positions` | boolean | Conditional | `false`    | Store only final particle positions. Creates smaller files but limits analysis options.                 |
+| `save_interval`       | string  | Optional    | `1H`       | How often to store trajectory samples. CFL integration can use shorter internal steps; output stores the initial sample, scheduled samples, and final sample. |
+| `sync_interval`       | string  | Optional    | `save_interval` | Compatibility setting for how often to flush streaming NetCDF output to disk. Prefer `outputs.netcdf.sync_interval` for new configs. |
+| `store_tracks`        | boolean | Optional    | `true`     | Store complete particle trajectories over time. Set to `false` for compact final-state output. |
+| `store_end_positions` | boolean | Optional    | `false`    | Store only final particle positions in `sedtrails_results.nc`. Creates a compact one-state file and skips full trajectory output. |
 
 **Example:**
 
@@ -505,8 +536,16 @@ Controls what results are saved and where.
 outputs:
   directory: ./results/simulation_001
   save_interval: "30M"
+  sync_interval: "2H"
   store_tracks: true
+  netcdf:
+    compression: auto
+    compression_auto_threshold_mb: 1024
 ```
+
+### NetCDF Compression
+
+Nested under `outputs.netcdf`, `compression` accepts `true`, `false`, or `auto` and defaults to `auto`. In `auto` mode, SedTRAILS estimates the uncompressed particle output payload before writing. Compression is enabled when the estimate is greater than or equal to `compression_auto_threshold_mb` MiB, which defaults to `1024`. Full-track output estimates all saved trajectory slots; `store_end_positions` and restart checkpoints estimate one particle snapshot.
 
 ---
 
@@ -607,7 +646,6 @@ Here's a complete example showing how all sections work together:
 ```yaml
 general:
   preprocess: true
-  compute_pathways: true
   numerical_scheme: rk4
   input_model:
     format: fm_netcdf
@@ -621,6 +659,13 @@ inputs:
 domain:
   subset_x: "35000:65000"
   subset_y: "12000:45000"
+  inner_boundary_pol_files:
+    - ./islands.pol
+  boundary_class_pol_files:
+    open:
+      - ./offshore_boundary_edges.pol
+    land:
+      - ./coastline_boundary_edges.pol
   flow_field_data:
     fm: sedtrails_nc
 
@@ -649,7 +694,7 @@ particles:
         grain_size: 0.00025
       tracer_methods:
         vanwesten:
-          flow_field_name: ["bedload_velocity"]
+          flow_field_name: ["bed_load_velocity"]
           beta: 0.2
       transport_probability: reduced_velocity
       seeding:
@@ -659,11 +704,10 @@ particles:
           constant: 0.0
         strategy:
           grid:
-            pol_file: ./release_area.pol
+            poly: ./release_area.pol
             separation:
               dx: 200
               dy: 200
-              jitter_pct: 0.1
 
 outputs:
   directory: ./results/june_2020
@@ -698,8 +742,13 @@ visualization:
 
 ### Domain Definition
 
-- Use `pol_file` for complex, irregular domains
+- Omit the `domain` section entirely when the input model's active grid is the intended simulation extent and no cutout or boundary-class overrides are needed
+- Use `domain.pol_file` for complex, irregular simulation domains
 - Use `subset_x` and `subset_y` for simple rectangular domains
+- Use `inner_boundary_pol_files` when the flow grid contains island or cutout regions that should not be valid water for particle tracking
+- Use `boundary_class_pol_files.open` for offshore boundaries where particles should leave the model
+- Use `boundary_class_pol_files.land` for coastlines, islands, and cutouts where particles should beach temporarily and remain available for later remobilization
+- Keep open and land override polygons narrow enough to select the intended boundary-edge midpoints only
 - Always visualize your domain boundary before running long simulations
 
 

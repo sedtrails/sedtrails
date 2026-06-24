@@ -11,10 +11,12 @@ This is the primary interface for Python users who want to use SedTRAILS
 programmatically rather than through the CLI.
 """
 
-from typing import Any, Dict, Optional
 import logging
-from .nc_inspector import NetCDFInspector
+from typing import Any, Dict, Optional
 
+from sedtrails.application_interfaces.restart import RestartSummary, create_restart_from_netcdf
+
+from .nc_inspector import NetCDFInspector
 
 # ============================================================================
 # Simulation Functions
@@ -25,6 +27,7 @@ def run_simulation(
     config_file: str,
     verbose: bool = False,
     enable_dashboard: Optional[bool] = None,
+    report_domain_exits: bool = True,
 ) -> str:
     """
     Run a SedTRAILS simulation from a configuration file.
@@ -40,6 +43,8 @@ def run_simulation(
         Enable verbose logging output. Default is False.
     enable_dashboard : bool, optional
         Override the dashboard setting from configuration. If None, uses config value.
+    report_domain_exits : bool, optional
+        Report particles that leave the model domain or beach on land during and after the run.
 
     Returns
     -------
@@ -60,8 +65,8 @@ def run_simulation(
     >>> # Run with dashboard enabled regardless of config
     >>> sedtrails.run_simulation('config.yml', enable_dashboard=True)
     """
-    from sedtrails.simulation_orchestrator.simulation_manager import Simulation
     from sedtrails.exceptions.exceptions import ConfigurationError
+    from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
     # Set up logging if verbose
     if verbose:
@@ -69,7 +74,11 @@ def run_simulation(
 
     # Create simulation instance with dashboard override
     try:
-        simulation = Simulation(config_file, enable_dashboard=enable_dashboard)
+        simulation = Simulation(
+            config_file,
+            enable_dashboard=enable_dashboard,
+            report_domain_exits=report_domain_exits,
+        )
     except Exception as e:
         raise ConfigurationError(f'Failed to initialize simulation: {e}') from e
 
@@ -208,6 +217,66 @@ def create_config_template(output_file: str = './sedtrails-template.yml') -> Non
     validator.create_config_template(output_file)
 
 
+def create_restart_config(
+    results_file: str,
+    base_config_file: str,
+    output_config_file: str = 'sedtrails-restart.yaml',
+    seed_points_dir: str | None = None,
+) -> RestartSummary:
+    """
+    Create a restart-ready configuration from SedTRAILS NetCDF output.
+
+    This function writes a new YAML configuration file and per-population seed
+    point files using the last valid particle positions in an existing results
+    file. The generated configuration can be used to continue a completed or
+    interrupted simulation from the retained particle locations.
+
+    Parameters
+    ----------
+    results_file : str
+        Path to the SedTRAILS NetCDF results file to restart from.
+    base_config_file : str
+        Path to the original SedTRAILS configuration YAML file.
+    output_config_file : str, optional
+        Path where the restart configuration file will be written.
+        Default is 'sedtrails-restart.yaml'.
+    seed_points_dir : str or None, optional
+        Directory where restart seed point CSV files will be written. If None,
+        a directory is created next to ``output_config_file``.
+
+    Returns
+    -------
+    RestartSummary
+        Summary of the generated restart configuration, seed files, restart
+        time, and number of retained particles.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``results_file`` or ``base_config_file`` does not exist.
+    ValueError
+        If the input files do not contain the data required to build restart
+        files, or no valid particles remain for restart seeding.
+
+    Examples
+    --------
+    >>> import sedtrails
+    >>> summary = sedtrails.create_restart_config(
+    ...     'results.nc',
+    ...     'config.yml',
+    ...     output_config_file='restart.yml',
+    ... )
+    >>> print(summary.output_config)
+    """
+
+    return create_restart_from_netcdf(
+        netcdf_file=results_file,
+        base_config_file=base_config_file,
+        output_config_file=output_config_file,
+        seed_points_dir=seed_points_dir,
+    )
+
+
 # ============================================================================
 # Visualization Functions
 # ============================================================================
@@ -239,7 +308,8 @@ def plot_trajectories(
     >>> # Display without saving
     >>> sedtrails.plot_trajectories('results.nc')
     """
-    from sedtrails.pathway_visualizer import plot_trajectories as _plot, read_netcdf
+    from sedtrails.pathway_visualizer import plot_trajectories as _plot
+    from sedtrails.pathway_visualizer import read_netcdf
 
     ds = read_netcdf(results_file)
     _plot(ds, save_plot=save, output_dir=output_dir)
@@ -494,6 +564,7 @@ __all__ = [
     'load_configuration',
     'validate_configuration',
     'create_config_template',
+    'create_restart_config',
     # Visualization
     'plot_trajectories',
     'inspect_netcdf',

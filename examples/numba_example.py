@@ -1,37 +1,51 @@
-import time
-from numba import jit
- 
-# A simple function to calculate sum of squares in a range
-def sum_squares_python(n):
-    result = 0
-    for i in range(n):
-        result += i * i
-    return result
- 
-# Same function with Numba optimization
-@jit(nopython=True)
-def sum_squares_numba(n):
-    result = 0
-    for i in range(n):
-        result += i * i
-    return result
- 
-# Test the performance
-if __name__ == "__main__":
-    n = 1000000000  
-   
-    # Time the standard Python function
-    start = time.time()
-    result_python = sum_squares_python(n)
-    python_time = time.time() - start
-   
-    # Time the Numba function (first run includes compilation)
-    start = time.time()
-    result_numba = sum_squares_numba(n)
-    numba_time = time.time() - start
-   
-    # Print results
-    print(f"Sum of squares from 0 to {n:,}: {result_python}")
-    print(f"Python time: {python_time:.4f} seconds")
-    print(f"Numba time: {numba_time:.4f} seconds")
-    print(f"Speedup: {python_time / numba_time:.2f}x faster with Numba")
+"""
+SedTRAILS reusable-grid particle update example.
+
+This small example uses a synthetic square grid so it can be read without any
+external NetCDF forcing file. It demonstrates the current
+create_numba_particle_calculator API and the dictionary of callables it returns.
+"""
+
+import numpy as np
+
+from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
+
+
+# ===== STEP 1: Define a tiny triangular grid =====
+
+# Four nodes and two triangles define a unit square.
+grid_x = np.array([0.0, 1.0, 1.0, 0.0])
+grid_y = np.array([0.0, 0.0, 1.0, 1.0])
+triangles = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64)
+
+
+# ===== STEP 2: Define a velocity field on that grid =====
+
+# Constant eastward velocity, expressed at the grid nodes.
+grid_u = np.full(grid_x.shape, 0.1)
+grid_v = np.zeros_like(grid_u)
+
+
+# ===== STEP 3: Create the current reusable grid calculator =====
+
+# Current signature: create_numba_particle_calculator(grid_x, grid_y, triangles=None)
+calculator = create_numba_particle_calculator(grid_x, grid_y, triangles=triangles)
+
+print('Returned calculator keys:')
+for key in calculator:
+    print(f'  {key}')
+
+
+# ===== STEP 4: Update several particles =====
+
+x = np.array([0.25, 0.50, 0.75])
+y = np.array([0.25, 0.50, 0.75])
+dt = 1.0
+
+# Current signature: calculator['update_particles'](x, y, grid_u, grid_v, dt)
+x_next, y_next = calculator['update_particles'](x, y, grid_u, grid_v, dt)
+
+print('\nInitial x:', x)
+print('Initial y:', y)
+print('Updated x:', x_next)
+print('Updated y:', y_next)

@@ -48,16 +48,46 @@ class SedtrailsMetadata:
         super().__setattr__(name, value)
 
     def add(self, key: str, value: Any):
-        """Add a single metadata entry as an attribute."""
+        """
+        Add a single metadata entry as an attribute.
+
+        Parameters
+        ----------
+        key : str
+            Configuration or metadata key to look up.
+        value : Any
+            Value to assign or validate.
+        """
         setattr(self, key, value)
 
     def update(self, metadata_dict: Mapping[str, Any]):
-        """Update metadata with a dictionary of key-value pairs."""
+        """
+        Update metadata with a dictionary of key-value pairs.
+
+        Parameters
+        ----------
+        metadata_dict : Mapping[str, Any]
+            Metadata values to load.
+        """
         for key, value in metadata_dict.items():
             self.add(key, value)
 
     def get(self, key: str, default=None) -> Any:
-        """Get metadata value by key."""
+        """
+        Get metadata value by key.
+
+        Parameters
+        ----------
+        key : str
+            Configuration or metadata key to look up.
+        default : object
+            Fallback value used when the requested key is absent.
+
+        Returns
+        -------
+        Any
+            Requested value.
+        """
         return getattr(self, key, default)
 
     def to_dict(self) -> Dict[str, Any]:

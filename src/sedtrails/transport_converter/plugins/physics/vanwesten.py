@@ -7,9 +7,20 @@ from sedtrails.transport_converter import SedtrailsData
 
 
 class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the PhysicsPlugin
-    """
-    Plugin for van Westen et al. (2025) sediment transport physics calculations.
-    This plugin implements the physics calculations as described in van Westen et al. (2025).
+    """Apply van Westen et al. (2025) sediment transport physics.
+
+    Parameters
+    ----------
+    config : Any
+        Physics configuration passed by the converter.
+    tracer_methods : Any
+        Tracer-method configuration. Currently accepted for plugin interface
+        compatibility.
+
+    Notes
+    -----
+    This plugin implements the physics calculations described in van Westen
+    et al. (2025).
     """
 
     def __init__(self, config, tracer_methods: None):
@@ -28,13 +39,12 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         3. Compute suspended velocity using complex ratio formula
         4. Compute layer thicknesses and mixing layer
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         sedtrails_data : SedtrailsData
             The SedTRAILS data object containing transport data.
         grain_properties : dict[str, float]
             Dictionary containing grain properties such as 'critical_shields' and 'settling_velocity'.
-
         """
 
         flow_velocity_magnitude = sedtrails_data.depth_avg_flow_velocity['magnitude']
@@ -105,6 +115,22 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         if settling_velocity is None:
             raise ValueError("Missing required 'settling_velocity' value in grain_prperties.")
 
+        suspended_velocity_method_str = getattr(self.config, 'suspended_velocity_method', 'soulsby_2011')
+        try:
+            suspended_velocity_method = physics_lib.SuspendedVelocityMethod(suspended_velocity_method_str)
+        except ValueError:
+            raise ValueError(
+                f"Unknown suspended_velocity_method '{suspended_velocity_method_str}'. "
+                f"Valid options: {[m.value for m in physics_lib.SuspendedVelocityMethod]}"
+            ) from None
+
+        suspended_velocity_kwargs = {}
+        if suspended_velocity_method == physics_lib.SuspendedVelocityMethod.MACDONALD_2006:
+            suspended_velocity_kwargs = {
+                'water_depth': sedtrails_data.water_depth,
+                'grain_diameter': self.config.grain_diameter,
+            }
+
         suspended_velocity = physics_lib.compute_suspended_velocity(
             flow_velocity_magnitude,
             bed_load_velocity,
@@ -113,7 +139,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             max_shear_velocity,
             shields_number,
             critical_shields,
-            method=physics_lib.SuspendedVelocityMethod.SOULSBY_2011,
+            method=suspended_velocity_method,
+            **suspended_velocity_kwargs,
         )
 
         # Compute layer thicknesses using squeezed transport data
@@ -145,6 +172,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             max_bed_shear_stress,
             critical_shear_stress,
             method=physics_lib.MixingLayerMethod.BERTIN_2008,
+            bertin_coefficient=self.config.bertin_coefficient,
         )
 
         # Expand dimensions if necessary
@@ -162,14 +190,18 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             suspended_velocity_x = suspended_velocity_x[:, np.newaxis, :]
             suspended_velocity_y = suspended_velocity_y[:, np.newaxis, :]
 
-        # Compute transport probabilities
+        # Compute transport probabilities (clamped to [0, 1]: transport layer
+        # cannot exceed the mixing layer, and floating-point blow-up at nodes
+        # where sus_vel → 0 would otherwise corrupt the CFL velocity bound)
         with np.errstate(divide='ignore', invalid='ignore'):
-            bed_load_probability = np.where(
-                mixing_layer_thickness > 0, bed_load_layer_thickness / mixing_layer_thickness, 0.0
+            bed_load_probability = np.clip(
+                np.where(mixing_layer_thickness > 0, bed_load_layer_thickness / mixing_layer_thickness, 0.0),
+                0.0, 1.0,
             )
 
-            suspended_probability = np.where(
-                mixing_layer_thickness > 0, suspended_layer_thickness / mixing_layer_thickness, 0.0
+            suspended_probability = np.clip(
+                np.where(mixing_layer_thickness > 0, suspended_layer_thickness / mixing_layer_thickness, 0.0),
+                0.0, 1.0,
             )
 
         # Depending on transport_probability_method; apply transport probabilities

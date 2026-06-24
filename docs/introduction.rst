@@ -22,10 +22,10 @@ Publications
 SedTRAILS and coastal sediment connectivity have been applied in several journal publications:
 
 
-    .. [1] van Westen, B., de Schipper, M., Pearson, S.G., & Luijendijk, A. (2025). Lagrangian Modelling Reveals Sediment Pathways at Evolving Coasts. Scientific Reports.
-           https://doi.org/10.1038/s41598-025-92910-z
-    .. [2] Pearson, S.G., van Prooijen, B.C., Elias, E.P., Vitousek, S., Wang, Z.B. (2020). Sediment Connectivity: A Framework for Analyzing Coastal Sediment Transport Pathways.  Journal of Geophysical Research: Earth Surface.  
-           https://doi.org/10.1029/2020JF005595 
+- van Westen, B., de Schipper, M., Pearson, S.G., & Luijendijk, A. (2025). Lagrangian Modelling Reveals Sediment Pathways at Evolving Coasts. Scientific Reports.
+  https://doi.org/10.1038/s41598-025-92910-z
+- Pearson, S.G., van Prooijen, B.C., Elias, E.P., Vitousek, S., Wang, Z.B. (2020). Sediment Connectivity: A Framework for Analyzing Coastal Sediment Transport Pathways. Journal of Geophysical Research: Earth Surface.
+  https://doi.org/10.1029/2020JF005595 
       
 
 MSc Theses
@@ -33,10 +33,10 @@ MSc Theses
 
 SedTRAILS has been applied in several master's theses:
 
-    .. [3] Lambregts. P. (2021). Sediment bypassing at Ameland inlet and the role of an ebb-tidal delta nourishment. http://resolver.tudelft.nl/uuid:2e5dfc75-d7b8-44bd-a1f3-99f2b18f3533
-    .. [4] Meijers, C. (2021). Sediment transport pathways in Burrard Inlet. http://resolver.tudelft.nl/uuid:ff2b7adf-6c8b-40b4-99e3-216395e890fa
-    .. [5] Krikke, L. (2023). Impact of the Eastern Scheldt Storm Surge Barrier on the Morphodynamics of the Ebb-Tidal Delta. http://resolver.tudelft.nl/uuid:9c712275-b01a-436a-b322-398762168053
-    .. [6] Bisschop, F. (2023). Modelling sediment and propagule pathways to improve mangrove rehabilitation: A case study of the pilot project in Demak, Indonesia http://resolver.tudelft.nl/uuid:333ddfa1-4ecf-43c0-9f4c-9b8b37972d36
-    .. [7] Thillaigovindarasu, N.R. (2023). Mangrove-Sediment Connectivity in the Presence of Structures Used to Aid Restoration. http://resolver.tudelft.nl/uuid:c4dcc4b7-0012-4c41-9f74-9d83d54a1914
-    .. [8] Laan, J. (2024). Probabilistic modelling of tidal inlets: Sediment fate estimation in the coastal system using Markov chains http://resolver.tudelft.nl/uuid:47c23f3b-21b6-4111-93a0-d5f41dcb7195
-    .. [9] Meijer, M. (2024). Analysing dispersal of the Ameland ebb-tidal delta nourishment using SedTRAILS. http://resolver.tudelft.nl/uuid:d579f176-746e-44bc-9259-8ed98d822868
+- Lambregts. P. (2021). Sediment bypassing at Ameland inlet and the role of an ebb-tidal delta nourishment. http://resolver.tudelft.nl/uuid:2e5dfc75-d7b8-44bd-a1f3-99f2b18f3533
+- Meijers, C. (2021). Sediment transport pathways in Burrard Inlet. http://resolver.tudelft.nl/uuid:ff2b7adf-6c8b-40b4-99e3-216395e890fa
+- Krikke, L. (2023). Impact of the Eastern Scheldt Storm Surge Barrier on the Morphodynamics of the Ebb-Tidal Delta. http://resolver.tudelft.nl/uuid:9c712275-b01a-436a-b322-398762168053
+- Bisschop, F. (2023). Modelling sediment and propagule pathways to improve mangrove rehabilitation: A case study of the pilot project in Demak, Indonesia http://resolver.tudelft.nl/uuid:333ddfa1-4ecf-43c0-9f4c-9b8b37972d36
+- Thillaigovindarasu, N.R. (2023). Mangrove-Sediment Connectivity in the Presence of Structures Used to Aid Restoration. http://resolver.tudelft.nl/uuid:c4dcc4b7-0012-4c41-9f74-9d83d54a1914
+- Laan, J. (2024). Probabilistic modelling of tidal inlets: Sediment fate estimation in the coastal system using Markov chains http://resolver.tudelft.nl/uuid:47c23f3b-21b6-4111-93a0-d5f41dcb7195
+- Meijer, M. (2024). Analysing dispersal of the Ameland ebb-tidal delta nourishment using SedTRAILS. http://resolver.tudelft.nl/uuid:d579f176-746e-44bc-9259-8ed98d822868

@@ -7,7 +7,14 @@ from pathlib import Path
 
 
 def version_callback(value: bool):
-    """Callback for version option."""
+    """
+    Callback for version option.
+
+    Parameters
+    ----------
+    value : bool
+        Value to assign or validate.
+    """
     import sedtrails.__version__ as version
 
     if value:
@@ -30,6 +37,11 @@ def main(
 ):
     """
     SedTRAILS: Configure, run, and analyze sediment particle tracking.
+
+    Parameters
+    ----------
+    version : bool
+        The version value.
     """
     pass
 
@@ -43,6 +55,11 @@ def run_simulation_cmd(
         '-c',
         help='Path to the SedTRAILS configuration file.',
     ),
+    report_domain_exits: bool = typer.Option(
+        True,
+        '--report-domain-exits/--no-report-domain-exits',
+        help='Report particles that leave the model domain or beach on land during and after the run.',
+    ),
 ):
     """
     Run a simulation based on a configuration file.
@@ -51,12 +68,20 @@ def run_simulation_cmd(
 
     Example: sedtrails run --config my_config.yml
 
+    Parameters
+    ----------
+    config_file : str
+        Path to the SedTRAILS configuration file.
     """
     from sedtrails.application_interfaces.api import run_simulation
 
     try:
         typer.echo(f"Starting simulation from '{config_file}'...")
-        output_dir = run_simulation(config_file=config_file, verbose=True)
+        output_dir = run_simulation(
+            config_file=config_file,
+            verbose=True,
+            report_domain_exits=report_domain_exits,
+        )
         typer.echo(f"Simulation complete. Results saved to '{output_dir}'.")
     except Exception as e:
         typer.echo(f'Error running simulation: {e}')
@@ -80,6 +105,13 @@ def inspect_metadata(
 ):
     """
     Print metadata information about a SedTRAILS netCDF results file.
+
+    Parameters
+    ----------
+    results_file : str
+        Path to the SedTRAILS NetCDF results file.
+    populations : bool
+        Particle populations to process.
     """
     from sedtrails.application_interfaces.api import inspect_netcdf
 
@@ -117,6 +149,16 @@ def load_config(
     """
     Checks if a YAML configuration file is a valid SedTRAILS configuration.
     Returns a dictionary with the valid configuration settings.
+
+    Parameters
+    ----------
+    config_file : str
+        Path to the SedTRAILS configuration file.
+
+    Returns
+    -------
+    dict
+        Dictionary containing the requested values.
     """
     from sedtrails.application_interfaces.api import load_configuration
 
@@ -143,6 +185,11 @@ def create_config_template_cmd(
     """
     Create a configuration file for simulations in SedTRAILS.
     The file contains most possible configurations items with default values.
+
+    Parameters
+    ----------
+    output_file : str
+        Path where output is written.
     """
     from sedtrails.application_interfaces.api import create_config_template
 
@@ -151,6 +198,138 @@ def create_config_template_cmd(
         typer.echo(f"Configuration template created at '{output_file}'")
     except Exception as e:
         typer.echo(f'Error creating configuration template: {e}')
+        raise typer.Exit(code=1) from e
+
+
+@config_app.command('gui')
+def seeding_gui_cmd(
+    config_file: str = typer.Option(
+        'sedtrails.yml',
+        '--config',
+        '-c',
+        help='Path to the source SedTRAILS configuration file.',
+    ),
+    output_file: str | None = typer.Option(
+        None,
+        '--output',
+        '-o',
+        help='Path to the copied configuration file to write from the GUI. Defaults beside --config.',
+    ),
+    points_output_path: str | None = typer.Option(
+        None,
+        '--points-output',
+        help='Path to the generated x/y seed-point text file. Defaults next to --output.',
+    ),
+    population: str | None = typer.Option(
+        None,
+        '--population',
+        '-p',
+        help='Population name to update. Defaults to the first configured population.',
+    ),
+    input_format: str | None = typer.Option(
+        None,
+        '--format',
+        help="Override general.input_model.format. Supported GUI formats: 'fm_netcdf' and 'xbeach'.",
+    ),
+    variable: str | None = typer.Option(
+        None,
+        '--variable',
+        help="Bathymetry variable to display. Defaults to 'bedlevel' or 'bed_level'.",
+    ),
+):
+    """
+    Open a small GUI for choosing seed points and writing a copied config.
+
+    Parameters
+    ----------
+    config_file : str
+        Path to the SedTRAILS configuration file.
+    output_file : str | None
+        Path where output is written.
+    points_output_path : str | None
+        Path where selected seed points are written.
+    population : str | None
+        Particle population to process.
+    input_format : str | None
+        Input model format identifier.
+    variable : str | None
+        Name of the variable to inspect or sample.
+    """
+    from sedtrails.application_interfaces.seeding_gui import SeedingGuiError, launch_seeding_gui
+
+    try:
+        launch_seeding_gui(
+            config_path=config_file,
+            output_path=output_file,
+            points_output_path=points_output_path,
+            population_name=population,
+            format_override=input_format,
+            variable=variable,
+        )
+    except SeedingGuiError as e:
+        typer.echo(f'Error opening seeding GUI: {e}')
+        raise typer.Exit(code=1) from e
+    except Exception as e:
+        typer.echo(f'Unexpected error opening seeding GUI: {e}')
+
+
+@config_app.command('restart')
+def create_restart_config_cmd(
+    results_file: str = typer.Option(
+        'sedtrails_results.nc',
+        '--file',
+        '-f',
+        help='Path to the SedTRAILS netCDF results file.',
+    ),
+    base_config_file: str = typer.Option(
+        'sedtrails.yml',
+        '--config',
+        '-c',
+        help='Path to the original SedTRAILS configuration file.',
+    ),
+    output_config_file: str = typer.Option(
+        'sedtrails-restart.yaml',
+        '--output',
+        '-o',
+        help='Path to write the generated restart YAML file.',
+    ),
+    seed_points_dir: str = typer.Option(
+        None,
+        '--seed-dir',
+        help='Optional directory for generated restart seed point files.',
+    ),
+):
+    """
+    Create a restart YAML and point files from a partial/full NetCDF output.
+
+    Parameters
+    ----------
+    results_file : str
+        Path to the SedTRAILS NetCDF results file.
+    base_config_file : str
+        Path to the base configuration file.
+    output_config_file : str
+        Path where the restart configuration file is written.
+    seed_points_dir : str
+        Directory containing restart seed-point files.
+    """
+    from sedtrails.application_interfaces.api import create_restart_config
+
+    try:
+        summary = create_restart_config(
+            results_file=results_file,
+            base_config_file=base_config_file,
+            output_config_file=output_config_file,
+            seed_points_dir=seed_points_dir,
+        )
+        typer.echo(f"Restart config written to '{summary.output_config}'")
+        typer.echo(f"Restart time set to '{summary.restart_time}'")
+        typer.echo(f"Retained particles: {summary.retained_particles}")
+        typer.echo('Generated seed point files:')
+        for population_name, path in summary.seed_files.items():
+            typer.echo(f'  - {population_name}: {path}')
+    except Exception as e:
+        typer.echo(f'Error creating restart config: {e}')
         raise typer.Exit(code=1) from e
 
 
@@ -282,6 +461,15 @@ def plot_trajectories_cmd(
 ):
     """
     Plot particle trajectories from a SedTRAILS netCDF results file.
+
+    Parameters
+    ----------
+    results_file : str
+        Path to the SedTRAILS NetCDF results file.
+    save_fig : bool
+        The save fig value.
+    output_dir : str
+        Directory where output files are written.
     """
     from sedtrails.application_interfaces.api import plot_trajectories
 

@@ -522,6 +522,55 @@ class TestComputeSuspendedVelocity:
         with pytest.raises(ValueError, match='Unknown suspended velocity method'):
             compute_suspended_velocity(**suspended_params)
 
+    def test_macdonald_method_matches_centroid_log_profile(self, suspended_params):
+        """MacDonald velocity should match the centroid-height log profile."""
+        max_shear_velocity = np.array([0.04, 0.08])
+        water_depth = np.array([2.0, 3.0])
+        settling_velocity = 0.02
+        von_karman_constant = 0.4
+        grain_diameter = 2.5e-4
+
+        result = compute_suspended_velocity(
+            flow_velocity_magnitude=np.array([0.5, 0.8]),
+            bed_load_velocity=np.array([0.1, 0.2]),
+            settling_velocity=settling_velocity,
+            von_karman_constant=von_karman_constant,
+            max_shear_velocity=max_shear_velocity,
+            shields_number=np.array([0.1, 0.2]),
+            critical_shields=0.05,
+            method=SuspendedVelocityMethod.MACDONALD_2006,
+            water_depth=water_depth,
+            grain_diameter=grain_diameter,
+        )
+
+        ws_ratio = settling_velocity / (von_karman_constant * max_shear_velocity)
+        z_s = water_depth * 0.0398 * np.power(10.0, -1.08 * np.tanh(1.2 * np.log(ws_ratio) - 0.4))
+        k_s = 2.5 * grain_diameter
+        expected = np.maximum(2.5 * max_shear_velocity * np.log(30.0 * z_s / k_s), 0.0)
+        assert_allclose(result, expected)
+
+    def test_macdonald_method_requires_depth_and_grain_size(self, suspended_params):
+        """MacDonald velocity requires water depth and grain diameter inputs."""
+        suspended_params['method'] = SuspendedVelocityMethod.MACDONALD_2006
+
+        with pytest.raises(ValueError, match='water_depth.*grain_diameter'):
+            compute_suspended_velocity(**suspended_params)
+
+    def test_macdonald_method_returns_zero_for_zero_shear(self, suspended_params):
+        """Zero shear velocity should not emit NaN or negative MacDonald speeds."""
+        suspended_params.update(
+            {
+                'method': SuspendedVelocityMethod.MACDONALD_2006,
+                'max_shear_velocity': np.array([0.0]),
+                'water_depth': np.array([2.0]),
+                'grain_diameter': 2.5e-4,
+            }
+        )
+
+        result = compute_suspended_velocity(**suspended_params)
+
+        assert result[0] == 0.0
+
 
 class TestComputeDirectionsFromMagnitude:
     """Test the compute_directions_from_magnitude function.
@@ -664,6 +713,20 @@ class TestComputeMixingLayerThickness:
         expected = 0.041 * np.sqrt(max_bed_shear_stress[0] - critical_shear_stress)
 
         assert_allclose(result[0], expected)
+
+    def test_bertin_method_uses_custom_coefficient(self):
+        """A custom Bertin coefficient should scale the mixing depth."""
+        max_bed_shear_stress = np.array([5.0])
+        critical_shear_stress = 1.0
+
+        result = compute_mixing_layer_thickness(
+            max_bed_shear_stress,
+            critical_shear_stress,
+            method=MixingLayerMethod.BERTIN_2008,
+            bertin_coefficient=0.08,
+        )
+
+        assert_allclose(result[0], 0.08 * np.sqrt(4.0))
 
     def test_bertin_method_digitized_values(self):
         """Test Bertin (2008) method against digitized values from Figure 3.

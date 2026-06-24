@@ -1,28 +1,33 @@
 # Running a Basic Simulation
 
+This tutorial uses the tracked example configuration at `examples/sedtrails-example.yaml`.
 
-1. From the installation directory, copy/paste the exmaples folder (i.e., .../sedtrails/examples) in a directory where you want to run the model.
+1. From a repository checkout, copy the tracked `examples` folder to the directory where you want to run the model.
 ```bash
-cp -r .../sedtrails/examples <your runs folder>
+cp -r .../sedtrails/examples <your-runs-folder>
 ```
 
-2. Download the dataset file named "inlet_sedtrails.nc" from [this link](https://surfdrive.surf.nl/files/index.php/s/VUGKZm7QexAXuD9?path=%2Fdfm).
+2. Download the dataset file named `inlet_sedtrails.nc` from [this link](https://surfdrive.surf.nl/files/index.php/s/VUGKZm7QexAXuD9?path=%2Fdfm).
 
-3. Go to the directory in which you want to run the model:
+3. Create a `sample-data` folder next to the copied `examples` folder and place the downloaded dataset there.
 ```bash
-cd .../<your runs folder>
+mkdir -p <your-runs-folder>/sample-data
 ```
 
-4. In the file config.example.yaml, update the directory for "input_data" to read the data-set you doanloaded in the first step: 
-  input_data: ./sample-data/inlet_sedtrails.nc
-
-5. Run the model:
-```bash
-sedtrails run -c ./config.example.yaml
+4. In `examples/sedtrails-example.yaml`, set `inputs.data` to the downloaded dataset:
+```yaml
+inputs:
+  data: ./sample-data/inlet_sedtrails.nc
 ```
 
-6. The results plots should pop up and should be saved in the ./results directory.
+5. Go to the run directory:
+```bash
+cd <your-runs-folder>
+```
 
-::: note
-The linux users should replace / with \
-:::
+6. Run the model:
+```bash
+sedtrails run -c ./examples/sedtrails-example.yaml
+```
+
+7. SedTRAILS writes the NetCDF output to `examples/results/sedtrails_results.nc` unless you change `outputs.directory` in the configuration.

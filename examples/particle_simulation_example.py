@@ -1,170 +1,151 @@
 """
-SedTRAILS Particle Simulation Example
+SedTRAILS particle simulation example.
 
-This script demonstrates the complete workflow for particle tracking in a flow field:
-1. Loading and converting flow data from NetCDF files
-2. Creating and initializing particles
-3. Tracking particle positions over time using the ParticlePositionCalculator
-4. Visualizing results
+This script demonstrates the lower-level API workflow for particle tracking:
 
-The example uses a 30-second timestep and simulates for 6.333 hours.
+1. Convert a hydrodynamic model file to SedTRAILS' internal data object.
+2. Retrieve a named flow field at requested simulation times.
+3. Move one particle through that flow field with ParticlePositionCalculator.
+4. Plot the resulting trajectory.
+
+The full SedTRAILS simulation manager does more than this example: it handles
+configuration files, population seeding, status flags, physics runtime plans,
+output writing, and dashboards. This script keeps those pieces out of the way
+so the data flow through the particle-update API is visible.
 """
 
-import time
 from pathlib import Path
+
 import numpy as np
 
-# Import SedTRAILS modules
-from sedtrails.transport_converter.format_converter import FormatConverter, InputType
-from sedtrails.particle_tracer.data_retriever import FlowFieldDataRetriever
+from sedtrails.particle_tracer.data_retriever import FieldDataRetriever
 from sedtrails.particle_tracer.position_calculator import ParticlePositionCalculator
-from sedtrails.particle_tracer.particle import Sand
+from sedtrails.transport_converter import FormatConverter
 
-# Import visualization utilities
 from visualization_utils import plot_particle_trajectory
 
+
 # ===== CONFIGURATION =====
-# Specific parameters
-FILE_PATH = Path("/Users/mgarciaalvarez/devel/sedtrails/sample-data/inlet_sedtrails.nc")
+
+EXAMPLES_DIR = Path(__file__).resolve().parent
+REPO_ROOT = EXAMPLES_DIR.parent
+
+FILE_PATH = REPO_ROOT / 'sample-data' / 'inlet_sedtrails.nc'
+INPUT_FORMAT = 'fm_netcdf'
+REFERENCE_DATE = '1970-01-01'
+FLOW_FIELD_NAME = 'depth_avg_flow_velocity'
+
 START_X = 40000.0
 START_Y = 17000.0
 TIMESTEP = 30.0  # seconds
-TIMESTEP_INDEX = 2  # Start at the 3rd timestep (index 2)
-DURATION_HOURS = 6.333
-DURATION_SECONDS = DURATION_HOURS * 3600
-OUTPUT_PATH = Path("../sedtrails_data/particle_trajectory.png")
+TIMESTEP_INDEX = 2
+NUM_STEPS = 30
 
-# ===== STEP 1: Load and Convert Flow Field Data =====
-print("\n=== STEP 1: Loading and Converting Flow Field Data ===")
-start_time = time.time()
+OUTPUT_PATH = EXAMPLES_DIR / 'results' / 'particle_trajectory.png'
 
-print(f"Processing file: {FILE_PATH}")
 
-# Load and convert the data
-converter = FormatConverter(FILE_PATH, input_type=InputType.NETCDF_DFM)
-converter.read_data()
-time_info = converter.get_time_info()
-print(f"Time range: {time_info['time_start']} to {time_info['time_end']}")
-print(f"Total timestamps: {time_info['num_times']}")
+def main() -> int:
+    """Run the example."""
+    if not FILE_PATH.exists():
+        raise FileNotFoundError(
+            f'Input file not found: {FILE_PATH}. '
+            'Download/create the forcing file, or edit FILE_PATH in this example.'
+        )
 
-# Convert to SedtrailsData format
-sedtrails_data = converter.convert_to_sedtrails_data()
-print(f"Data conversion completed in {time.time() - start_time:.2f} seconds")
+    # ===== STEP 1: Load and convert flow-field data =====
+    print('\n=== STEP 1: Loading and converting flow-field data ===')
 
-# ===== STEP 2: Initialize Particle and Position Calculator =====
-print("\n=== STEP 2: Initializing Particle and Position Calculator ===")
+    format_config = {
+        'input_file': str(FILE_PATH),
+        'input_format': INPUT_FORMAT,
+        'reference_date': REFERENCE_DATE,
+        'morfac': 1.0,
+    }
+    converter = FormatConverter(format_config)
+    sedtrails_data = converter.convert_to_sedtrails()
 
-# Create flow field data retriever
-retriever = FlowFieldDataRetriever(sedtrails_data)
+    times = np.asarray(sedtrails_data.times, dtype=float)
+    print(f'Converted {FILE_PATH}')
+    print(f'Input times: {times[0]:.0f}s to {times[-1]:.0f}s ({times.size} timestamps)')
 
-# Get the initial flow field at specified timestep
-initial_time = sedtrails_data.times[TIMESTEP_INDEX]
-initial_flow = retriever.get_flow_field(initial_time)
+    # ===== STEP 2: Retrieve the first flow field =====
+    print('\n=== STEP 2: Creating a field retriever ===')
+    retriever = FieldDataRetriever(sedtrails_data)
 
-# Create a particle at the specified position
-particle = Sand(id=1, _x=START_X, _y=START_Y, name="Test Particle")
-print(f"Created particle at position ({particle.x:.2f}, {particle.y:.2f})")
-print(f"Starting at timestep index {TIMESTEP_INDEX}: {initial_time} seconds")
+    initial_time = float(times[TIMESTEP_INDEX])
+    initial_flow = retriever.get_flow_field(initial_time, FLOW_FIELD_NAME)
+    print(f'Retrieved {FLOW_FIELD_NAME!r} at t={initial_time:.0f}s')
+    print(f'Flow field contains {initial_flow["x"].size} spatial points')
 
-# Initialize storage for particle trajectory
-trajectory_x = [particle.x]
-trajectory_y = [particle.y]
-trajectory_times = [initial_time]
+    # The calculator API operates on NumPy arrays of particle positions. Here we
+    # track one particle, so the arrays have length one.
+    particle_x = np.array([START_X], dtype=float)
+    particle_y = np.array([START_Y], dtype=float)
 
-# ===== STEP 3: Simulation Loop =====
-print("\n=== STEP 3: Running Particle Simulation ===")
-simulation_start = time.time()
+    trajectory_x = [particle_x[0]]
+    trajectory_y = [particle_y[0]]
+    trajectory_time = [initial_time]
+    print(f'Created one particle at ({particle_x[0]:.2f}, {particle_y[0]:.2f})')
 
-# Calculate number of simulation steps
-num_steps = int(DURATION_SECONDS / TIMESTEP)
-print(f"Simulation duration: {DURATION_HOURS:.3f} hours ({DURATION_SECONDS} seconds)")
-print(f"Number of simulation steps: {num_steps}")
+    # ===== STEP 3: Move the particle through time =====
+    print('\n=== STEP 3: Updating the particle position ===')
+    current_time = initial_time
 
-# Initialize progress tracking
-progress_interval = max(1, num_steps // 20)  # Show progress ~20 times
-last_progress_time = time.time()
+    for step in range(1, NUM_STEPS + 1):
+        current_time = initial_time + step * TIMESTEP
 
-current_time = initial_time
-for step in range(1, num_steps + 1):
-    # Update current time
-    current_time = initial_time + step * TIMESTEP
-    
-    # Get flow field at current time
-    flow_data = retriever.get_flow_field(current_time)
-    
-    # Create position calculator with current flow field
-    calculator = ParticlePositionCalculator(
-        grid_x=flow_data['x'],
-        grid_y=flow_data['y'],
-        grid_u=flow_data['u'],
-        grid_v=flow_data['v']
+        # Current signature: get_flow_field(time, flow_field_name)
+        flow_data = retriever.get_flow_field(current_time, FLOW_FIELD_NAME)
+
+        # Current signature: ParticlePositionCalculator(grid_x, grid_y, grid_u, grid_v)
+        calculator = ParticlePositionCalculator(
+            grid_x=flow_data['x'],
+            grid_y=flow_data['y'],
+            grid_u=flow_data['u'],
+            grid_v=flow_data['v'],
+        )
+
+        # Current signature: update_particles(x0, y0, dt)
+        particle_x, particle_y = calculator.update_particles(particle_x, particle_y, TIMESTEP)
+
+        trajectory_x.append(particle_x[0])
+        trajectory_y.append(particle_y[0])
+        trajectory_time.append(current_time)
+
+        print(
+            f'Step {step:02d}/{NUM_STEPS}: '
+            f't={current_time:.0f}s, position=({particle_x[0]:.2f}, {particle_y[0]:.2f})'
+        )
+
+    trajectory_x = np.asarray(trajectory_x)
+    trajectory_y = np.asarray(trajectory_y)
+    trajectory_time = np.asarray(trajectory_time)
+
+    # ===== STEP 4: Plot and summarize the trajectory =====
+    print('\n=== STEP 4: Visualizing and summarizing results ===')
+    final_flow = retriever.get_flow_field(float(trajectory_time[-1]), FLOW_FIELD_NAME)
+
+    plot_particle_trajectory(
+        flow_data=final_flow,
+        trajectory_x=trajectory_x,
+        trajectory_y=trajectory_y,
+        title=f'Particle trajectory through {FLOW_FIELD_NAME}',
+        save_path=OUTPUT_PATH,
     )
-    
-    # Update particle position
-    new_x, new_y = calculator.update_particles(
-        x0=np.array([particle.x]),
-        y0=np.array([particle.y]),
-        dt=TIMESTEP
-    )
-    
-    # Update particle with new position
-    particle.x = new_x[0]
-    particle.y = new_y[0]
-    
-    # Store trajectory
-    trajectory_x.append(particle.x)
-    trajectory_y.append(particle.y)
-    trajectory_times.append(current_time)
-    
-    # Print progress
-    if step % progress_interval == 0 or step == num_steps:
-        current_progress_time = time.time()
-        elapsed = current_progress_time - last_progress_time
-        steps_per_second = progress_interval / elapsed if elapsed > 0 else 0
-        percent_complete = (step / num_steps) * 100
-        elapsed_hours = step * TIMESTEP / 3600
-        
-        print(f"Step {step}/{num_steps} ({percent_complete:.1f}%) - " 
-              f"Simulated time: {elapsed_hours:.2f} hours - "
-              f"Position: ({particle.x:.2f}, {particle.y:.2f}) - "
-              f"Speed: {steps_per_second:.1f} steps/s")
-        
-        last_progress_time = current_progress_time
+    print(f'Trajectory plot saved to {OUTPUT_PATH}')
 
-simulation_time = time.time() - simulation_start
-print(f"\nSimulation completed in {simulation_time:.2f} seconds")
-print(f"Average speed: {num_steps / simulation_time:.1f} steps/second")
+    step_distances = np.hypot(np.diff(trajectory_x), np.diff(trajectory_y))
+    total_distance = float(np.sum(step_distances))
+    displacement = float(np.hypot(trajectory_x[-1] - trajectory_x[0], trajectory_y[-1] - trajectory_y[0]))
 
-# ===== STEP 4: Visualize Results =====
-print("\n=== STEP 4: Visualizing Results ===")
+    print('\n=== Simulation statistics ===')
+    print(f'Starting position: ({trajectory_x[0]:.2f}, {trajectory_y[0]:.2f})')
+    print(f'Final position:    ({trajectory_x[-1]:.2f}, {trajectory_y[-1]:.2f})')
+    print(f'Total distance:    {total_distance:.2f} m')
+    print(f'Displacement:      {displacement:.2f} m')
 
-# Convert trajectory to numpy arrays
-trajectory_x = np.array(trajectory_x)
-trajectory_y = np.array(trajectory_y)
+    return 0
 
-# Plot flow field with particle trajectory using the function
-final_flow = retriever.get_flow_field(current_time)
 
-plot_particle_trajectory(
-    flow_data=final_flow,
-    trajectory_x=trajectory_x,
-    trajectory_y=trajectory_y,
-    title=f'Particle Trajectory - {DURATION_HOURS:.2f} hours, {num_steps} steps',
-    save_path=OUTPUT_PATH
-)
-print(f"Trajectory plot saved to {OUTPUT_PATH}")
-
-# Show simulation statistics
-print("\n=== Simulation Statistics ===")
-total_distance = np.sum(np.sqrt(np.diff(trajectory_x)**2 + np.diff(trajectory_y)**2))
-displacement = np.sqrt((trajectory_x[-1] - trajectory_x[0])**2 + (trajectory_y[-1] - trajectory_y[0])**2)
-avg_velocity = total_distance / DURATION_SECONDS
-
-print(f"Starting position: ({trajectory_x[0]:.2f}, {trajectory_y[0]:.2f})")
-print(f"Final position: ({trajectory_x[-1]:.2f}, {trajectory_y[-1]:.2f})")
-print(f"Total distance traveled: {total_distance:.2f} m")
-print(f"Displacement from start: {displacement:.2f} m")
-print(f"Average velocity: {avg_velocity:.2f} m/s")
-print(f"Average velocity: {avg_velocity * 3.6:.2f} km/h")
-
-print("\nParticle Simulation Example completed successfully!")
+if __name__ == '__main__':
+    raise SystemExit(main())

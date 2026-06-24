@@ -28,6 +28,9 @@ World Scientific.
 Bertin, X., Bruneau, N., Breilh, J. F., Fortunato, A. B., & Karpytchev, M. (2012).
 Importance of wave age and resonance in storm surges: The case Xynthia, Bay of Biscay.
 Ocean Modelling, 42, 16-30.
+
+MacDonald, N. J. (2006). PTM: Particle Tracking Model — Report 1: Model Theory, Implementation
+and Example Applications. Technical Report.
 """
 
 import numpy as np
@@ -36,14 +39,33 @@ from enum import Enum
 
 
 class SuspendedVelocityMethod(Enum):
-    """Available methods for computing suspended sediment velocity."""
+    """Available methods for computing suspended sediment velocity.
+
+    Attributes
+    ----------
+    VAN_WESTEN_2025 : str
+        Main suspended velocity method from van Westen et al. (2025).
+    SOULSBY_2011 : str
+        Rouse-profile ratio method from Soulsby et al. (2011).
+    MACDONALD_2006 : str
+        Log-profile method evaluated at suspended sediment centroid height.
+    """
 
     VAN_WESTEN_2025 = 'van_westen_2025'  # Main method from van Westen et al. (2025)
-    SOULSBY_2011 = 'soulsby_2011'  # Alternative from Soulsby et al. (2011) - placeholder
+    SOULSBY_2011 = 'soulsby_2011'  # Rouse-profile ratio from Soulsby et al. (2011)
+    MACDONALD_2006 = 'macdonald_2006'  # Log-profile at centroid height, MacDonald (2006)
 
 
 class MixingLayerMethod(Enum):
-    """Available methods for computing mixing layer thickness."""
+    """Available methods for computing mixing layer thickness.
+
+    Attributes
+    ----------
+    BERTIN_2008 : str
+        Bertin-style mixing layer implementation.
+    HARRIS_WIBERG : str
+        Placeholder for a Harris and Wiberg mixing layer method.
+    """
 
     BERTIN_2008 = 'bertin_2008'  # Bertin method (current implementation)
     HARRIS_WIBERG = 'harris_wiberg'  # Harris & Wiberg method - placeholder
@@ -53,20 +75,20 @@ def compute_shear_velocity(bed_shear_stress: np.ndarray, water_density: float) -
     """
     Compute shear velocity from bed shear stress.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     bed_shear_stress : np.ndarray
         τ = Bed shear stress [N/m²]
     water_density : float
         ρ_w = Water density [kg/m³]
 
-    Returns:
-    --------
+    Returns
+    -------
     np.ndarray
         u* = Shear velocity [m/s]
 
-    Notes:
-    ------
+    Notes
+    -----
     u* = sqrt(τ / ρ_w)
 
     Reference:
@@ -82,8 +104,8 @@ def compute_shields(
     """
     Compute Shields parameter (dimensionless bed shear stress).
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     bed_shear_stress : np.ndarray
         τ = Bed shear stress [N/m²]
     gravity : float
@@ -95,13 +117,13 @@ def compute_shields(
     grain_diameter : float
         d = Grain diameter [m]
 
-    Returns:
-    --------
+    Returns
+    -------
     np.ndarray
         Shields parameter [-]
 
-    Notes:
-    ------
+    Notes
+    -----
     θ = τ / (g(ρ_s - ρ_w)d)
 
     Reference:
@@ -117,8 +139,8 @@ def compute_bed_load_velocity(
     """
     Compute bed load velocity using Soulsby et al. (2011) Equation 7.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     shields_number : np.ndarray
         θ_max = Shields parameter [-]
     critical_shields : float
@@ -126,18 +148,18 @@ def compute_bed_load_velocity(
     mean_shear_velocity : np.ndarray
         u*_mean = Mean shear velocity [m/s]
 
-    Returns:
-    --------
+    Returns
+    -------
     np.ndarray
         U_bed = Bed load velocity [m/s]
 
-    Notes:
-    ------
+    Notes
+    -----
     U_bed = 10 * u*_mean * (1 - 0.7 * sqrt(θ_cr / θ_max))
 
     Only computed where θ_max > θ_cr (critical conditions).
 
-    References: 
+    References:
     Fredsoe, J., & Deigaard, R. (1992). Mechanics of coastal sediment transport.
     World Scientific. Equation 7.51
 
@@ -164,8 +186,8 @@ def compute_transport_layer_thickness(
     """
     Compute representative thickness of transport layer (bed load or suspended).
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     transport_magnitude : np.ndarray
         Magnitude of sediment transport [kg/m/s]
     velocity_magnitude : np.ndarray
@@ -175,13 +197,13 @@ def compute_transport_layer_thickness(
     porosity : float
         n = Sediment porosity [-]
 
-    Returns:
-    --------
+    Returns
+    -------
     np.ndarray
         Transport layer thickness [m]
 
-    Notes:
-    ------
+    Notes
+    -----
     d_layer = Q_layer / U_layer
     where Q_layer = transport_magnitude / (ρ_s * (1 - n))
 
@@ -250,12 +272,14 @@ def compute_suspended_velocity(
     shields_number: np.ndarray,
     critical_shields: float,
     method: SuspendedVelocityMethod = SuspendedVelocityMethod.SOULSBY_2011,
+    water_depth: np.ndarray = None,
+    grain_diameter: float = None,
 ) -> np.ndarray:
     """
     Compute suspended sediment velocity.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     flow_velocity_magnitude : np.ndarray
         U_c = Flow velocity magnitude [m/s]
     bed_load_velocity : np.ndarray
@@ -272,24 +296,39 @@ def compute_suspended_velocity(
         θ_cr = Critical Shields parameter [-]
     method : SuspendedVelocityMethod, optional
         Method to use for calculation
+    water_depth : np.ndarray, optional
+        h = Water depth [m]. Required for MACDONALD_2006.
+    grain_diameter : float, optional
+        d50 = Grain diameter [m]. Required for MACDONALD_2006 (k"_s = 2.5 · d50).
 
-    Returns:
-    --------
+    Returns
+    -------
     np.ndarray
         Suspended velocity [m/s]
 
-    Notes:
-    ------
-    van Westen et al. (2025) method:
+    Notes
+    -----
+    SOULSBY_2011 (van Westen et al. 2025 implementation):
     U_sus = U_c * Rs
     where Rs = ((Rb*(1-B))/(8/7-B)) * (((8/7*Rb)^(8-7B) - 1) / ((8/7*Rb)^(7-7B) - 1))
     B = w_s / (κ * u*_max)  (Rouse parameter)
     Rb = U_bed / U_c  (bed load ratio)
 
-    Reference:
+    MACDONALD_2006:
+    Centroid height (Eq. 27):
+      z_s / h = 0.0398 × 10^(−1.08 · tanh[1.2 · ln(w_s / (κ·u*)) − 0.4])
+    Advection velocity at centroid (Eq. 29):
+      u_s = 2.5 · u* · ln(30 · z_s / k"_s),  where k"_s = 2.5 · d50
+    Fall velocity (Eq. 28) should be supplied via settling_velocity; for very fine
+    grains (D_gr < 0.672) use w_s = (ν/d) · 0.0077 · D_gr² instead of Soulsby Eq. 102.
+
+    References:
     van Westen, B., de Schipper, M. A., Pearson, S. G., & Luijendijk, A. P. (2025).
     Lagrangian modelling reveals sediment pathways at evolving coasts.
     Scientific Reports, 15(1), 8793.
+
+    MacDonald, N. J. (2006). PTM: Particle Tracking Model — Report 1: Model Theory,
+    Implementation and Example Applications. Technical Report. Equations 27–29.
     """
     if method == SuspendedVelocityMethod.SOULSBY_2011:
         # Suppress warnings for this entire function
@@ -315,6 +354,33 @@ def compute_suspended_velocity(
 
         return np.where(critical_conditions, flow_velocity_magnitude * suspended_ratio, 0.0)
 
+    elif method == SuspendedVelocityMethod.MACDONALD_2006:
+        if water_depth is None or grain_diameter is None:
+            raise ValueError("MacDonald (2006) method requires 'water_depth' and 'grain_diameter' parameters.")
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            
+            # Eq. 27: normalised centroid height z_s/h
+            # z_s/h = 0.0398 × 10^(−1.08 · tanh[1.2 · ln(w_s/(κ·u*)) − 0.4])
+            valid = max_shear_velocity > 0
+            ws_ratio = np.where(valid, settling_velocity / (von_karman_constant * max_shear_velocity), 1.0)
+            z_s = water_depth * np.where(
+                valid,
+                0.0398 * np.power(10.0, -1.08 * np.tanh(1.2 * np.log(ws_ratio) - 0.4)),
+                0.0,
+            )
+
+            # Eq. 29: log-profile advection velocity at centroid height
+            # u_s = 2.5 · u* · ln(30 · z_s / k"_s),  k"_s = 2.5 · d50
+            k_s = 2.5 * grain_diameter
+            log_arg = np.where(z_s > 0, 30.0 * z_s / k_s, np.nan)
+            u_s = 2.5 * max_shear_velocity * np.log(log_arg)
+            
+            # Negative values arise below the roughness sublayer (z_s < k"_s/30); clip to zero
+            u_s = np.nan_to_num(np.where(u_s > 0, u_s, 0.0), nan=0.0)
+
+        return u_s
+
     else:
         raise ValueError(f'Unknown suspended velocity method: {method}')
 
@@ -325,8 +391,8 @@ def compute_directions_from_magnitude(
     """
     Compute velocity direction components from transport components and velocity magnitude.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     velocity_magnitude : np.ndarray
         Velocity magnitude [m/s]
     transport_x : np.ndarray
@@ -336,13 +402,13 @@ def compute_directions_from_magnitude(
     transport_magnitude : np.ndarray
         Magnitude of transport [kg/m/s]
 
-    Returns:
-    --------
+    Returns
+    -------
     Tuple[np.ndarray, np.ndarray]
         (velocity_x, velocity_y) components [m/s]
 
-    Notes:
-    ------
+    Notes
+    -----
     U_x = U_magnitude * (transport_x / transport_magnitude)
     U_y = U_magnitude * (transport_y / transport_magnitude)
 
@@ -363,40 +429,45 @@ def compute_mixing_layer_thickness(
     max_bed_shear_stress: np.ndarray,
     critical_shear_stress: float,
     method: MixingLayerMethod = MixingLayerMethod.BERTIN_2008,
+    bertin_coefficient: float = 0.041,
 ) -> np.ndarray:
     """
     Compute mixing layer thickness.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     max_bed_shear_stress : np.ndarray
         τ_max = Maximum bed shear stress [N/m²]
     critical_shear_stress : float
         τ_cr = Critical shear stress [N/m²]
     method : MixingLayerMethod, optional
         Method to use for calculation
+    bertin_coefficient : float, optional
+        Empirical coefficient c in the Bertin (2008) formula:
+        d_mix = c * sqrt(max(τ_max − τ_cr, 0)) [m / (N/m²)^0.5].
+        Default 0.041 matches the original publication.
 
-    Returns:
-    --------
+    Returns
+    -------
     np.ndarray
         Mixing layer thickness [m]
 
-    Notes:
-    ------
+    Notes
+    -----
     Bertin (2008) method:
-    d_mix = 0.041 * sqrt(max(τ_max - τ_cr, 0))
+    d_mix = c * sqrt(max(τ_max - τ_cr, 0))
 
     References:
     van Westen, B., de Schipper, M. A., Pearson, S. G., & Luijendijk, A. P. (2025).
     Lagrangian modelling reveals sediment pathways at evolving coasts.
     Scientific Reports, 15(1), 8793.
 
-    Bertin, X., Castelle, B., Anfuso, G., & Ferreira, Ó. (2008). 
-    Improvement of sand activation depth prediction under conditions 
+    Bertin, X., Castelle, B., Anfuso, G., & Ferreira, Ó. (2008).
+    Improvement of sand activation depth prediction under conditions
     of oblique wave breaking. Geo-Marine Letters, 28(2), 65-75.
     """
     if method == MixingLayerMethod.BERTIN_2008:
-        return 0.041 * np.sqrt(np.maximum(max_bed_shear_stress - critical_shear_stress, 0.0))
+        return bertin_coefficient * np.sqrt(np.maximum(max_bed_shear_stress - critical_shear_stress, 0.0))
     elif method == MixingLayerMethod.HARRIS_WIBERG:
         # Placeholder for Harris & Wiberg method
         raise NotImplementedError(
@@ -422,8 +493,8 @@ def compute_grain_properties(
     - "soulsby1997" (default)
     - "macdonald2006" (MacDonald et al., 2006, equation 28)
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     grain_diameter : float
         d50 = Grain diameter [m]
     gravity : float
@@ -435,8 +506,8 @@ def compute_grain_properties(
     kinematic_viscosity : float
         ν = Kinematic viscosity [m²/s]
 
-    Returns:
-    --------
+    Returns
+    -------
     dict[str, float]
 
     Dictionary containing:

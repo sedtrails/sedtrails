@@ -19,6 +19,15 @@ class BasePhysicsPlugin(ABC):
     def add_physics(self, sedtrails_data: SedtrailsData, *args, **kwargs):
         """
         Computes the physics of particles in the simulation based on particle types.
+
+        Parameters
+        ----------
+        sedtrails_data : SedtrailsData
+            SedTRAILS data object to process.
+        *args : object
+            Additional positional arguments passed through to the implementation.
+        **kwargs : object
+            Additional keyword arguments passed through to the implementation.
         """
         pass
 

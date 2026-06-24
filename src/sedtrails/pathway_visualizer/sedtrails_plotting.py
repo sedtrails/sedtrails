@@ -18,8 +18,8 @@ Design goals
   for point-in-polygon tests). Pandas is optional and only used if available
   for nicer CSV writing.
 
-Expected SedTRAILS array layout
--------------------------------
+Internal array layout
+---------------------
 Dimensions:
     n_timesteps = T
     n_particles = N
@@ -38,6 +38,9 @@ Variables (shapes shown in parentheses):
 
 Notes
 -----
+- Current SedTRAILS NetCDF output stores trajectory variables as time-major
+  arrays, e.g. x(T, N), and time(T). ``load_from_xarray`` normalizes those
+  files to the internal particle-major arrays above.
 - All plotters accept `units_scale` (default=1.0). Use e.g. units_scale=1e-3
   to convert meters->kilometers on the axes without modifying inputs.
 - Age is computed per-particle as time - time_of_release, where time_of_release
@@ -57,6 +60,7 @@ MIT (c) 2025 SedTRAILS contributors.
 from __future__ import annotations
 
 import csv
+import re
 import warnings
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
@@ -123,11 +127,17 @@ class TrajectoryArrays:
         return mask
 
     def release_time(self) -> np.ndarray:
-        """Compute per-particle release time (shape (N,)).
+        """
+        Compute per-particle release time (shape (N,)).
 
         Prefers first index where is_released==1. If not provided,
         uses first finite (x, y) time. If a particle has no finite
         positions, falls back to time[:,0].
+
+        Returns
+        -------
+        np.ndarray
+            Array containing the computed values.
         """
         N, T = self.time.shape
         t0 = np.empty(N, dtype=float)
@@ -150,7 +160,14 @@ class TrajectoryArrays:
         return t0
 
     def age(self) -> np.ndarray:
-        """Age matrix (N, T) = time - release_time, negatives masked to nan."""
+        """
+        Age matrix (N, T) = time - release_time, negatives masked to nan.
+
+        Returns
+        -------
+        np.ndarray
+            Array containing the computed values.
+        """
         t0 = self.release_time()[:, None]  # (N,1)
         age = self.time - t0
         age[age < 0] = np.nan
@@ -185,7 +202,32 @@ def plot_trajectories_by_age(
     show_end: bool = True,
     ax: Optional[plt.Axes] = None,
 ) -> plt.Axes:
-    """Plot all positions of all particles, colored by particle age."""
+    """Plot all particle positions colored by particle age.
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Particle trajectory arrays to plot.
+    units_scale : float, optional
+        Multiplicative factor applied to x/y coordinates before plotting.
+    point_size : float, optional
+        Marker size for particle positions.
+    cmap : str, optional
+        Matplotlib colormap name for age coloring.
+    first_stable_index : int, optional
+        First timestep index included in the plot.
+    show_start : bool, optional
+        If true, draw markers at the first plotted particle positions.
+    show_end : bool, optional
+        If true, draw markers at the final finite particle positions.
+    ax : matplotlib.axes.Axes, optional
+        Existing axes to draw on. If omitted, a new axes is created.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        Axes containing the trajectory scatter plot.
+    """
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -216,9 +258,7 @@ def plot_trajectories_by_age(
         last_idx = np.where(np.isfinite(tr.x), np.arange(tr.x.shape[1]), -1).max(axis=1)
         end_x = tr.x[np.arange(tr.x.shape[0]), last_idx] * units_scale
         end_y = tr.y[np.arange(tr.y.shape[0]), last_idx] * units_scale
-        ax.scatter(
-            end_x, end_y, s=point_size * 1.4, marker='x', edgecolor='black', linewidths=0.8, zorder=3, label='end'
-        )
+        ax.scatter(end_x, end_y, s=point_size * 1.4, marker='x', linewidths=0.8, zorder=3, label='end')
 
     ax.set_aspect('equal')
     ax.set_xlabel('X')
@@ -251,8 +291,35 @@ def plot_trajectories_by_baseline(
     cmap: str = 'viridis',
     ax: Optional[plt.Axes] = None,
 ) -> plt.Axes:
-    """Plot all positions colored by per-particle distance from a rotated baseline.
+    """Plot positions colored by distance from a rotated baseline.
 
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Particle trajectory arrays to plot.
+    rotation_deg : float, optional
+        Counterclockwise rotation angle of the baseline frame in degrees.
+    first_stable_index : int, optional
+        Timestep index used as the source position for baseline coloring.
+    origin_xy : tuple of float, optional
+        Origin for the rotated coordinate system. If omitted, the minimum x/y
+        coordinate is used.
+    units_scale : float, optional
+        Multiplicative factor applied to x/y coordinates before plotting.
+    point_size : float, optional
+        Marker size for particle positions.
+    cmap : str, optional
+        Matplotlib colormap name for distance coloring.
+    ax : matplotlib.axes.Axes, optional
+        Existing axes to draw on. If omitted, a new axes is created.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        Axes containing the trajectory scatter plot.
+
+    Notes
+    -----
     Mirrors the rotated-axis idea used in the MATLAB pathway plots. The color
     is computed from the *initial* rotated-X coordinate per particle and then
     broadcast to all timesteps. :contentReference[oaicite:2]{index=2}
@@ -292,7 +359,7 @@ def plot_trajectories_by_baseline(
     last_idx = np.where(np.isfinite(tr.x), np.arange(tr.x.shape[1]), -1).max(axis=1)
     end_x = tr.x[np.arange(tr.x.shape[0]), last_idx] * units_scale
     end_y = tr.y[np.arange(tr.y.shape[0]), last_idx] * units_scale
-    ax.scatter(end_x, end_y, s=point_size * 1.4, marker='x', edgecolor='black', linewidths=0.8, zorder=3, label='end')
+    ax.scatter(end_x, end_y, s=point_size * 1.4, marker='x', linewidths=0.8, zorder=3, label='end')
 
     ax.set_aspect('equal')
     ax.set_xlabel('X')
@@ -315,7 +382,39 @@ def animate_particles(
     save_path: Optional[str] = None,
     dpi: int = 150,
 ):
-    """Animate particle positions through time (scatter by timestep)."""
+    """
+    Animate particle positions through time (scatter by timestep).
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    rotation_deg : float
+        Counterclockwise rotation angle in degrees.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+    origin_xy : Optional[Tuple[float, float]]
+        Origin used for rotated coordinates.
+    color_mode : str
+        Coloring mode for the animation.
+    units_scale : float
+        Scale factor applied to plotted coordinates.
+    point_size : float
+        Scatter marker size.
+    interval_ms : int
+        Animation frame interval in milliseconds.
+    t_indices : Optional[Sequence[int]]
+        Timestep indices to include in the animation.
+    save_path : Optional[str]
+        Path where the figure or output file is saved.
+    dpi : int
+        Output resolution in dots per inch.
+
+    Returns
+    -------
+    tuple[plt.Figure, FuncAnimation]
+        Matplotlib figure and animation object.
+    """
     N, T = tr.x.shape
     if t_indices is None:
         t_indices = list(range(max(first_stable_index, 0), T))
@@ -401,7 +500,23 @@ def _points_in_poly(x: np.ndarray, y: np.ndarray, poly_xy: np.ndarray) -> np.nda
 def particles_originating_in_polygon(
     tr: TrajectoryArrays, poly_xy: np.ndarray, first_stable_index: int = 0
 ) -> np.ndarray:
-    """Mask (N,) for particles whose START point is inside polygon."""
+    """
+    Mask (N,) for particles whose START point is inside polygon.
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    poly_xy : np.ndarray
+        Polygon vertices as x-y coordinate pairs.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the computed values.
+    """
     x0 = tr.x[:, first_stable_index]
     y0 = tr.y[:, first_stable_index]
     inside = _points_in_poly(x0[None, :], y0[None, :], poly_xy)[0]
@@ -411,7 +526,23 @@ def particles_originating_in_polygon(
 def particles_passing_through_polygon(
     tr: TrajectoryArrays, poly_xy: np.ndarray, first_stable_index: int = 0
 ) -> np.ndarray:
-    """Mask (N,) for particles that enter polygon at any timestep."""
+    """
+    Mask (N,) for particles that enter polygon at any timestep.
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    poly_xy : np.ndarray
+        Polygon vertices as x-y coordinate pairs.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the computed values.
+    """
     mask_valid = tr.valid_mask()
     inside = _points_in_poly(tr.x, tr.y, poly_xy) & mask_valid
     return inside.any(axis=1)
@@ -424,7 +555,27 @@ def particles_between_two_polygons(
     order: Optional[str] = None,
     first_stable_index: int = 0,
 ) -> np.ndarray:
-    """Particles that pass through both polygons (optionally in a given order)."""
+    """
+    Particles that pass through both polygons (optionally in a given order).
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    poly_a : np.ndarray
+        Vertices of the first selection polygon.
+    poly_b : np.ndarray
+        Vertices of the second selection polygon.
+    order : Optional[str]
+        Optional order constraint for polygon crossings.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the computed values.
+    """
     mask_valid = tr.valid_mask()
     in_a = _points_in_poly(tr.x, tr.y, poly_a) & mask_valid
     in_b = _points_in_poly(tr.x, tr.y, poly_b) & mask_valid
@@ -452,7 +603,23 @@ def particles_between_two_polygons(
 def particles_include_exclude(
     tr: TrajectoryArrays, include_polys: List[np.ndarray], exclude_polys: Optional[List[np.ndarray]] = None
 ) -> np.ndarray:
-    """Particles that pass through *any* include polygon and *none* of the exclude polygons."""
+    """
+    Particles that pass through *any* include polygon and *none* of the exclude polygons.
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    include_polys : List[np.ndarray]
+        Polygons that particles must pass through.
+    exclude_polys : Optional[List[np.ndarray]]
+        Polygons that particles must avoid.
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the computed values.
+    """
     mask_valid = tr.valid_mask()
     include_any = np.zeros(tr.x.shape[0], dtype=bool)
     for poly in include_polys:
@@ -483,12 +650,21 @@ class InteractivePolygonTool:
         self._poly = np.array(verts, dtype=float)
 
     def disconnect(self):
+        """Run disconnect."""
         if self.selector is not None:
             self.selector.disconnect_events()
             self.selector = None
 
     @property
     def polygon(self) -> Optional[np.ndarray]:
+        """
+        Return the polygon value.
+
+        Returns
+        -------
+        Optional[np.ndarray]
+            The polygon value.
+        """
         return self._poly
 
 
@@ -513,7 +689,21 @@ class ParticleStats:
 
 
 def compute_particle_stats(tr: TrajectoryArrays, first_stable_index: int = 0) -> List[ParticleStats]:
-    """Compute per-particle trajectory statistics similar to analyze_pathways.m. :contentReference[oaicite:3]{index=3}"""
+    """
+    Compute per-particle trajectory statistics similar to analyze_pathways.m. :contentReference[oaicite:3]{index=3}
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+
+    Returns
+    -------
+    List[ParticleStats]
+        List containing the computed records.
+    """
     N, T = tr.x.shape
     stats: List[ParticleStats] = []
 
@@ -576,7 +766,16 @@ def compute_particle_stats(tr: TrajectoryArrays, first_stable_index: int = 0) ->
 
 
 def stats_to_csv(stats: List[ParticleStats], path: str) -> None:
-    """Write particle stats to CSV. Pandas if available; csv otherwise."""
+    """
+    Write particle stats to CSV. Pandas if available; csv otherwise.
+
+    Parameters
+    ----------
+    stats : List[ParticleStats]
+        Particle statistics records to write.
+    path : str
+        Output path for the file.
+    """
     header = [f for f in ParticleStats.__dataclass_fields__.keys()]
     if _pd is not None:
         _pd.DataFrame([{h: getattr(s, h) for h in header} for s in stats]).to_csv(path, index=False)
@@ -600,7 +799,27 @@ def quick_explorer(
     origin_xy: Optional[Tuple[float, float]] = None,
     units_scale: float = 1.0,
 ):
-    """Quick interactive viewer with a time slider and color mode toggle."""
+    """
+    Quick interactive viewer with a time slider and color mode toggle.
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    rotation_deg : float
+        Counterclockwise rotation angle in degrees.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+    origin_xy : Optional[Tuple[float, float]]
+        Origin used for rotated coordinates.
+    units_scale : float
+        Scale factor applied to plotted coordinates.
+
+    Returns
+    -------
+    plt.Figure | None
+        Interactive matplotlib figure, or None when widgets are unavailable.
+    """
     if Slider is None or Button is None:
         warnings.warn('matplotlib widgets not available; quick_explorer requires Slider and Button.', stacklevel=1)
         return None
@@ -688,7 +907,27 @@ def plot_density_heatmap(
     first_stable_index: int = 0,
     ax: Optional[plt.Axes] = None,
 ) -> plt.Axes:
-    """Plot a 2D histogram of trajectory visitation density (spatial heatmap)."""
+    """
+    Plot a 2D histogram of trajectory visitation density (spatial heatmap).
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    bins : int
+        Number of histogram bins.
+    units_scale : float
+        Scale factor applied to plotted coordinates.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+    ax : Optional[plt.Axes]
+        Matplotlib axes to draw into.
+
+    Returns
+    -------
+    plt.Axes
+        Axes containing the generated plot.
+    """
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -716,16 +955,97 @@ def plot_density_heatmap(
 # -----------------------------------------------------------------------------
 
 
+def _reference_datetime64(ds, time_var) -> np.datetime64 | None:
+    for value in (
+        time_var.attrs.get('reference_date'),
+        ds.attrs.get('reference_date'),
+    ):
+        if value is not None:
+            return np.datetime64(str(value), 'ns')
+
+    for units in (
+        time_var.attrs.get('units'),
+        time_var.encoding.get('units'),
+        ds.attrs.get('time_units'),
+        ds.attrs.get('units'),
+    ):
+        match = re.match(r'^\s*seconds\s+since\s+(.+?)\s*$', str(units), flags=re.IGNORECASE)
+        if match:
+            return np.datetime64(match.group(1), 'ns')
+
+    return None
+
+
+def _time_values_as_seconds(ds, time_var) -> np.ndarray:
+    values = np.asarray(time_var.values)
+    if np.issubdtype(values.dtype, np.datetime64):
+        values_ns = values.astype('datetime64[ns]')
+        valid = ~np.isnat(values_ns)
+        reference = _reference_datetime64(ds, time_var)
+        if reference is None and np.any(valid):
+            reference = values_ns[valid].min()
+        if reference is None:
+            return np.full(values_ns.shape, np.nan, dtype=float)
+
+        seconds = np.full(values_ns.shape, np.nan, dtype=float)
+        seconds[valid] = (values_ns[valid] - reference) / np.timedelta64(1, 's')
+        return seconds
+
+    return np.asarray(values, dtype=float)
+
+
 def load_from_xarray(ds) -> TrajectoryArrays:
-    """Build TrajectoryArrays from an xarray Dataset with SedTRAILS variables."""
+    """
+    Build TrajectoryArrays from an xarray Dataset with SedTRAILS variables.
+
+    Parameters
+    ----------
+    ds : object
+        xarray dataset containing SedTRAILS variables.
+
+    Returns
+    -------
+    TrajectoryArrays
+        Trajectory arrays loaded from the dataset.
+    """
+    x_var = ds['x']
+    y_var = ds['y']
+    time_var = ds['time'] if 'time' in ds else None
+
+    if x_var.ndim == 1 and y_var.ndim == 1:
+        x = np.asarray(x_var, dtype=float)[:, np.newaxis]
+        y = np.asarray(y_var, dtype=float)[:, np.newaxis]
+        if time_var is None:
+            time = np.zeros_like(x, dtype=float)
+        else:
+            time = np.full_like(x, float(_time_values_as_seconds(ds, time_var)))
+
+        def status_array(name: str):
+            return np.asarray(ds[name])[:, np.newaxis] if name in ds else None
+
+    elif time_var is not None and time_var.ndim == 1 and x_var.ndim == 2 and x_var.dims[0] == time_var.dims[0]:
+        x = np.asarray(x_var, dtype=float).T
+        y = np.asarray(y_var, dtype=float).T
+        time_values = _time_values_as_seconds(ds, time_var)
+        time = np.broadcast_to(time_values, x.shape)
+
+        def status_array(name: str):
+            return np.asarray(ds[name]).T if name in ds else None
+
+    else:
+        raise ValueError(
+            "Expected SedTRAILS time-major trajectory arrays shaped as "
+            "(n_timesteps, n_particles), or 1D checkpoint arrays."
+        )
+
     tr = TrajectoryArrays(
         time=np.asarray(ds['time']),
         x=np.asarray(ds['x']),
         y=np.asarray(ds['y']),
-        is_alive=np.asarray(ds['is_alive']) if 'is_alive' in ds else None,
-        is_inside=np.asarray(ds['is_inside']) if 'is_inside' in ds else None,
-        is_released=np.asarray(ds['is_released']) if 'is_released' in ds else None,
-        is_mobile=np.asarray(ds['is_mobile']) if 'is_mobile' in ds else None,
+        status_alive=np.asarray(ds['status_alive']) if 'status_alive' in ds else None,
+        status_domain=np.asarray(ds['status_domain']) if 'status_domain' in ds else None,
+        status_released=np.asarray(ds['status_released']) if 'status_released' in ds else None,
+        status_mobile=np.asarray(ds['status_mobile']) if 'status_mobile' in ds else None,
         population_id=np.asarray(ds['population_id']) if 'population_id' in ds else None,
         trajectory_id=list(map(str, ds['trajectory_id'].values)) if 'trajectory_id' in ds else None,
     )

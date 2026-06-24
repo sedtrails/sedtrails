@@ -71,20 +71,52 @@ class Particle(ABC):
 
     @property
     def x(self) -> float:
+        """
+        Return the x value.
+
+        Returns
+        -------
+        float
+            The x value.
+        """
         return self._x
 
     @x.setter
     def x(self, value: int | float) -> None:
+        """
+        Set the x value.
+
+        Parameters
+        ----------
+        value : int | float
+            Value to assign or validate.
+        """
         if not isinstance(value, (int, float)):
             raise TypeError(f"Expected 'x' to be an integer or float, got {type(value).__name__}")
         self._x = value
 
     @property
     def burial_depth(self) -> float:
+        """
+        Return the burial depth value.
+
+        Returns
+        -------
+        float
+            The burial depth value.
+        """
         return self._burial_depth
 
     @burial_depth.setter
     def burial_depth(self, value: float) -> None:
+        """
+        Set the burial depth value.
+
+        Parameters
+        ----------
+        value : float
+            Value to assign or validate.
+        """
         if not isinstance(value, (int, float)):
             raise TypeError(f"Expected 'burial_depth' to be an integer or float, got {type(value).__name__}")
         if value < 0:
@@ -93,40 +125,104 @@ class Particle(ABC):
 
     @property
     def y(self) -> float:
+        """
+        Return the y value.
+
+        Returns
+        -------
+        float
+            The y value.
+        """
         return self._y
 
     @y.setter
     def y(self, value: int | float) -> None:
+        """
+        Set the y value.
+
+        Parameters
+        ----------
+        value : int | float
+            Value to assign or validate.
+        """
         if not isinstance(value, (int, float)):
             raise TypeError(f"Expected 'y' to be an integer or float, got {type(value).__name__}")
         self._y = value
 
     @property
     def release_time(self) -> str:
+        """
+        Return the release time value.
+
+        Returns
+        -------
+        str
+            The release time value.
+        """
         return self._release_time
 
     @release_time.setter
     def release_time(self, value: str) -> None:
+        """
+        Set the release time value.
+
+        Parameters
+        ----------
+        value : str
+            Value to assign or validate.
+        """
         if not isinstance(value, str):
             raise TypeError(f"Expected 'release_time' to be a string, got {type(value).__name__}")
         self._release_time = value
 
     @release_time.getter
     def release_time(self) -> str:
+        """
+        Return release time.
+
+        Returns
+        -------
+        str
+            String result of the conversion.
+        """
         return self._release_time
 
     @property
     def is_mobile(self) -> bool:
+        """
+        Return the is mobile value.
+
+        Returns
+        -------
+        bool
+            The is mobile value.
+        """
         return self._is_mobile
 
     @is_mobile.setter
     def is_mobile(self, value: bool) -> None:
+        """
+        Set the is mobile value.
+
+        Parameters
+        ----------
+        value : bool
+            Value to assign or validate.
+        """
         if not isinstance(value, bool):
             raise TypeError(f"Expected 'is_mobile' to be a boolean, got {type(value).__name__}")
         self._is_mobile = value
 
     @is_mobile.getter
     def is_mobile(self) -> bool:
+        """
+        Return is mobile.
+
+        Returns
+        -------
+        bool
+            Boolean result of the check.
+        """
         return self._is_mobile
 
     @abstractmethod

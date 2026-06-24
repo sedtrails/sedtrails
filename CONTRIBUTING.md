@@ -30,7 +30,7 @@ The figure below summarizes the workflow our team follows for developing SedTRAI
 
 ## C. You want to make changes to the code base
 
-SedTRAILS is been developed for **Python 3.11**
+SedTRAILS requires **Python 3.10 or newer**, up to but not including Python 3.14. The minimum is set by Python 3.10 language features used in the codebase, including PEP 604 union annotations and `zip(..., strict=True)`.
 
 ### Announce your plan
 
@@ -122,7 +122,7 @@ We use Sphinx and Markdown to write documentation for the SedTRAILS. The root of
 
 1. [Announce your plan.](https://github.com/sedtrails/sedtrails/blob/dev/CONTRIBUTING.md#announce-your-plan)
 2. Follow the same steps to set up a development environment for [making changes to the code base](https://github.com/sedtrails/sedtrails/blob/dev/CONTRIBUTING.md#set-up-a-local-development-environment-to-work-on-your-changes).
-3. Install the dependencies in `docs/requirements.txt` using `pip install -r docs/requirments.txt` (Sphnix will also be installed).
+3. Install the dependencies in `docs/requirements.txt` using `pip install -r docs/requirements.txt` (Sphinx will also be installed).
 4. Update the documentation using Markdown. If unfamiliar with writing Markdown for MyST consult their [guides and documentation](https://myst-parser.readthedocs.io/en/latest/syntax/optional.html).
 5. Make sure your contributions are built without errors. Go to the `docs` directory in the terminal with `cd docs/`. Then, build the documentation using `make html`.
 6. [Submit your contribution](https://github.com/sedtrails/sedtrails/blob/dev/CONTRIBUTING.md#submitting-your-contribution) for review.

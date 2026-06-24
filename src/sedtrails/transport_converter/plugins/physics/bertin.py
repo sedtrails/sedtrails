@@ -25,6 +25,15 @@ class PhysicsPlugin(BasePhysicsPlugin):
     ):
         """
         Add physics using Bertin et al. (2023) approach.
+
+        Parameters
+        ----------
+        sedtrails_data : SedtrailsData
+            SedTRAILS data object to process.
+        *args : object
+            Additional positional arguments passed through to the implementation.
+        **kwargs : object
+            Additional keyword arguments passed through to the implementation.
         """
         logger.info('Using Bertin et al. (2023) to compute transport velocities and add to SedTRAILS data')
 

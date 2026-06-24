@@ -15,6 +15,18 @@ def setup_logging(output_dir: str, level: str = 'INFO') -> logging.Logger:
     - Attaches handlers to the top-level 'sedtrails' logger
     - Detects prior setup by checking handler markers
     - Captures warnings and installs a global exception hook
+
+    Parameters
+    ----------
+    output_dir : str
+        Directory where output files are written.
+    level : str
+        The level value.
+
+    Returns
+    -------
+    logging.Logger
+        Computed value returned by the function.
     """
     os.makedirs(output_dir, exist_ok=True)
     logfile = os.path.join(output_dir, 'log.txt')
@@ -67,6 +79,11 @@ def install_global_excepthook(logger: logging.Logger) -> None:
     """
     Install an excepthook that logs unhandled exceptions.
     Avoids globals by tagging the hook function itself.
+
+    Parameters
+    ----------
+    logger : logging.Logger
+        The logger value.
     """
     # If our hook is already installed, skip
     if getattr(sys.excepthook, '_sedtrails_excepthook', False):
@@ -88,6 +105,16 @@ def get_logger(name: str | None = None) -> logging.Logger:
     """
     Get a logger. Prefer logging.getLogger(__name__) in modules so logs
     propagate to the 'sedtrails' logger configured above.
+
+    Parameters
+    ----------
+    name : str | None
+        Name of the requested object.
+
+    Returns
+    -------
+    logging.Logger
+        Computed value returned by the function.
     """
     return logging.getLogger(name or 'sedtrails')
 
@@ -96,6 +123,15 @@ def log_simulation_state(logger: logging.Logger, state: dict, level=logging.INFO
     """
     Logs the current state of the simulation with human-readable sentences.
     Long messages are split into multiple lines for readability.
+
+    Parameters
+    ----------
+    logger : logging.Logger
+        The logger value.
+    state : dict
+        The state value.
+    level : object
+        The level value.
     """
     status = state.get('status', state.get('state', 'unknown'))
 
@@ -231,6 +267,8 @@ def log_exception(logger: logging.Logger, e: Exception, context: str = None) -> 
 
     Parameters
     ----------
+    logger : logging.Logger
+        Logger used to write the exception details.
     e : Exception
         The exception that occurred
     context : str, optional
@@ -244,7 +282,7 @@ def log_exception(logger: logging.Logger, e: Exception, context: str = None) -> 
 
     logger.error(f'Exception type: {type(e).__name__}')
     logger.error(f'Exception message: {str(e)}')
-    logger.error('Stack trace:', exc_info=True)
+    logger.error('Stack trace:', exc_info=(type(e), e, e.__traceback__))
     logger.error('=' * 50)
 
 

@@ -72,6 +72,16 @@ def convert_datetime_string_to_datetime64(datetime_str: str) -> np.datetime64:
 def convert_reference_date_to_datetime64(reference_date: str) -> np.datetime64:
     """
     Convert a reference date to numpy.datetime64, accepting date-only strings as midnight.
+
+    Parameters
+    ----------
+    reference_date : str
+        Reference date for converting model times.
+
+    Returns
+    -------
+    np.datetime64
+        Computed value returned by the function.
     """
     reference_date = str(reference_date)
     if re.match(r'^\d{4}-\d{2}-\d{2}$', reference_date):
@@ -210,7 +220,14 @@ class Time:
 
     @property
     def start(self) -> int:
-        """Returns the simulation start time as an integer representing seconds since the reference date."""
+        """
+        Returns the simulation start time as an integer representing seconds since the reference date.
+
+        Returns
+        -------
+        int
+            The start value.
+        """
         start_datetime = convert_datetime_string_to_datetime64(self._start)
         reference_datetime = convert_reference_date_to_datetime64(self.reference_date)
         # Calculate the difference in seconds
@@ -308,6 +325,11 @@ class Timer:
     def current(self) -> int | float:
         """
         Returns the current time in seconds since reference time.
+
+        Returns
+        -------
+        int | float
+            The current value.
         """
         return self._current
 
@@ -334,6 +356,11 @@ class Timer:
     def current_timestep(self) -> int | float:
         """
         Returns the current adaptive timestep in seconds.
+
+        Returns
+        -------
+        int | float
+            The current timestep value.
         """
         return self._current_timestep
 
@@ -430,7 +457,18 @@ class Timer:
     def compute_cfl_timestep_from_max_velocity(
         self, max_velocity: float, min_resolution: float | None, data_timestep: float | None
     ) -> None:
-        """Compute CFL timestep from a precomputed maximum velocity."""
+        """
+        Compute CFL timestep from a precomputed maximum velocity.
+
+        Parameters
+        ----------
+        max_velocity : float
+            The max velocity value.
+        min_resolution : float | None
+            The min resolution value.
+        data_timestep : float | None
+            Input data timestep in seconds.
+        """
         if self.cfl_condition > 0:
             if min_resolution is None or min_resolution <= 0:
                 return

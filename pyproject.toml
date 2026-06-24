@@ -9,11 +9,13 @@ description = "Sediment TRAnsport vIsualization and Lagrangian Simulator."
 dependencies = [
   "jsonschema",
   "numpy<2.2,>=1.24",
+  "scipy",
   "pyyaml",
   "pandas",
   "matplotlib",
   "xarray",
-  "typer >=0.15.0,<1.0",
+  "netCDF4",
+  "typer >=0.16.0,<1.0",
   "xugrid",
   "numba",
   "tqdm",
@@ -34,14 +36,19 @@ maintainers = [
   { name = "Johan Reyns", email = "johan.reyns@deltares.nl" },
 ]
 readme = "README.md"
-license = "MIT"
+license = "GPL-3.0-only"
 license-files = ["LICEN[CS]E.*"]
 keywords = ["sediment", "analysis"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python",
-  "License :: Freely Distributable",
-  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
   "Operating System :: OS Independent",
   "Topic :: Documentation :: Sphinx",
   "Topic :: Scientific/Engineering",
@@ -49,8 +56,9 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-cli = ["typer>=0.15.0,<1.0"]
+cli = ["typer>=0.16.0,<1.0"]
 dev = [
+  "click>=8.0.0",
   "pytest",
   "ruff",
   "sphinx==8.2.0",
@@ -81,3 +89,8 @@ sedtrails = "sedtrails.application_interfaces.cli:app"
 pythonpath = "src"
 addopts = ["--import-mode=importlib"]
 markers = ["integration: mark a test as an integration test."]
+filterwarnings = [
+  'ignore:.*:pyparsing.warnings.PyparsingDeprecationWarning:matplotlib\._fontconfig_pattern',
+  'ignore:.*:pyparsing.warnings.PyparsingDeprecationWarning:matplotlib\._mathtext',
+  'ignore:numpy\.ndarray size changed, may indicate binary incompatibility\..*:RuntimeWarning',
+]

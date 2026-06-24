@@ -1,146 +1,135 @@
-"""
-TEMPORARY visualization utilities for SedTRAILS.
+"""Small plotting helpers used by the SedTRAILS example scripts."""
 
-This module provides visualization functions for SedTRAILS data,
-particularly for flow field visualization.
-"""
+from __future__ import annotations
+
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+import numpy as np
 
-def plot_flow_field(flow_data, title=None, downsample=5, figsize=(12, 10), 
-                   cmap='viridis', vector_color='white', save_path=None):
-    """
-    Plot flow field with magnitude as contour and vectors for direction.
-    
-    Parameters:
-    -----------
+
+def _as_1d(values) -> np.ndarray:
+    """Return values as a flattened float array."""
+    return np.asarray(values, dtype=float).ravel()
+
+
+def _save_if_requested(fig, save_path) -> None:
+    if save_path is None:
+        return
+    path = Path(save_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=300, bbox_inches='tight')
+
+
+def plot_flow_field(
+    flow_data,
+    title=None,
+    downsample=5,
+    figsize=(12, 10),
+    cmap='viridis',
+    vector_color='white',
+    save_path=None,
+):
+    """Plot a SedTRAILS flow field with velocity magnitude and vectors.
+
+    Parameters
+    ----------
     flow_data : dict
-        Dictionary containing 'x', 'y', 'u', 'v', and 'magnitude' arrays
+        Dictionary containing ``x``, ``y``, ``u``, ``v``, and ``magnitude`` arrays.
     title : str, optional
-        Title for the plot
+        Plot title.
     downsample : int, optional
-        Factor to downsample vectors for clearer visualization
+        Keep every Nth vector in the quiver overlay.
     figsize : tuple, optional
-        Figure size (width, height) in inches
+        Matplotlib figure size.
     cmap : str, optional
-        Colormap for the contour plot
+        Colormap for the magnitude field.
     vector_color : str, optional
-        Color for the velocity vectors
-    save_path : str, optional
-        Path to save the figure. If None, figure is not saved.
-        
-    Returns:
-    --------
+        Quiver vector color.
+    save_path : str or pathlib.Path, optional
+        If provided, save the figure to this path.
+
+    Returns
+    -------
     tuple
-        (fig, ax) matplotlib figure and axis objects
+        ``(fig, ax)`` Matplotlib figure and axis.
     """
-    # Extract data
-    x = flow_data['x']
-    y = flow_data['y']
-    u = flow_data['u']
-    v = flow_data['v']
-    magnitude = flow_data['magnitude']
-    
-    # Create figure
+    x = _as_1d(flow_data['x'])
+    y = _as_1d(flow_data['y'])
+    u = _as_1d(flow_data['u'])
+    v = _as_1d(flow_data['v'])
+    magnitude = _as_1d(flow_data['magnitude'])
+
+    finite = np.isfinite(x) & np.isfinite(y) & np.isfinite(magnitude)
+    if finite.sum() < 3:
+        raise ValueError('At least three finite flow-field points are required for plotting.')
+
+    x = x[finite]
+    y = y[finite]
+    u = u[finite]
+    v = v[finite]
+    magnitude = magnitude[finite]
+
     fig, ax = plt.subplots(figsize=figsize)
-    
-    # Plot magnitude as contour/heatmap
     contour = ax.tricontourf(x, y, magnitude, cmap=cmap, levels=20)
-    
-    # Add colorbar
     cbar = plt.colorbar(contour, ax=ax)
-    cbar.set_label('Flow Magnitude (m/s)')
-    
-    # Downsample for vectors to avoid cluttering
-    skip = (slice(None, None, downsample), slice(None, None, downsample))
-    if len(x.shape) > 1:  # 2D grid
-        x_subset = x[skip]
-        y_subset = y[skip]
-        u_subset = u[skip]
-        v_subset = v[skip]
-    else:  # 1D arrays
-        x_subset = x[::downsample]
-        y_subset = y[::downsample]
-        u_subset = u[::downsample]
-        v_subset = v[::downsample]
-    
-    # Plot velocity vectors
-    q = ax.quiver(x_subset, y_subset, u_subset, v_subset, 
-                 color=vector_color, scale=15, width=0.002)
-    ax.quiverkey(q, 0.85, 0.02, 0.5, "0.5 m/s", 
-                labelpos='E', coordinates='figure', color=vector_color)
-    
-    # Set labels and title
-    ax.set_xlabel('X (m)')
-    ax.set_ylabel('Y (m)')
-    if title:
-        ax.set_title(title)
-    else:
-        ax.set_title('Flow Field Visualization')
-    
-    # Equal aspect ratio for geographic data
-    ax.set_aspect('equal')
-    
-    # Save figure if path is provided
-    if save_path:
-        fig.savefig(save_path, dpi=300, bbox_inches='tight')
-        
+    cbar.set_label('Flow magnitude [m/s]')
+
+    stride = max(1, int(downsample))
+    q = ax.quiver(
+        x[::stride],
+        y[::stride],
+        u[::stride],
+        v[::stride],
+        color=vector_color,
+        scale=15,
+        width=0.002,
+    )
+    ax.quiverkey(q, 0.85, 0.02, 0.5, '0.5 m/s', labelpos='E', coordinates='figure', color=vector_color)
+
+    ax.set_xlabel('X [m]')
+    ax.set_ylabel('Y [m]')
+    ax.set_title(title or 'Flow field')
+    ax.set_aspect('equal', adjustable='box')
+
+    _save_if_requested(fig, save_path)
     return fig, ax
 
 
-# Define a new function for plotting particle trajectories
-def plot_particle_trajectory(flow_data, trajectory_x, trajectory_y, title=None, 
-                           downsample=5, figsize=(12, 10), cmap='viridis',
-                           vector_color='white', trajectory_color='red', 
-                           save_path=None):
-    """
-    Plot flow field with particle trajectory overlay.
-    
-    Parameters:
-    -----------
-    flow_data : dict
-        Dictionary containing 'x', 'y', 'u', 'v', and 'magnitude' arrays
-    trajectory_x, trajectory_y : array_like
-        Arrays containing the x and y coordinates of particle positions
-    title : str, optional
-        Title for the plot
-    downsample : int, optional
-        Factor to downsample vectors for clearer visualization
-    figsize : tuple, optional
-        Figure size (width, height) in inches
-    cmap : str, optional
-        Colormap for the contour plot
-    vector_color : str, optional
-        Color for the velocity vectors
-    trajectory_color : str, optional
-        Color for the particle trajectory
-    save_path : str, optional
-        Path to save the figure. If None, figure is not saved.
-        
-    Returns:
-    --------
-    tuple
-        (fig, ax) matplotlib figure and axis objects
-    """
-    # First create the flow field plot using existing function
-    fig, ax = plot_flow_field(flow_data, title=title, downsample=downsample,
-                             figsize=figsize, cmap=cmap, vector_color=vector_color,
-                             save_path=None)  # Don't save yet
-    
-    # Add particle trajectory
-    ax.plot(trajectory_x, trajectory_y, '-', color=trajectory_color, 
-           linewidth=2, label='Particle Trajectory')
-    ax.plot(trajectory_x[0], trajectory_y[0], 'go', markersize=8, label='Start Position')
-    ax.plot(trajectory_x[-1], trajectory_y[-1], 'ro', markersize=8, label='End Position')
-    
-    # Add legend
+def plot_particle_trajectory(
+    flow_data,
+    trajectory_x,
+    trajectory_y,
+    title=None,
+    downsample=5,
+    figsize=(12, 10),
+    cmap='viridis',
+    vector_color='white',
+    trajectory_color='red',
+    save_path=None,
+):
+    """Plot a SedTRAILS flow field with one particle trajectory overlay."""
+    fig, ax = plot_flow_field(
+        flow_data,
+        title=title or 'Flow field with particle trajectory',
+        downsample=downsample,
+        figsize=figsize,
+        cmap=cmap,
+        vector_color=vector_color,
+    )
+
+    trajectory_x = _as_1d(trajectory_x)
+    trajectory_y = _as_1d(trajectory_y)
+    valid = np.isfinite(trajectory_x) & np.isfinite(trajectory_y)
+    if valid.sum() == 0:
+        raise ValueError('Trajectory contains no finite positions.')
+
+    trajectory_x = trajectory_x[valid]
+    trajectory_y = trajectory_y[valid]
+    ax.plot(trajectory_x, trajectory_y, '-', color=trajectory_color, linewidth=2, label='Particle trajectory')
+    ax.plot(trajectory_x[0], trajectory_y[0], 'go', markersize=8, label='Start')
+    ax.plot(trajectory_x[-1], trajectory_y[-1], 'ro', markersize=8, label='End')
     ax.legend(loc='upper right')
-    
-    # Update title if not provided
-    if not title:
-        ax.set_title('Flow Field with Particle Trajectory')
-    
-    # Save figure if path is provided
-    if save_path:
-        fig.savefig(save_path, dpi=300, bbox_inches='tight')
-        
+
+    _save_if_requested(fig, save_path)
     return fig, ax

@@ -14,6 +14,7 @@ from typing import Any, Dict, Tuple
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.collections import LineCollection
 from matplotlib.colors import ListedColormap
 from matplotlib.path import Path as MplPath
 from scipy.spatial import ConvexHull, QhullError, cKDTree
@@ -37,8 +38,10 @@ class SimulationDashboard:
 
     LARGE_GRID_POINT_LIMIT = 5_000
     LARGE_GRID_QUIVER_LIMIT = 100
+    PARTICLE_RENDER_LIMIT = 5_000
     RASTER_MAX_SIDE = 700
     RASTER_K_NEIGHBORS = 4
+    STRANDED_PARTICLE_COLOR = '#ffb3b3'
 
     def __init__(self, reference_date: str = '1970-01-01'):
         """Initialize the dashboard."""
@@ -46,7 +49,7 @@ class SimulationDashboard:
         self.axes = {}
         self.lines = {}
         self.data_store = defaultdict(list)
-        self.trajectories = {'x': [], 'y': [], 'time': []}  # Store particle trajectories
+        self.trajectories = {'x': [], 'y': [], 'time': []}  # Store sampled initial positions for display
         self.time_stamps = []
         self.plot_initialized = False
         self.last_update_time = 0
@@ -55,6 +58,9 @@ class SimulationDashboard:
         self._raster_images = {}
         self._spatial_quivers = {}
         self._particle_artists = []
+        self._particle_sample_indices = None
+        self._particle_sample_count = None
+        self._previous_particle_positions = None
 
         # Store reference date for time conversions
         self.reference_date = datetime.datetime.fromisoformat(reference_date)
@@ -67,7 +73,14 @@ class SimulationDashboard:
         self.bathymetry_vmax = 6
 
     def initialize_dashboard(self, figsize: Tuple[float, float] = (16, 10)) -> None:
-        """Initialize the dashboard with subplot layout."""
+        """
+        Initialize the dashboard with subplot layout.
+
+        Parameters
+        ----------
+        figsize : Tuple[float, float]
+            Figure size in inches.
+        """
         self.fig = plt.figure(figsize=figsize)
 
         # Use mosaic layout: M1=flowfield, M2=bathymetry, T1-T4=timeseries, P=progress
@@ -101,7 +114,21 @@ class SimulationDashboard:
         self._show_and_raise_window()
 
     def should_update(self, current_time: float, plot_interval: float) -> bool:
-        """Return whether the dashboard should redraw for the given simulation time."""
+        """
+        Return whether the dashboard should redraw for the given simulation time.
+
+        Parameters
+        ----------
+        current_time : float
+            Current simulation time in seconds.
+        plot_interval : float
+            Interval between plot updates.
+
+        Returns
+        -------
+        bool
+            Boolean result of the check.
+        """
         return current_time - self.last_update_time >= plot_interval
 
     def _show_and_raise_window(self):
@@ -207,7 +234,7 @@ class SimulationDashboard:
         # Set up date formatter for all time series plots
         # Use a compact format to fit better in the available space
         date_fmt = mdates.DateFormatter('%m-%d %H:%M')
-        
+
         # Longshore velocity
         (self.lines['longshore_avg'],) = self.axes['longshore_vel'].plot([], [], 'b-', label='Average', linewidth=2)
         (self.lines['longshore_max'],) = self.axes['longshore_vel'].plot([], [], 'r-', label='Maximum', linewidth=2)
@@ -287,21 +314,42 @@ class SimulationDashboard:
         simulation_end_time: float | None = None,
         mesh_geometry: Dict[str, Any] | None = None,
     ) -> None:
-        """Update dashboard with current simulation data."""
+        """
+        Update dashboard with current simulation data.
+
+        Parameters
+        ----------
+        flow_field : Dict[str, np.ndarray]
+            Flow-field data to visualize.
+        bathymetry : np.ndarray
+            Bathymetry data used for plotting.
+        particles : Dict[str, np.ndarray]
+            Particle data used for plotting or output.
+        current_time : float
+            Current simulation time in seconds.
+        timestep : float
+            Current simulation timestep.
+        plot_interval : float
+            Interval between plot updates.
+        simulation_start_time : float
+            Simulation start time in seconds.
+        simulation_end_time : float | None
+            Simulation end time in seconds.
+        mesh_geometry : Dict[str, Any] | None
+            Optional mesh geometry used for plotting.
+        """
 
         if not self.should_update(current_time, plot_interval):
             return
 
-        # Store trajectory data at this plot_interval
-        self.trajectories['x'].append(particles['x'].copy())
-        self.trajectories['y'].append(particles['y'].copy())
-        self.trajectories['time'].append(current_time)
+        dashboard_particles = self._sample_particle_payload(particles)
+        self._ensure_initial_particle_snapshot(dashboard_particles, current_time)
 
         # Store data for time series analysis
-        self._store_particle_data(particles, current_time, timestep, flow_field)
+        self._store_particle_data(dashboard_particles, current_time, timestep, flow_field)
 
         # Prepare particle data with initial positions from trajectories
-        particle_data_with_initial = particles.copy()
+        particle_data_with_initial = dashboard_particles.copy()
         if len(self.trajectories['x']) > 0:
             particle_data_with_initial['x_initial'] = self.trajectories['x'][0]
             particle_data_with_initial['y_initial'] = self.trajectories['y'][0]
@@ -317,6 +365,39 @@ class SimulationDashboard:
         self.fig.canvas.flush_events()
 
         self.last_update_time = current_time
+
+    def _reset_particle_history(self) -> None:
+        """Reset sampled particle history when the particle population changes."""
+        self.trajectories = {'x': [], 'y': [], 'time': []}
+        self._previous_particle_positions = None
+
+    def _particle_plot_indices(self, n_particles: int) -> slice | np.ndarray:
+        """Return stable deterministic particle indices for dashboard plotting."""
+        cached_count = getattr(self, '_particle_sample_count', None)
+        cached_indices = getattr(self, '_particle_sample_indices', None)
+        if cached_indices is not None and cached_count == n_particles:
+            return cached_indices
+
+        indices = self._sample_indices(n_particles, self.PARTICLE_RENDER_LIMIT)
+        self._particle_sample_indices = indices
+        self._particle_sample_count = n_particles
+        self._reset_particle_history()
+        return indices
+
+    def _sample_particle_payload(self, particles: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+        """Return a bounded particle payload for dashboard-only rendering and summaries."""
+        n_particles = len(particles['x'])
+        indices = self._particle_plot_indices(n_particles)
+        return {name: np.asarray(values)[indices] for name, values in particles.items()}
+
+    def _ensure_initial_particle_snapshot(self, particles: Dict[str, np.ndarray], current_time: float) -> None:
+        """Store only the first sampled particle positions used for displacement lines."""
+        if len(self.trajectories['x']) > 0:
+            return
+
+        self.trajectories['x'].append(np.asarray(particles['x']).copy())
+        self.trajectories['y'].append(np.asarray(particles['y']).copy())
+        self.trajectories['time'].append(current_time)
 
     def _store_particle_data(
         self, particles: Dict[str, np.ndarray], current_time: float, timestep: float, flow_field: Dict[str, np.ndarray]
@@ -337,15 +418,16 @@ class SimulationDashboard:
         self.data_store['crossshore_max'].append(np.max(np.abs(particle_v)))
 
         # Calculate average distance covered per output timestep
-        if len(self.data_store['prev_positions']) > 0:
-            prev_x, prev_y = self.data_store['prev_positions'][-1]
+        previous_positions = getattr(self, '_previous_particle_positions', None)
+        if previous_positions is not None:
+            prev_x, prev_y = previous_positions
             distances = np.sqrt((particles['x'] - prev_x) ** 2 + (particles['y'] - prev_y) ** 2)
             avg_distance = np.mean(distances)
         else:
             avg_distance = 0.0
 
         self.data_store['distance'].append(avg_distance)
-        self.data_store['prev_positions'].append((particles['x'].copy(), particles['y'].copy()))
+        self._previous_particle_positions = (np.asarray(particles['x']).copy(), np.asarray(particles['y']).copy())
 
         # Store burial depth statistics (if available)
         if 'burial_depth' in particles:
@@ -377,6 +459,42 @@ class SimulationDashboard:
     def _flatten(values: np.ndarray) -> np.ndarray:
         """Flatten field data for plotting without copying when possible."""
         return np.asarray(values).ravel()
+
+    @staticmethod
+    def _particle_status_mask(
+        particles: Dict[str, np.ndarray], status_name: str, n_particles: int, default: bool = False
+    ) -> np.ndarray:
+        """Return a boolean particle status mask with a safe fallback for older payloads."""
+        status = particles.get(status_name)
+        if status is None:
+            return np.full(n_particles, default, dtype=bool)
+
+        status = np.asarray(status, dtype=bool)
+        if status.shape != (n_particles,):
+            return np.full(n_particles, default, dtype=bool)
+        return status
+
+    def _particle_trajectory_history(self, n_particles: int) -> tuple[np.ndarray, np.ndarray] | None:
+        """Return stored particle trajectory arrays when all snapshots match the current particle count."""
+        trajectories = getattr(self, 'trajectories', {})
+        x_history = trajectories.get('x', [])
+        y_history = trajectories.get('y', [])
+        if len(x_history) < 2 or len(x_history) != len(y_history):
+            return None
+
+        x_arrays = [np.asarray(values, dtype=float).ravel() for values in x_history]
+        y_arrays = [np.asarray(values, dtype=float).ravel() for values in y_history]
+        if any(values.shape != (n_particles,) for values in x_arrays + y_arrays):
+            return None
+
+        return np.vstack(x_arrays), np.vstack(y_arrays)
+
+    @staticmethod
+    def _particle_trail_segments(trail_x: np.ndarray, trail_y: np.ndarray, particle_indices: np.ndarray) -> np.ndarray:
+        """Return line-collection segments for selected particle trajectory columns."""
+        if particle_indices.size == 0:
+            return np.empty((0, 0, 2), dtype=float)
+        return np.stack((trail_x[:, particle_indices], trail_y[:, particle_indices]), axis=-1).transpose(1, 0, 2)
 
     def _geometry_key(self, x: np.ndarray, y: np.ndarray, mesh_geometry: Dict[str, Any] | None) -> tuple:
         extent = self._spatial_extent(x, y, mesh_geometry)
@@ -738,28 +856,63 @@ class SimulationDashboard:
 
         # Plot particles
         particle_artists = getattr(self, '_particle_artists', [])
-        if len(particles['x']) > 0:
-            # Current positions (white circles)
-            particle_artists.append(
-                ax.scatter(
-                    particles['x'],
-                    particles['y'],
-                    color='white',
-                    s=50,
-                    marker='o',
-                    edgecolors='black',
-                    linewidth=1,
-                    label='Current',
-                    zorder=5,
-                )
-            )
+        particle_x = np.asarray(particles['x'])
+        particle_y = np.asarray(particles['y'])
+        n_particles = len(particle_x)
+        if n_particles > 0:
+            left_domain = self._particle_status_mask(particles, 'status_left_domain', n_particles)
+            beached = self._particle_status_mask(particles, 'status_beached', n_particles)
+            visible_particles = ~left_domain
+            active_particles = visible_particles & ~beached
+            stranded_particles = visible_particles & beached
 
-            # Initial positions (white crosses)
-            if 'x_initial' in particles:
+            # Current in-domain positions (white circles)
+            if np.any(active_particles):
                 particle_artists.append(
                     ax.scatter(
-                        particles['x_initial'],
-                        particles['y_initial'],
+                        particle_x[active_particles],
+                        particle_y[active_particles],
+                        color='white',
+                        s=50,
+                        marker='o',
+                        edgecolors='black',
+                        linewidth=1,
+                        label='Current',
+                        zorder=5,
+                    )
+                )
+
+            # Current stranded/beached positions (light-red circles)
+            if np.any(stranded_particles):
+                particle_artists.append(
+                    ax.scatter(
+                        particle_x[stranded_particles],
+                        particle_y[stranded_particles],
+                        color=self.STRANDED_PARTICLE_COLOR,
+                        s=50,
+                        marker='o',
+                        edgecolors='black',
+                        linewidth=1,
+                        label='Stranded',
+                        zorder=6,
+                    )
+                )
+
+            initial_x = particles.get('x_initial')
+            initial_y = particles.get('y_initial')
+            has_initial_positions = initial_x is not None and initial_y is not None
+            if has_initial_positions:
+                initial_x = np.asarray(initial_x)
+                initial_y = np.asarray(initial_y)
+                has_initial_positions = initial_x.shape == particle_x.shape and initial_y.shape == particle_y.shape
+
+            # Initial positions (white crosses), excluding particles that left the domain.
+            if has_initial_positions and np.any(visible_particles):
+                visible_indices = np.flatnonzero(visible_particles)
+                particle_artists.append(
+                    ax.scatter(
+                        initial_x[visible_particles],
+                        initial_y[visible_particles],
                         color='white',
                         s=50,
                         marker='x',
@@ -769,25 +922,44 @@ class SimulationDashboard:
                     )
                 )
 
-                # Connect with lines
-                for i in range(len(particles['x'])):
-                    (line,) = ax.plot(
-                        [particles['x_initial'][i], particles['x'][i]],
-                        [particles['y_initial'][i], particles['y'][i]],
-                        'w-',
-                        alpha=0.7,
-                        linewidth=1,
-                        zorder=4,
-                    )
-                    particle_artists.append(line)
+                trajectory_history = self._particle_trajectory_history(n_particles)
+                if trajectory_history is None:
+                    trail_x = np.vstack((initial_x, particle_x))
+                    trail_y = np.vstack((initial_y, particle_y))
+                else:
+                    trail_x, trail_y = trajectory_history
 
-            ax.legend(loc='upper right')
+                segments = self._particle_trail_segments(trail_x, trail_y, visible_indices)
+                if segments.size:
+                    trails = LineCollection(
+                        segments,
+                        colors='white',
+                        linewidths=1,
+                        alpha=0.7,
+                        zorder=4,
+                        label='_particle_trails',
+                    )
+                    ax.add_collection(trails)
+                    particle_artists.append(trails)
+
+            if particle_artists:
+                ax.legend(loc='upper right')
         self._particle_artists = particle_artists
 
         ax.set_xlabel('X (m)')
         ax.set_ylabel('Y (m)')
         ax.set_aspect('equal')
         ax.set_title('(b) Bathymetry + Particles', fontsize=12, fontweight='bold')
+
+    @staticmethod
+    def _particle_displacement_segments(particles: Dict[str, np.ndarray]) -> np.ndarray:
+        """Build finite initial-to-current displacement line segments."""
+        current = np.column_stack((particles['x'], particles['y']))
+        initial = np.column_stack((particles['x_initial'], particles['y_initial']))
+        finite = np.isfinite(current).all(axis=1) & np.isfinite(initial).all(axis=1)
+        if not np.any(finite):
+            return np.empty((0, 2, 2), dtype=float)
+        return np.stack((initial[finite], current[finite]), axis=1)
 
     def _update_time_series_plots(self) -> None:
         """Update all time series plots."""
@@ -931,6 +1103,13 @@ class SimulationDashboard:
             plt.close(self.fig)
 
     def save(self, save_path: str) -> None:
-        """Save current dashboard state."""
+        """
+        Save current dashboard state.
+
+        Parameters
+        ----------
+        save_path : str
+            Path where the figure or output file is saved.
+        """
         if self.fig is not None:
             self.fig.savefig(save_path, dpi=300, bbox_inches='tight')
