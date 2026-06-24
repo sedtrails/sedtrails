@@ -1187,25 +1187,6 @@ class Simulation:
             },
         )
 
-        # Determine flow field names from configuration
-        # tracer_methods is obligatory, so all these checks are not needed.
-        flow_field_names = []
-        for population in populations_config:
-            # if 'tracer_methods' in population and (
-            #     'vanwesten' in population['tracer_methods'] or 'soulsby' in population['tracer_methods']
-            # ):
-            if 'tracer_methods' in population:
-                if 'vanwesten' in population['tracer_methods']:
-                    flow_field_names = population['tracer_methods']['vanwesten']['flow_field_name']
-                elif 'soulsby' in population['tracer_methods']:
-                    flow_field_names = population['tracer_methods']['soulsby']['flow_field_name']
-                elif 'macdonald' in population['tracer_methods']:
-                    # MacDonald method uses both bed load and suspended velocities
-                    flow_field_names = population['tracer_methods']['macdonald']['flow_field_name']
-                elif 'passive_tracer' in population['tracer_methods']:
-                    flow_field_names = population['tracer_methods']['passive_tracer']['flow_field_name']
-                break  # Use the first population's flow fields for now
-
         # Create SedTrails dataset using DataManager's writer (composition)
         total_particles = sum([len(pop.particles['x']) for pop in populations])
         store_tracks = self._output_store_tracks()
@@ -1220,6 +1201,9 @@ class Simulation:
             n_output_slots,
             store_tracks,
         )
+        q3d_diagnostics = getattr(getattr(self.physics_converter, 'config', None), 'q3d_diagnostics', 'minimal')
+        netcdf_options['q3d_diagnostics'] = q3d_diagnostics
+        checkpoint_options.setdefault('writer_kwargs', {})['q3d_diagnostics'] = q3d_diagnostics
 
         self._initialize_population_output_status(populations, timer.current)
         nc_handle = None
@@ -1396,13 +1380,11 @@ class Simulation:
 
                         with self._profile_section('update_status'):
                             population.update_status()
-                    # Determining status
-                    population.update_status()
 
-                    is_macdonald_q3d = (
-                        tracer_method == 'macdonald'
-                        and str(getattr(self.physics_converter.config, 'computationType', '2D')).upper() == 'Q3D'
-                    )
+                        is_macdonald_q3d = (
+                            tracer_plan.method_name == 'macdonald'
+                            and str(getattr(self.physics_converter.config, 'computationType', '2D')).upper() == 'Q3D'
+                        )
 
                         with self._profile_section('get_flow_field_bounds.update_position'):
                             flow_field = retriever.get_flow_field_bounds(field_time_seconds, flow_field_name)
@@ -1413,6 +1395,7 @@ class Simulation:
                         ):
                             with self._profile_section('get_flow_field.dashboard'):
                                 dashboard_flow_field = retriever.get_flow_field(field_time_seconds, flow_field_name)
+
                         if is_macdonald_q3d:
                             hydrodynamic_flow_field = get_flow_field_bounds_cached(
                                 'depth_avg_flow_velocity',
@@ -1495,7 +1478,10 @@ class Simulation:
                                 )
                         else:
                             with self._profile_section('update_position'):
-                                population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
+                                population.update_position(
+                                    flow_field=flow_field,
+                                    current_timestep=timer.current_timestep,
+                                )
                         self._report_new_domain_exits(
                             population,
                             runtime_plan.population_index,

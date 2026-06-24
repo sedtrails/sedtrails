@@ -364,7 +364,9 @@ class PopulationConfig:
     particle_type: str = field(init=False)
     release_start: str | int | float = field(init=False, default=DEFAULT_RELEASE_START)
     quantity: int = field(init=False)  # number of particles to release per release location
-    burial_depth: float = field(init=False, default=0.0)  # burial depth of the particles
+    burial_depth: float | dict[str, float] = field(init=False, default=0.0)
+    vertical_position_mode: str = field(init=False, default='burial_depth')
+    vertical_position_value: Any = field(init=False, default=None)
     strategy_settings: Dict = field(init=False, default_factory=dict)
     remove_permanently_buried: bool = field(init=False, default=False)
 
@@ -388,7 +390,12 @@ class PopulationConfig:
         _burial_depth = find_value(self.population_config, 'seeding.burial_depth', {})
         if not _burial_depth:
             raise MissingConfigurationParameter('"burial_depth" is not defined in the population configuration.')
-        self.burial_depth = _burial_depth.get('constant', 0.0)  # TODO: support other types of burial depth
+        if not isinstance(_burial_depth, dict):
+            raise TypeError('"seeding.burial_depth" must be a dictionary.')
+        self.burial_depth = _burial_depth
+        self.remove_permanently_buried = bool(
+            find_value(self.population_config, 'seeding.remove_permanently_buried', False)
+        )
 
         vertical_position = find_value(self.population_config, 'seeding.vertical_position', None)
         if vertical_position is None:
@@ -919,6 +926,9 @@ class ParticleFactory:
                 p.x = x
                 p.y = y
                 p.release_time = getattr(config, 'release_start', None)
+                p.burial_depth = _sample_burial_depth(burial_depth, rng=burial_rng)
+                p.vertical_position_mode = vertical_position_mode
+                p.vertical_position_value = vertical_position_value
 
                 particles.append(p)
 
@@ -1016,6 +1026,23 @@ class ParticlePopulation:
                 dtype=float,
             ),
             'burial_depth': np.array([p.burial_depth for p in _particles]),
+            'vertical_position_mode': np.array(
+                [getattr(p, 'vertical_position_mode', 'burial_depth') for p in _particles],
+                dtype='<U32',
+            ),
+            'vertical_position_value': np.array(vertical_position_values, dtype=float),
+            'vertical_position_initialized': np.zeros(len(_particles), dtype=bool),
+            'status_suspended': np.zeros(len(_particles), dtype=bool),
+            'status_buried': np.array(
+                [
+                    getattr(p, 'vertical_position_mode', 'burial_depth') == 'burial_depth'
+                    and p.burial_depth > 0.0
+                    for p in _particles
+                ],
+                dtype=bool,
+            ),
+            'status_left_domain': np.zeros(len(_particles), dtype=bool),
+            'status_beached': np.zeros(len(_particles), dtype=bool),
         }
         self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
         self._mark_particle_simplices_current()
@@ -1248,29 +1275,73 @@ class ParticlePopulation:
             self.particles[name] = values
             return
 
-        if _is_temporal_field(field_value):
-            lower_values = np.asarray(field_value['lower'])
-            upper_values = np.asarray(field_value['upper'])
-            if lower_values.size == 0:
-                return
+        n_particles = len(self.particles['x'])
+        existing = self.particles.get(name)
+        if existing is None or np.asarray(existing).shape != (n_particles,):
+            target = np.full(n_particles, np.nan, dtype=float)
+        else:
+            target = np.asarray(existing, dtype=float)
 
-            weight = field_value['weight']
-            if weight <= 0.0 or lower_values is upper_values:
-                lower_particle_values = self._field_interpolator(lower_values, self.particles['x'], self.particles['y'])
-                if np.isnan(lower_particle_values).all():
-                    return
-                self.particles[name] = lower_particle_values
-                return
+        target[indices] = values
+        self.particles[name] = target
 
-            lower_particle_values, upper_particle_values = self._field_interpolator_multi(
-                (lower_values, upper_values),
-                self.particles['x'],
-                self.particles['y'],
-            )
-            if np.isnan(lower_particle_values).all() and np.isnan(upper_particle_values).all():
-                return
-            self.particles[name] = lower_particle_values + weight * (upper_particle_values - lower_particle_values)
+    def _update_particle_fields(self, field_values: Dict[str, Any], indices=None) -> None:
+        indices, x_points, y_points, target_size = self._particle_interpolation_target(indices)
+        if target_size == 0:
             return
+
+        arrays_to_interpolate = []
+        interpolation_jobs = []
+
+        for name, field_value in field_values.items():
+            if field_value is None:
+                continue
+
+            if _is_temporal_field(field_value):
+                lower_values = np.asarray(field_value['lower'])
+                upper_values = np.asarray(field_value['upper'])
+                if lower_values.size == 0:
+                    continue
+
+                weight = float(field_value['weight'])
+                lower_is_scalar = lower_values.size == 1
+                upper_is_scalar = upper_values.size == 1
+
+                if weight <= 0.0 or lower_values is upper_values or upper_values.size == 0:
+                    if lower_is_scalar:
+                        self._assign_particle_field_values(
+                            name,
+                            np.full(target_size, float(lower_values.ravel()[0]), dtype=float),
+                            indices=indices,
+                        )
+                    else:
+                        interpolation_jobs.append(('single', name))
+                        arrays_to_interpolate.append(lower_values)
+                    continue
+
+                if lower_is_scalar and upper_is_scalar:
+                    lower_value = float(lower_values.ravel()[0])
+                    upper_value = float(upper_values.ravel()[0])
+                    self._assign_particle_field_values(
+                        name,
+                        np.full(target_size, lower_value + weight * (upper_value - lower_value), dtype=float),
+                        indices=indices,
+                    )
+                    continue
+
+                if lower_is_scalar:
+                    interpolation_jobs.append(('lower_scalar_temporal', name, float(lower_values.ravel()[0]), weight))
+                    arrays_to_interpolate.append(upper_values)
+                    continue
+
+                if upper_is_scalar:
+                    interpolation_jobs.append(('upper_scalar_temporal', name, float(upper_values.ravel()[0]), weight))
+                    arrays_to_interpolate.append(lower_values)
+                    continue
+
+                interpolation_jobs.append(('temporal', name, weight))
+                arrays_to_interpolate.extend((lower_values, upper_values))
+                continue
 
             if np.isscalar(field_value):
                 self._assign_particle_field_values(
@@ -1297,8 +1368,47 @@ class ParticlePopulation:
         if not arrays_to_interpolate:
             return
 
-        particle_values = self._field_interpolator(field_array, self.particles['x'], self.particles['y'])
-        if np.isnan(particle_values).all():
+        interpolated_values = self._field_interpolator_multi(tuple(arrays_to_interpolate), x_points, y_points)
+        value_index = 0
+        for job in interpolation_jobs:
+            kind = job[0]
+            name = job[1]
+            if kind == 'single':
+                particle_values = interpolated_values[value_index]
+                value_index += 1
+            elif kind == 'temporal':
+                weight = job[2]
+                lower_particle_values = interpolated_values[value_index]
+                upper_particle_values = interpolated_values[value_index + 1]
+                value_index += 2
+                if np.isnan(lower_particle_values).all() and np.isnan(upper_particle_values).all():
+                    continue
+                particle_values = lower_particle_values + weight * (upper_particle_values - lower_particle_values)
+            elif kind == 'lower_scalar_temporal':
+                lower_value = job[2]
+                weight = job[3]
+                upper_particle_values = interpolated_values[value_index]
+                value_index += 1
+                particle_values = lower_value + weight * (upper_particle_values - lower_value)
+            else:
+                upper_value = job[2]
+                weight = job[3]
+                lower_particle_values = interpolated_values[value_index]
+                value_index += 1
+                particle_values = lower_particle_values + weight * (upper_value - lower_particle_values)
+
+            if np.isnan(particle_values).all():
+                continue
+            self._assign_particle_field_values(name, particle_values, indices=indices)
+
+    def _update_particle_flow_field(self, prefix: str, flow_field: Dict, indices=None) -> None:
+        # This method updates the particle flow field attributes (u, v, magnitude) at the particle positions, handling both temporal and non-temporal flow fields.
+        # This is because the particle level Macdonald needs flow direction and flow magnitude to compute particle motion.
+        # For temporal flow fields, it performs interpolation between the lower and upper time steps based on the provided weight.
+        # The resulting flow field attributes are stored in the particles dictionary with keys prefixed by the given prefix (e.g., 'q3d_flow['u']', 'q3d_flow[v'], 'q3d_flow['magnitude']').
+
+        indices, x_points, y_points, target_size = self._particle_interpolation_target(indices)
+        if target_size == 0:
             return
 
         if _is_temporal_flow_field(flow_field):
@@ -1981,14 +2091,13 @@ class ParticlePopulation:
             np.nan_to_num(self.particles.get('burial_depth', np.zeros(n_particles)), nan=0.0),
             0.0,
         )
-        is_inside = np.asarray(self.particles.get('is_inside', np.ones(n_particles, dtype=bool)), dtype=bool)
-        is_alive = np.asarray(self.particles.get('is_alive', np.ones(n_particles, dtype=bool)), dtype=bool)
-        is_released = np.asarray(self.particles.get('is_released', np.ones(n_particles, dtype=bool)), dtype=bool)
-        is_exposed = np.asarray(self.particles.get('is_exposed', np.ones(n_particles, dtype=bool)), dtype=bool)
-        is_suspended = np.asarray(self.particles.get('is_suspended', np.zeros(n_particles, dtype=bool)), dtype=bool)
-        is_deposited = np.asarray(self.particles.get('is_deposited', np.zeros(n_particles, dtype=bool)), dtype=bool)
+        is_inside = np.asarray(self.particles.get('status_domain', np.ones(n_particles, dtype=bool)), dtype=bool)
+        is_alive = np.asarray(self.particles.get('status_alive', np.ones(n_particles, dtype=bool)), dtype=bool)
+        is_released = np.asarray(self.particles.get('status_released', np.ones(n_particles, dtype=bool)), dtype=bool)
+        is_suspended = np.asarray(self.particles.get('status_suspended', np.zeros(n_particles, dtype=bool)), dtype=bool)
+        is_deposited = np.asarray(self.particles.get('status_deposited', np.zeros(n_particles, dtype=bool)), dtype=bool)
         is_buried = np.asarray(
-            self.particles.get('is_buried', burial_depth > 0.0),
+            self.particles.get('status_buried', burial_depth > 0.0),
             dtype=bool,
         )
 
@@ -2022,7 +2131,7 @@ class ParticlePopulation:
         # 4. Decide which bed particles entrain this timestep.
         # ------------------------------------------------------------------
         eligible = is_inside & is_alive & is_released
-        available = eligible & is_exposed & ~is_suspended
+        available = eligible & ~is_buried & ~is_suspended
         entrainment_frequency = self.particles.get('q3d_entrainment_frequency')
         entrained_now, entrainment_probability = self._select_q3d_entrainment(
             available,
@@ -2460,17 +2569,18 @@ class ParticlePopulation:
             dtype=int,
         )
         self.particles['q3d_motion_substeps'] = np.full(n_particles, substeps, dtype=int)
-        self.particles['is_suspended'] = is_suspended
-        self.particles['is_deposited'] = is_deposited
-        self.particles['is_buried'] = is_buried
-        self.particles['is_available_for_entrainment'] = available
+        self.particles['status_suspended'] = is_suspended
+        self.particles['status_deposited'] = is_deposited
+        self.particles['status_buried'] = is_buried
+        self.particles['status_available_for_entrainment'] = available
         self.particles['q3d_entrainment_probability'] = entrainment_probability
-        self.particles['entrained_now'] = entrained_now
-        self.particles['deposited_now'] = deposited_now
+        self.particles['status_entrained_now'] = entrained_now
+        self.particles['status_deposited_now'] = deposited_now
         self.particles['burial_depth'] = burial_depth
         self.particles['z_burial'] = bed_level - burial_depth
 
-        self.particles['is_mobile'] = eligible & is_suspended & ~is_deposited
+        is_mobile = eligible & is_suspended & ~is_deposited
+        self.particles['status_mobile'] = is_mobile
 
     def update_burial_depth(self) -> None:
         """Update the burial depth of particles in the population.
@@ -2502,15 +2612,39 @@ class ParticlePopulation:
         updates status of particles in the population.
         """
         n_particles = len(self.particles['x'])
+        left_domain = self.particles.get('status_left_domain')
+        if left_domain is None or left_domain.shape != (n_particles,):
+            left_domain = np.zeros(n_particles, dtype=bool)
+        else:
+            left_domain = np.asarray(left_domain, dtype=bool)
+        self.particles['status_left_domain'] = left_domain
+        self.particles['status_beached'] = np.zeros(n_particles, dtype=bool)
 
-        # Compute whether particles are picked up (or trapped) based on transport probability
-        # Note: If "reduced_velocity" is chosen, "transport_probability" always equals one.
-        self.particles['is_picked_up'] = np.random.rand(n_particles) < self.particles['transport_probability']
+        if n_particles == 0:
+            for status_name in (
+                'status_alive',
+                'status_buried',
+                'status_domain',
+                'status_released',
+                'status_transported',
+                'status_mobile',
+            ):
+                self.particles[status_name] = np.zeros(0, dtype=bool)
+            return
 
-        # Compute whether particles are inside (or outside) the domain envelope
-        self.particles['is_inside'] = self._outer_envelope.contains_points(
-            np.column_stack((self.particles['x'], self.particles['y']))
-        )
+        transport_probability_method = self.population_config.population_config['transport_probability']
+        if transport_probability_method == 'no_probability':
+            self.particles['status_transported'] = np.ones(n_particles, dtype=bool)
+        else:
+            self.particles['status_transported'] = np.random.rand(n_particles) < self.particles[
+                'transport_probability'
+            ]
+
+        if not self._particle_simplices_match_positions():
+            self._refresh_particle_simplices()
+        self._particle_simplices[left_domain] = -1
+        self._mark_particle_simplices_current()
+        self.particles['status_domain'] = (self._particle_simplices >= 0) & ~left_domain
 
         # New conditional logic based on transport_probability_method
         if transport_probability_method == 'no_probability':
@@ -2533,12 +2667,12 @@ class ParticlePopulation:
         self.particles['status_alive'] = ~left_domain
 
         # Compute whether particles are mobile (or static) - combination of all status flags
-        self.particles['is_mobile'] = (
-            self.particles['is_inside']
-            & self.particles['is_alive']
-            & self.particles['is_exposed']
-            & self.particles['is_released']
-            & self.particles['is_picked_up']
+        self.particles['status_mobile'] = (
+            self.particles['status_domain']
+            & self.particles['status_alive']
+            & ~self.particles['status_buried']
+            & self.particles['status_released']
+            & self.particles['status_transported']
         )
 
     def update_position(self, flow_field: Dict, current_timestep: float) -> None:

@@ -126,6 +126,64 @@ class TestNetCDFWriterStreaming:
         )
         handle.close()
 
+    def test_record_writes_minimal_q3d_fields(self, writer, population):
+        population.particles['z_p'] = np.array([0.2, 0.3, 0.4])
+        population.particles['z_burial'] = np.array([0.9, 0.8, 1.0])
+        population.particles['horizontal_particle_velocity'] = np.array([1.0, 2.0, 3.0])
+        population.particles['q3d_motion_substeps'] = np.array([2, 2, 2])
+        population.particles['status_suspended'] = np.array([True, False, True])
+        population.particles['status_deposited'] = np.array([False, True, False])
+        population.particles['status_available_for_entrainment'] = np.array([False, True, False])
+        population.particles['status_entrained_now'] = np.array([True, False, False])
+        population.particles['status_deposited_now'] = np.array([False, True, False])
+        handle = writer.open_output(
+            'stream.nc', self.N_SLOTS, self.N_PARTICLES,
+            self.N_POPULATIONS, self.N_FLOWFIELDS, [population], ['vel'],
+        )
+
+        writer.record_output(handle, [population], slot_idx=0, current_time=0.0)
+
+        np.testing.assert_allclose(handle['z_p'][0, :], population.particles['z_p'])
+        np.testing.assert_allclose(handle['z_burial'][0, :], population.particles['z_burial'])
+        np.testing.assert_allclose(
+            handle['horizontal_particle_velocity'][0, :],
+            population.particles['horizontal_particle_velocity'],
+        )
+        np.testing.assert_array_equal(
+            handle['q3d_motion_substeps'][0, :],
+            population.particles['q3d_motion_substeps'],
+        )
+        for status_name in (
+            'status_suspended',
+            'status_deposited',
+            'status_available_for_entrainment',
+            'status_entrained_now',
+            'status_deposited_now',
+        ):
+            np.testing.assert_array_equal(
+                handle[status_name][0, :],
+                population.particles[status_name],
+            )
+        assert not any(name.startswith('is_') for name in handle.variables)
+        assert 'diagnostic_water_depth' not in handle.variables
+        handle.close()
+
+    def test_full_q3d_diagnostics_are_opt_in(self, writer, population):
+        population.particles['diagnostic_water_depth'] = np.array([4.0, 5.0, 6.0])
+        handle = writer.open_output(
+            'stream.nc', self.N_SLOTS, self.N_PARTICLES,
+            self.N_POPULATIONS, self.N_FLOWFIELDS, [population], ['vel'],
+            q3d_diagnostics='full',
+        )
+
+        writer.record_output(handle, [population], slot_idx=0, current_time=0.0)
+
+        np.testing.assert_allclose(
+            handle['diagnostic_water_depth'][0, :],
+            population.particles['diagnostic_water_depth'],
+        )
+        handle.close()
+
     def test_unwritten_slots_are_fill_values(self, writer, population):
         """Slots not yet written should contain the declared fill value, not zeros."""
         handle = writer.open_output(

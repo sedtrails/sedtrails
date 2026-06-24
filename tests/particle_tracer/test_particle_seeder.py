@@ -946,6 +946,29 @@ class TestParticleFactory:
             assert 1.0 <= x <= 3.0
             assert 2.0 <= y <= 4.0
 
+    def test_create_particles_preserves_vertical_position_configuration(self):
+        config = PopulationConfig(
+            {
+                'name': 'Vertical Position Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0,0']}},
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {'constant': 1.25},
+                    'vertical_position': {'mode': 'height_above_bed', 'value': 0.4},
+                    'remove_permanently_buried': True,
+                },
+            }
+        )
+
+        particles = ParticleFactory.create_particles(config)
+
+        assert config.remove_permanently_buried is True
+        assert particles[0].burial_depth == pytest.approx(1.25)
+        assert particles[0].vertical_position_mode == 'height_above_bed'
+        assert particles[0].vertical_position_value == pytest.approx(0.4)
+
     def test_random_burial_depth_is_sampled_with_strategy_seed(self):
         """Seeded random strategies should reproduce stochastic burial depths."""
         config = PopulationConfig(
@@ -1525,7 +1548,18 @@ class TestParticlePopulation:
         assert expected_keys.issubset(population.particles)
         assert not any(
             key in population.particles
-            for key in {'is_alive', 'is_exposed', 'is_inside', 'is_mobile', 'is_picked_up', 'is_released'}
+            for key in {
+                'is_alive',
+                'is_exposed',
+                'is_inside',
+                'is_mobile',
+                'is_picked_up',
+                'is_released',
+                'is_suspended',
+                'is_deposited',
+                'is_buried',
+                'is_available_for_entrainment',
+            }
         )
         np.testing.assert_array_equal(population.particles['status_alive'], np.array([True, True, True, True]))
         np.testing.assert_array_equal(population.particles['status_buried'], np.array([False, True, False, False]))

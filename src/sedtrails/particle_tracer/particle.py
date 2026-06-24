@@ -25,7 +25,7 @@ class Particle(ABC):
 
     release_time : int
         The time step at which the particle is released. A non-negative integer.
-    is_mobile : bool
+    status_mobile : bool
         Whether the particle can move in the current simulation step or not. Default is True.
     name : str
         A name for the particle. Optional.
@@ -42,7 +42,7 @@ class Particle(ABC):
     _y: float = field(init=False)  # initial position
     _release_time: str = field(init=False)  # release time of the particle
     _burial_depth: float = field(init=False)  # release time of the particle
-    _is_mobile: bool = field(default=True)  # whether the particle is mobile or not
+    _status_mobile: bool = field(default=True)  # whether the particle is mobile or not
     name: Optional[str] = field(default='')  # name of the particle
     trace: Dict = field(default_factory=dict)  # trace of the particle
 
@@ -188,7 +188,7 @@ class Particle(ABC):
         return self._release_time
 
     @property
-    def is_mobile(self) -> bool:
+    def status_mobile(self) -> bool:
         """
         Return the is mobile value.
 
@@ -197,10 +197,10 @@ class Particle(ABC):
         bool
             The is mobile value.
         """
-        return self._is_mobile
+        return self._status_mobile
 
-    @is_mobile.setter
-    def is_mobile(self, value: bool) -> None:
+    @status_mobile.setter
+    def status_mobile(self, value: bool) -> None:
         """
         Set the is mobile value.
 
@@ -210,11 +210,11 @@ class Particle(ABC):
             Value to assign or validate.
         """
         if not isinstance(value, bool):
-            raise TypeError(f"Expected 'is_mobile' to be a boolean, got {type(value).__name__}")
-        self._is_mobile = value
+            raise TypeError(f"Expected 'status_mobile' to be a boolean, got {type(value).__name__}")
+        self._status_mobile = value
 
-    @is_mobile.getter
-    def is_mobile(self) -> bool:
+    @status_mobile.getter
+    def status_mobile(self) -> bool:
         """
         Return is mobile.
 
@@ -223,7 +223,7 @@ class Particle(ABC):
         bool
             Boolean result of the check.
         """
-        return self._is_mobile
+        return self._status_mobile
 
     @abstractmethod
     def particle_velocity(self) -> float:

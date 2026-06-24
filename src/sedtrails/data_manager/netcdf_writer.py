@@ -42,7 +42,55 @@ _STATUS_DEFAULTS = {
     'status_mobile': 0,
     'status_beached': 0,
     'status_left_domain': 0,
+    'status_suspended': 0,
+    'status_deposited': 0,
+    'status_available_for_entrainment': 0,
+    'status_entrained_now': 0,
+    'status_deposited_now': 0,
 }
+
+_CORE_FLOAT_FIELDS = ('x', 'y', 'z', 'z_p', 'z_burial', 'burial_depth', 'mixing_depth')
+_Q3D_MIN_FLOAT_FIELDS = (
+    'q3d_diagnostic_z_p_first_substep',
+    'centroid_particle_velocity_x',
+    'centroid_particle_velocity_y',
+    'centroid_particle_velocity',
+    'modified_centroid_particle_velocity_x',
+    'modified_centroid_particle_velocity_y',
+    'modified_centroid_particle_velocity',
+    'horizontal_particle_velocity_x',
+    'horizontal_particle_velocity_y',
+    'horizontal_particle_velocity',
+    'vertical_particle_velocity',
+    'q3d_entrainment_probability',
+    'q3d_entrainment_height_above_bed',
+)
+_Q3D_FULL_FLOAT_FIELDS = (
+    'horizontal_diffusion_velocity_x',
+    'horizontal_diffusion_velocity_y',
+    'horizontal_diffusion_velocity',
+    'vertical_advection_velocity',
+    'vertical_diffusion_velocity',
+    'horizontal_diffusion_coefficient',
+    'vertical_diffusion_coefficient',
+    'diagnostic_bed_level',
+    'diagnostic_water_depth',
+    'diagnostic_skin_roughness_height',
+    'diagnostic_max_shear_velocity',
+    'diagnostic_total_roughness_height',
+    'diagnostic_total_transport_centroid_elevation',
+    'diagnostic_q3d_velocity_deficit_coefficient',
+    'diagnostic_q3d_vertical_velocity_gradient',
+    'diagnostic_settling_velocity',
+    'diagnostic_q3d_flow_magnitude',
+    'diagnostic_rouse_number',
+    'turbulent_shields_number',
+    'critical_shields_number',
+)
+_Q3D_INT_FIELDS = (
+    'q3d_vertical_update_scheme_code',
+    'q3d_motion_substeps',
+)
 
 
 class NetCDFWriter:
@@ -163,6 +211,15 @@ class NetCDFWriter:
             return particles[name]
         return default
 
+    @staticmethod
+    def _q3d_float_fields(level: str) -> tuple[str, ...]:
+        normalized = str(level or 'minimal').strip().lower().replace('-', '_')
+        if normalized not in {'minimal', 'full'}:
+            raise ValueError("q3d_diagnostics must be either 'minimal' or 'full'.")
+        if normalized == 'full':
+            return _Q3D_MIN_FLOAT_FIELDS + _Q3D_FULL_FLOAT_FIELDS
+        return _Q3D_MIN_FLOAT_FIELDS
+
     def open_output(
         self,
         filename: str,
@@ -182,6 +239,7 @@ class NetCDFWriter:
         particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
         sync_interval: int | None = DEFAULT_SYNC_INTERVAL,
         reopen_interval: int | None = None,
+        q3d_diagnostics: str = 'minimal',
     ):
         """
         Open a streaming output file with pre-allocated dimensions.
@@ -244,6 +302,7 @@ class NetCDFWriter:
             raise ValueError('compression_level must be between 0 and 9.')
         time_particle_chunks = self._time_particle_chunks(n_slots, N_particles, time_chunk, particle_chunk)
         compression_kwargs = self._compression_kwargs(compression, compression_level, shuffle)
+        q3d_float_fields = self._q3d_float_fields(q3d_diagnostics)
 
         ds = nc4.Dataset(str(output_path), 'w', format='NETCDF4')
 
@@ -267,6 +326,7 @@ class NetCDFWriter:
         ds.written_slots = 0
         ds.sync_interval = 0 if sync_interval is None else int(sync_interval)
         ds.reopen_interval = 0 if reopen_interval is None else int(reopen_interval)
+        ds.q3d_diagnostics = str(q3d_diagnostics)
 
         self._create_static_metadata(
             ds,
@@ -288,12 +348,21 @@ class NetCDFWriter:
             chunksizes=(time_particle_chunks[0],),
             **compression_kwargs,
         )
-        for var_name in ('x', 'y', 'z', 'burial_depth', 'mixing_depth'):
+        for var_name in _CORE_FLOAT_FIELDS + q3d_float_fields:
             ds.createVariable(
                 var_name,
                 coordinate_dtype,
                 ('n_timesteps', 'n_particles'),
                 fill_value=np.nan,
+                chunksizes=time_particle_chunks,
+                **compression_kwargs,
+            )
+        for var_name in _Q3D_INT_FIELDS:
+            ds.createVariable(
+                var_name,
+                'i4',
+                ('n_timesteps', 'n_particles'),
+                fill_value=np.int32(-1),
                 chunksizes=time_particle_chunks,
                 **compression_kwargs,
             )
@@ -326,11 +395,14 @@ class NetCDFWriter:
             num_particles = len(population.particles['x'])
             sl = slice(particle_offset, particle_offset + num_particles)
 
-            h['x'][slot_idx, sl] = np.asarray(particles['x'])
-            h['y'][slot_idx, sl] = np.asarray(particles['y'])
-            h['z'][slot_idx, sl] = cls._particle_field(particles, 'z', 0.0)
-            h['burial_depth'][slot_idx, sl] = np.asarray(particles['burial_depth'])
-            h['mixing_depth'][slot_idx, sl] = cls._particle_field(particles, 'mixing_depth', np.nan)
+            for field_name in _CORE_FLOAT_FIELDS:
+                default = 0.0 if field_name == 'z' else np.nan
+                h[field_name][slot_idx, sl] = cls._particle_field(particles, field_name, default)
+            for field_name in _Q3D_MIN_FLOAT_FIELDS + _Q3D_FULL_FLOAT_FIELDS:
+                if field_name in h.variables:
+                    h[field_name][slot_idx, sl] = cls._particle_field(particles, field_name, np.nan)
+            for field_name in _Q3D_INT_FIELDS:
+                h[field_name][slot_idx, sl] = cls._particle_field(particles, field_name, 0)
             for status_name, default in _STATUS_DEFAULTS.items():
                 h[status_name][slot_idx, sl] = cls._particle_field(particles, status_name, default)
 
@@ -428,6 +500,7 @@ class NetCDFWriter:
         compression_level: int = 1,
         shuffle: bool = True,
         particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
+        q3d_diagnostics: str = 'minimal',
     ) -> Path:
         """Write a compact one-snapshot particle-state NetCDF file."""
         self._validate_filename(filename)
@@ -440,6 +513,7 @@ class NetCDFWriter:
         n_populations = len(populations)
         particle_chunk = max(1, min(int(particle_chunk), max(1, int(n_particles))))
         compression_kwargs = self._compression_kwargs(compression, int(compression_level), shuffle)
+        q3d_float_fields = self._q3d_float_fields(q3d_diagnostics)
 
         if tmp_path.exists():
             tmp_path.unlink()
@@ -457,6 +531,7 @@ class NetCDFWriter:
             ds.sedtrails_file_kind = file_kind
             ds.sedtrails_output_schema = output_schema
             ds.trajectory_layout = layout
+            ds.q3d_diagnostics = str(q3d_diagnostics)
             if reference_date is not None:
                 ds.reference_date = str(reference_date)
             if time_units is not None:
@@ -475,12 +550,21 @@ class NetCDFWriter:
             ds.createVariable('time', 'f8', (), fill_value=np.nan)
             ds['time'][...] = float(current_time)
 
-            for var_name in ('x', 'y', 'z', 'burial_depth', 'mixing_depth'):
+            for var_name in _CORE_FLOAT_FIELDS + q3d_float_fields:
                 ds.createVariable(
                     var_name,
                     coordinate_dtype,
                     ('n_particles',),
                     fill_value=np.nan,
+                    chunksizes=(particle_chunk,),
+                    **compression_kwargs,
+                )
+            for var_name in _Q3D_INT_FIELDS:
+                ds.createVariable(
+                    var_name,
+                    'i4',
+                    ('n_particles',),
+                    fill_value=np.int32(-1),
                     chunksizes=(particle_chunk,),
                     **compression_kwargs,
                 )
@@ -499,11 +583,13 @@ class NetCDFWriter:
                 particles = population.particles
                 n_part = len(particles['x'])
                 sl = slice(particle_offset, particle_offset + n_part)
-                ds['x'][sl] = np.asarray(particles['x'])
-                ds['y'][sl] = np.asarray(particles['y'])
-                ds['z'][sl] = self._particle_field(particles, 'z', 0.0)
-                ds['burial_depth'][sl] = np.asarray(particles['burial_depth'])
-                ds['mixing_depth'][sl] = self._particle_field(particles, 'mixing_depth', np.nan)
+                for field_name in _CORE_FLOAT_FIELDS:
+                    default = 0.0 if field_name == 'z' else np.nan
+                    ds[field_name][sl] = self._particle_field(particles, field_name, default)
+                for field_name in q3d_float_fields:
+                    ds[field_name][sl] = self._particle_field(particles, field_name, np.nan)
+                for field_name in _Q3D_INT_FIELDS:
+                    ds[field_name][sl] = self._particle_field(particles, field_name, 0)
                 for status_name, default in _STATUS_DEFAULTS.items():
                     ds[status_name][sl] = self._particle_field(particles, status_name, default)
                 particle_offset += n_part
@@ -530,6 +616,7 @@ class NetCDFWriter:
         compression_level: int = 1,
         shuffle: bool = True,
         particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
+        q3d_diagnostics: str = 'minimal',
     ) -> Path:
         """
         Write a compact restart checkpoint containing only the current state.
@@ -583,6 +670,7 @@ class NetCDFWriter:
             compression_level=compression_level,
             shuffle=shuffle,
             particle_chunk=particle_chunk,
+            q3d_diagnostics=q3d_diagnostics,
         )
 
     def write_end_positions(
@@ -600,6 +688,7 @@ class NetCDFWriter:
         compression_level: int = 1,
         shuffle: bool = True,
         particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
+        q3d_diagnostics: str = 'minimal',
     ) -> Path:
         """
         Write compact end-position results containing one state per particle.
@@ -653,6 +742,7 @@ class NetCDFWriter:
             compression_level=compression_level,
             shuffle=shuffle,
             particle_chunk=particle_chunk,
+            q3d_diagnostics=q3d_diagnostics,
         )
 
     def close_output(self, nc_handle) -> Path:
