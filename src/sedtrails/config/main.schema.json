@@ -177,6 +177,10 @@
           "default": false,
           "description": "If true, Eulerian flow fields repeat from the first input timestamp after simulation time exceeds the forcing time range. If false, the final available fields are reused."
         },
+        "bed_level_data": {
+          "type": "string",
+          "description": "[BETA] Path to a separate bed-level NetCDF file. Must be structurally identical to the main input file but contain only the bedlevel variable (plus net_xcc, net_ycc, time) at arbitrary time intervals. When set, bedlevel is queried from this file at real simulation time; the Eulerian repeat wrapping applied to other fields does not affect it. Intended for substituting DFM-computed bed levels with measured survey data or a cumulatively tiled morphodynamic prediction."
+        },
         "comp_dir": {
           "type": "string",
           "description": "path to directory where complementary validation data is stored"

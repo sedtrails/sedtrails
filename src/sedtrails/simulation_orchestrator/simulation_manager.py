@@ -28,6 +28,90 @@ from sedtrails.transport_converter.physics_converter import PhysicsConverter
 from sedtrails.simulation_orchestrator import parallel_worker as _pw
 
 
+class _BedLevelOverride:
+    """[BETA] Loads a separate bed-level file and provides temporally interpolated
+    bed levels using real simulation time, bypassing the Eulerian repeat wrapping
+    applied to the main hydrodynamic input.
+
+    Expected file structure - must be structurally identical to the main DFM
+    input file, containing at minimum:
+      dimension  nNodes               - spatial grid nodes (same grid as main file)
+      variable   time     (nTime,)    - seconds since <reference_date>
+      variable   bedlevel (nTime, nNodes) - bed level [m NAP]
+
+    Additional variables in the file (e.g. bedlevel_change_rate) are ignored.
+    Time intervals can differ freely from the main file; linear interpolation
+    is applied between monthly (or any) steps.
+    """
+
+    def __init__(self, nc_path: str, logger=None):
+        import netCDF4 as _nc4
+
+        if logger:
+            logger.warning(
+                '[BETA] inputs.bed_level_data is set: %s  '
+                'Bed levels will be read from this file at real simulation time '
+                '(no Eulerian repeat wrapping). This is a beta feature.',
+                nc_path,
+            )
+
+        with _nc4.Dataset(nc_path) as ds:
+            t_var = ds.variables['time']
+            self._times    = np.asarray(t_var[:], dtype=float)
+            self._bedlevel = np.asarray(ds.variables['bedlevel'][:], dtype=float)
+
+        self._t_min = self._times[0]
+        self._t_max = self._times[-1]
+
+        bed_start        = self._bedlevel[0, :]
+        bed_min          = np.nanmin(self._bedlevel, axis=0)
+        self.max_erosion = np.maximum(bed_start - bed_min, 0.0)  # (nNodes,)
+
+        if logger:
+            logger.info(
+                '[BETA] Bed-level override: %d nodes, %d time steps, '
+                't=[%.0f, %.0f] s, max_erosion p95=%.3f m',
+                self._bedlevel.shape[1], len(self._times),
+                self._t_min, self._t_max,
+                float(np.nanpercentile(self.max_erosion, 95)),
+            )
+
+    def _bounds_indices(self, time_seconds: float) -> tuple[int, int, float]:
+        """Return bracketing time indices and interpolation weight (time clamped to file range)."""
+        t  = float(np.clip(time_seconds, self._t_min, self._t_max))
+        i1 = int(np.searchsorted(self._times, t, side='right'))
+        i1 = min(max(i1, 1), len(self._times) - 1)
+        i0 = i1 - 1
+        t0, t1 = self._times[i0], self._times[i1]
+        w = 0.0 if t1 == t0 else (t - t0) / (t1 - t0)
+        return i0, i1, w
+
+    def get_bed_level_bounds(self, time_seconds: float) -> dict:
+        """Return lower/upper bed-level slices with interpolation weight.
+
+        Mirrors ``FieldDataRetriever.get_scalar_field_bounds`` so the result can
+        be passed anywhere a temporal bed-level field is accepted. Returning the
+        temporal form is required: the static-array path in
+        ``update_bed_level_change_after_movement`` only re-samples particles that
+        moved, which would miss bed change under immobile (buried) particles.
+        """
+        i0, i1, w = self._bounds_indices(time_seconds)
+        return {
+            'lower': self._bedlevel[i0],
+            'upper': self._bedlevel[i1],
+            'weight': w,
+            'lower_index': i0,
+            'upper_index': i1,
+        }
+
+    def get_bed_level(self, time_seconds: float) -> np.ndarray:
+        """Linearly interpolate bed level to *time_seconds* (clamped to file range)."""
+        i0, i1, w = self._bounds_indices(time_seconds)
+        if w <= 0.0:
+            return self._bedlevel[i0].copy()
+        return (1.0 - w) * self._bedlevel[i0] + w * self._bedlevel[i1]
+
+
 class Simulation:
     """Encapsulate the particle simulation process.
 
@@ -749,7 +833,7 @@ class Simulation:
 
         return config
 
-    def _remove_permanently_buried_populations(self, populations, runtime_plans) -> None:
+    def _remove_permanently_buried_populations(self, populations, runtime_plans, bed_level_override=None) -> None:
         """Remove particles whose burial depth can never be exposed.
 
         Parameters
@@ -758,6 +842,10 @@ class Simulation:
             Seeded particle populations.
         runtime_plans : sequence
             Runtime plans paired with the seeded populations.
+        bed_level_override : _BedLevelOverride, optional
+            [BETA] When set, its max erosion (from the separate bed-level file)
+            replaces the main input's max erosion; max BSS still comes from the
+            main hydrodynamic input.
 
         Raises
         ------
@@ -781,6 +869,8 @@ class Simulation:
 
         with self._profile_section('get_max_exposure_depth'):
             max_erosion, max_bss = plugin.get_max_exposure_depth_fields()
+        if bed_level_override is not None:
+            max_erosion = bed_level_override.max_erosion
 
         from sedtrails.transport_converter import physics_lib
 
@@ -1058,6 +1148,12 @@ class Simulation:
                 input_time_bounds[1],
             )
 
+        # [BETA] Separate bed-level file - read at real simulation time, no repeat wrapping.
+        bed_level_override = None
+        _bed_level_data_path = self._controller.get('inputs.bed_level_data', None)
+        if _bed_level_data_path:
+            bed_level_override = _BedLevelOverride(_bed_level_data_path, self.logger)
+
         # Load only x/y field coordinates needed for the population seeder.
         with self._profile_section('get_seeding_field_data'):
             seeding_field_data = self.format_converter.get_seeding_field_data()
@@ -1068,7 +1164,7 @@ class Simulation:
         runtime_plans = build_population_runtime_plans(populations_config, populations, self._get_physics_config())
         flow_field_names = unique_flow_field_names(runtime_plans)
 
-        self._remove_permanently_buried_populations(populations, runtime_plans)
+        self._remove_permanently_buried_populations(populations, runtime_plans, bed_level_override)
 
         # Set initial values
         sedtrails_data = None
@@ -1253,7 +1349,10 @@ class Simulation:
                             field_time_seconds, 'mixing_layer_thickness'
                         )
                     with self._profile_section('get_scalar_field_bounds.bed_level'):
-                        bed_level = retriever.get_scalar_field_bounds(field_time_seconds, 'bed_level')
+                        if bed_level_override is not None:
+                            bed_level = bed_level_override.get_bed_level_bounds(current_time_seconds)
+                        else:
+                            bed_level = retriever.get_scalar_field_bounds(field_time_seconds, 'bed_level')
 
                     for flow_field_name in tracer_plan.flow_field_names:
                         if tracer_plan.method_name == 'vanwesten':
@@ -1304,7 +1403,10 @@ class Simulation:
                         particle_data = self._dashboard_particle_data(first_population)
                         dashboard_retriever = plan_retrievers[runtime_plans[0].population_index]
                         with self._profile_section('get_scalar_field.dashboard_bed_level'):
-                            bathymetry = dashboard_retriever.get_scalar_field(field_time_seconds, 'bed_level')['magnitude']
+                            if bed_level_override is not None:
+                                bathymetry = bed_level_override.get_bed_level(current_time_seconds)
+                            else:
+                                bathymetry = dashboard_retriever.get_scalar_field(field_time_seconds, 'bed_level')['magnitude']
                         mesh_geometry = sedtrails_data.mesh_geometry() if hasattr(sedtrails_data, 'mesh_geometry') else None
 
                         self.dashboard.update(
