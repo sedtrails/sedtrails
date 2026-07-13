@@ -111,6 +111,12 @@
 				  "default": "model-native",
 				  "description": "Select which transport fields are used for particle transport. 'model-native' uses transport velocity fields from Delft3D-FM; 'SoulsbyvanRijn1997' computes Soulsby-vanRijn transports."
 				},
+                "shear_velocity_source": {
+                  "type": "string",
+                  "enum": ["max", "mean"],
+                  "default": "mean",
+                  "description": "Select whether MacDonald formulas use the max or mean bed shear stress/shear velocity fields for Rouse number, Shields-dependent transport, and Q3D turbulence."
+                },
 				"max_suspended_velocity_factor": {
 				  "type": ["number", "null"],
 				  "default": 1.0,
@@ -121,6 +127,12 @@
 				  "enum": ["shields_threshold", "non_zero_particle_velocity", "entrainment_frequency"],
 				  "default": "shields_threshold",
 				  "description": "Rule used in Q3D to decide which available bed particles enter suspension. shields_threshold uses turbulent Shields > critical Shields; non_zero_particle_velocity sends every available particle into the Q3D motion calculation and lets the computed particle velocities decide whether it moves; entrainment_frequency uses the q3d_entrainment_frequency field computed by MacDonald."
+				},
+				"q3d_entrainment_probability_law": {
+				  "type": "string",
+				  "enum": ["poisson", "linear"],
+				  "default": "poisson",
+				  "description": "Probability law used only when q3d_entrainment_mode is entrainment_frequency. poisson uses P = 1 - exp(-f_e dt); linear uses the MacDonald Eq. 68 small-timestep approximation P = min(f_e dt, 1)."
 				},
 				"q3d_vertical_update_scheme": {
 				  "type": "string",
@@ -134,11 +146,16 @@
 				  "default": 1,
 				  "description": "Number of Q3D horizontal/vertical particle motion substeps per outer particle timestep. A value of 1 gives the original single-step update."
 				},
+				"q3d_save_first_substep_diagnostics": {
+				  "type": "boolean",
+				  "default": false,
+				  "description": "If true, store Q3D hydraulic and diffusion fields sampled at the first motion substep."
+				},
 				"q3d_diagnostics": {
 				  "type": "string",
 				  "enum": ["minimal", "full"],
 				  "default": "minimal",
-				  "description": "Q3D particle output level. minimal stores core Q3D motion/status fields and exported centroid velocity; full also stores intermediate diffusion and hydraulic diagnostic arrays."
+				  "description": "Legacy Q3D particle output level. Prefer q3d_save_first_substep_diagnostics; full is equivalent to true and minimal is equivalent to false."
 				},
 				"q3d_export_grid_diagnostics": {
 				  "type": "boolean",

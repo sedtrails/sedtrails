@@ -155,7 +155,7 @@ def compute_bed_load_velocity(
 
     Notes
     -----
-    U_bed = 10 * u*_mean * (1 - 0.7 * sqrt(θ_cr / θ_max))
+    
 
     Only computed where θ_max > θ_cr (critical conditions).
 

@@ -1,22 +1,3 @@
-# check the install 
-# run in the VSC command line 
-# 1. To activate environment:
-# cd C:\Users\dagalaki\Documents\GitHub\environments\all_env\.venv\Scripts
-# .\activate.bat 
-# 2. To install the correct sedtrails repo
-#  sedtrails --version
-#  python -m ensurepip -upgrade
-
-# if I want to change to a different version: go to the sedtrails folder:
-# cd c:\Users\dagalaki\GitHub\sedtrails\dev\
-# OR 
-# cd /d c:\Users\dagalaki\Documents\GitHub\sedtrails\....
-# python -m pip install -e .
-
-
-
-
-
 import logging
 import os
 import sys
@@ -38,7 +19,6 @@ from sedtrails.particle_tracer.timer import Duration, Time, Timer
 from sedtrails.pathway_visualizer import SimulationDashboard
 from sedtrails.simulation_orchestrator.global_logger import log_simulation_state, setup_logging
 from sedtrails.simulation_orchestrator.runtime_plan import (
-    add_plan_timestep_physics,
     build_plan_sedtrails_data,
     build_population_runtime_plans,
     unique_flow_field_names,
@@ -1221,22 +1201,7 @@ class Simulation:
             n_output_slots,
             store_tracks,
         )
-        physics_config = getattr(self.physics_converter, 'config', None)
-        q3d_save_first_substep_diagnostics = getattr(
-            physics_config,
-            'q3d_save_first_substep_diagnostics',
-            None,
-        )
-        q3d_diagnostics_legacy = getattr(physics_config, 'q3d_diagnostics', 'minimal')
-        legacy_requests_first_substep_diagnostics = (
-            str(q3d_diagnostics_legacy or 'minimal').strip().lower().replace('-', '_') == 'full'
-        )
-        q3d_save_first_substep_diagnostics = (
-            legacy_requests_first_substep_diagnostics
-            if q3d_save_first_substep_diagnostics is None
-            else bool(q3d_save_first_substep_diagnostics) or legacy_requests_first_substep_diagnostics
-        )
-        q3d_diagnostics = 'full' if q3d_save_first_substep_diagnostics else 'minimal'
+        q3d_diagnostics = getattr(getattr(self.physics_converter, 'config', None), 'q3d_diagnostics', 'minimal')
         netcdf_options['q3d_diagnostics'] = q3d_diagnostics
         checkpoint_options.setdefault('writer_kwargs', {})['q3d_diagnostics'] = q3d_diagnostics
 
@@ -1374,25 +1339,6 @@ class Simulation:
                             f'at simulation time {timer.current}.'
                         )
 
-                plan_retrievers = {
-                    runtime_plan.population_index: (
-                        FieldDataRetriever(
-                            add_plan_timestep_physics(
-                                plan_retrievers[runtime_plan.population_index].sedtrails_data,
-                                runtime_plan.tracer,
-                                current_timestep=timer.current_timestep,
-                            )
-                        )
-                        if (
-                            runtime_plan.tracer.method_name == 'macdonald'
-                            and str(
-                                getattr(runtime_plan.tracer.converter.config, 'computationType', '2D')
-                            ).upper() == 'Q3D'
-                        )
-                        else plan_retrievers[runtime_plan.population_index]
-                    )
-                    for runtime_plan in runtime_plans
-                }
                 # Main loop
                 dashboard_flow_field = None
                 plot_interval_seconds = None
@@ -1421,7 +1367,6 @@ class Simulation:
                             transport_prob = 1.0
 
                         with self._profile_section('update_information'):
-                            # saves the previous bed level, current bed level, mixing depth and transport probability per particle
                             population.update_information(
                                 current_time=timer.current,
                                 mixing_depth=mixing_depth,
@@ -1436,10 +1381,9 @@ class Simulation:
                         with self._profile_section('update_status'):
                             population.update_status()
 
-                        physics_config = tracer_plan.converter.config
                         is_macdonald_q3d = (
                             tracer_plan.method_name == 'macdonald'
-                            and str(getattr(physics_config, 'computationType', '2D')).upper() == 'Q3D'
+                            and str(getattr(self.physics_converter.config, 'computationType', '2D')).upper() == 'Q3D'
                         )
 
                         with self._profile_section('get_flow_field_bounds.update_position'):
@@ -1453,49 +1397,81 @@ class Simulation:
                                 dashboard_flow_field = retriever.get_flow_field(field_time_seconds, flow_field_name)
 
                         if is_macdonald_q3d:
-                            def scalar_field(name):
-                                return retriever.get_scalar_field_bounds(field_time_seconds, name)
-
-                            def config_value(name, default):
-                                return getattr(physics_config, name, default)
-
-                            q3d_entrainment_mode = config_value('q3d_entrainment_mode', 'shields_threshold')
-                            q3d_entrainment_mode_key = str(q3d_entrainment_mode).lower().replace('-', '_')
-                            q3d_entrainment_frequency = (
-                                scalar_field('q3d_entrainment_frequency')
-                                if q3d_entrainment_mode_key in {'entrainment_frequency', 'frequency'}
-                                else None
+                            q3d_entrainment_mode = getattr(
+                                physics_config, 'q3d_entrainment_mode', 'shields_threshold'
                             )
-
-                            with self._profile_section('update_q3d_particle_position'):
-                                population.update_q3d_particle_position(
+                            q3d_entrainment_mode_key = str(q3d_entrainment_mode).lower().replace('-', '_')
+                            with self._profile_section('update_q3d_particle_motion'):
+                                population.update_q3d_particle_motion(
                                     current_timestep=timer.current_timestep,
                                     centroid_flow_field=flow_field,
-                                    hydrodynamic_flow_field=retriever.get_flow_field_bounds(field_time_seconds,'depth_avg_flow_velocity'),
-                                    bed_level_field=bed_level,
-                                    max_shear_velocity=scalar_field('max_shear_velocity'),
-                                    selected_shear_velocity=scalar_field('selected_shear_velocity'),
-                                    profile_roughness_height=scalar_field('profile_roughness_height'),
-                                    total_transport_centroid_elevation=scalar_field('total_transport_centroid_elevation'),
-                                    q3d_velocity_deficit_coefficient=scalar_field('q3d_velocity_deficit_coefficient'),
-                                    q3d_vertical_velocity_gradient=scalar_field('q3d_vertical_velocity_gradient'),
-                                    turbulent_shields_number=scalar_field('turbulent_shields_number'),
-                                    critical_shields_number=tracer_plan.converter.grain_properties.get('critical_shields'),
-                                    settling_velocity=tracer_plan.converter.grain_properties.get('settling_velocity'),
-                                    water_depth=scalar_field('water_depth'),
-                                    skin_roughness_height=scalar_field('skin_roughness_height'),
-                                    entrainment_height_above_bed=scalar_field('q3d_entrainment_height_above_bed'),
-                                    rouse_number=scalar_field('rouse_number'),
-                                    K_Et=config_value('q3d_horizontal_diffusion_factor', 0.15),
-                                    q3d_entrainment_mode=q3d_entrainment_mode,
-                                    q3d_entrainment_frequency=q3d_entrainment_frequency,
-                                    q3d_entrainment_probability_law=config_value(
-                                        'q3d_entrainment_probability_law',
-                                        'poisson',
+                                    hydrodynamic_flow_field=retriever.get_flow_field_bounds(
+                                        field_time_seconds,
+                                        'depth_avg_flow_velocity',
                                     ),
-                                    q3d_vertical_update_scheme=config_value('q3d_vertical_update_scheme', 'geometric'),
-                                    q3d_motion_substeps=config_value('q3d_motion_substeps', 1),
-                                    q3d_save_first_substep_diagnostics=q3d_save_first_substep_diagnostics,
+                                    bed_level_field=bed_level,
+                                    max_shear_velocity=retriever.get_scalar_field_bounds(
+                                        field_time_seconds,
+                                        'selected_shear_velocity',
+                                    ),
+                                    total_roughness_height=retriever.get_scalar_field_bounds(
+                                        field_time_seconds,
+                                        'total_roughness_height',
+                                    ),
+                                    total_transport_centroid_elevation=retriever.get_scalar_field_bounds(
+                                        field_time_seconds,
+                                        'total_transport_centroid_elevation',
+                                    ),
+                                    q3d_velocity_deficit_coefficient=retriever.get_scalar_field_bounds(
+                                        field_time_seconds,
+                                        'q3d_velocity_deficit_coefficient',
+                                    ),
+                                    q3d_vertical_velocity_gradient=retriever.get_scalar_field_bounds(
+                                        field_time_seconds,
+                                        'q3d_vertical_velocity_gradient',
+                                    ),
+                                    turbulent_shields_number=retriever.get_scalar_field_bounds(
+                                        field_time_seconds,
+                                        'turbulent_shields_number',
+                                    ),
+                                    critical_shields_number=tracer_plan.converter.grain_properties.get(
+                                        'critical_shields'
+                                    ),
+                                    settling_velocity=tracer_plan.converter.grain_properties.get('settling_velocity'),
+                                    water_depth=retriever.get_scalar_field_bounds(
+                                        field_time_seconds,
+                                        'water_depth',
+                                    ),
+                                    skin_roughness_height=retriever.get_scalar_field_bounds(
+                                        field_time_seconds,
+                                        'skin_roughness_height',
+                                    ),
+                                    entrainment_height_above_bed=retriever.get_scalar_field_bounds(
+                                        field_time_seconds,
+                                        'q3d_entrainment_height_above_bed',
+                                    ),
+                                    rouse_number=retriever.get_scalar_field_bounds(
+                                        field_time_seconds,
+                                        'rouse_number',
+                                    ),
+                                    K_Et=getattr(
+                                        physics_config, 'q3d_horizontal_diffusion_factor', 0.15
+                                    ),
+                                    q3d_entrainment_mode=q3d_entrainment_mode,
+                                    q3d_entrainment_frequency=(
+                                        retriever.get_scalar_field_bounds(
+                                            field_time_seconds,
+                                            'q3d_entrainment_frequency',
+                                        )
+                                        if q3d_entrainment_mode_key in {'entrainment_frequency', 'frequency'}
+                                        else None
+                                    ),
+                                    q3d_vertical_update_scheme=getattr(
+                                        physics_config, 'q3d_vertical_update_scheme', 'geometric'
+                                    ),
+                                    q3d_motion_substeps=getattr(
+                                        physics_config, 'q3d_motion_substeps', 1
+                                    ),
                                     q3d_diagnostics=q3d_diagnostics,
                                 )
                         else:
@@ -1641,4 +1617,3 @@ class Simulation:
 #     sim.run()
 
 #     # NOTE: This will failed on the output saving. But that's success
-

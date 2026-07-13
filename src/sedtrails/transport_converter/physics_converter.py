@@ -242,14 +242,14 @@ class PhysicsConverter:
 
     def convert_physics(self, sedtrails_data, transport_probability_method: str = None) -> None:
         """
-        Converts and adds physics calculations to existing SedtrailsData object using the tracer method.
+        Converts and adds base physics calculations to an existing SedtrailsData object.
 
         Parameters
         ----------
         sedtrails_data : SedtrailsData
             Existing SedtrailsData object to be enhanced with physics calculations.
         transport_probability_method : str, optional
-            Method to use for transport probability effects
+            Method to use for transport probability effects.
         """
 
         if self._physics_plugin is None:
@@ -257,5 +257,16 @@ class PhysicsConverter:
         else:
             plugin = self._physics_plugin
 
-        # Use empty dict as default if no config provided
         plugin.add_physics(sedtrails_data, self.grain_properties, transport_probability_method or 'no_probability')
+
+    def convert_timestep_physics(self, sedtrails_data, current_timestep: float) -> None:
+        """Add timestep-dependent physics fields when the active plugin provides them."""
+
+        if self._physics_plugin is None:
+            plugin = self.physics_plugin
+        else:
+            plugin = self._physics_plugin
+
+        timestep_method = getattr(plugin, 'add_timestep_physics', None)
+        if timestep_method is not None:
+            timestep_method(sedtrails_data, self.grain_properties, current_timestep)

@@ -13,7 +13,7 @@ from sedtrails.transport_converter.physics_converter import PhysicsConfig, Physi
 
 
 DEFAULT_PASSIVE_TRACER_FLOW_FIELDS = ('depth_avg_flow_velocity',)
-SUPPORTED_TRACER_METHODS = frozenset({'passive_tracer', 'soulsby', 'vanwesten'})
+SUPPORTED_TRACER_METHODS = frozenset({'macdonald', 'passive_tracer', 'soulsby', 'vanwesten'})
 DEFAULT_TRANSPORT_PROBABILITY_METHOD = 'no_probability'
 
 
@@ -98,19 +98,7 @@ def unique_flow_field_names(runtime_plans: Sequence[PopulationRuntimePlan]) -> l
 
 def build_plan_sedtrails_data(sedtrails_data: Any, tracer_plan: TracerRuntimePlan) -> Any:
     """
-    Run plan physics and return a clone containing only plan-required physics fields.
-
-    Parameters
-    ----------
-    sedtrails_data : Any
-        SedTRAILS data object to process.
-    tracer_plan : TracerRuntimePlan
-        Runtime plan for the tracer population.
-
-    Returns
-    -------
-    Any
-        Requested value.
+    Run base plan physics and return a clone containing only plan-required physics fields.
     """
 
     working_data = _shallow_sedtrails_data_clone(sedtrails_data)
@@ -119,12 +107,33 @@ def build_plan_sedtrails_data(sedtrails_data: Any, tracer_plan: TracerRuntimePla
         transport_probability_method=tracer_plan.transport_probability_method,
     )
 
+    return _copy_required_plan_fields(sedtrails_data, working_data, tracer_plan)
+
+
+def add_plan_timestep_physics(
+    sedtrails_data: Any,
+    tracer_plan: TracerRuntimePlan,
+    current_timestep: float,
+) -> Any:
+    """
+    Add timestep-dependent plan physics and return a clone with required fields preserved.
+    """
+
+    working_data = _shallow_sedtrails_data_clone(sedtrails_data)
+    tracer_plan.converter.convert_timestep_physics(
+        sedtrails_data=working_data,
+        current_timestep=current_timestep,
+    )
+
+    return _copy_required_plan_fields(sedtrails_data, working_data, tracer_plan)
+
+
+def _copy_required_plan_fields(sedtrails_data: Any, working_data: Any, tracer_plan: TracerRuntimePlan) -> Any:
     plan_data = _shallow_sedtrails_data_clone(sedtrails_data)
     for field_name in tracer_plan.required_physics_fields:
         if working_data.has_physics_field(field_name):
             plan_data.add_physics_field(field_name, _copy_physics_value(getattr(working_data, field_name)))
     return plan_data
-
 
 def _build_population_runtime_plan(
     population_index: int,
@@ -169,7 +178,7 @@ def _build_population_runtime_plan(
             method_config=method_config,
             flow_field_names=flow_field_names,
             transport_probability_method=transport_probability_method,
-            required_physics_fields=required_physics_fields(method_name, flow_field_names),
+            required_physics_fields=required_physics_fields(method_name, flow_field_names, method_config),
             converter=converter,
         ),
     )
@@ -216,7 +225,11 @@ def build_physics_config(
     return PhysicsConfig.from_dict(config=base_config, tracer_config={method_name: dict(method_config)})
 
 
-def required_physics_fields(method_name: str, flow_field_names: Sequence[str]) -> tuple[str, ...]:
+def required_physics_fields(
+    method_name: str,
+    flow_field_names: Sequence[str],
+    method_config: Mapping[str, Any] | None = None,
+) -> tuple[str, ...]:
     """
     Return physics fields that must be preserved for a method plan.
 
@@ -247,6 +260,35 @@ def required_physics_fields(method_name: str, flow_field_names: Sequence[str]) -
     if method_name == 'soulsby':
         return tuple(_unique_preserving_order((*flow_field_names, 'mixing_layer_thickness', 'soulsby_a', 'soulsby_b')))
 
+    if method_name == 'macdonald':
+        method_config = method_config or {}
+        computation_type = str(method_config.get('computationType', '2D')).upper()
+        fields = (
+            *flow_field_names,
+            'mixing_layer_thickness',
+            'particle_advection_velocity',
+            'max_shear_velocity',
+            'mean_shear_velocity',
+            'selected_shear_velocity',
+            'selected_bed_shear_stress',
+            'rouse_number',
+            'skin_roughness_height',
+            'profile_roughness_height',
+            'total_transport_centroid_elevation',
+            'effective_chezy_coefficient',
+            'chezy_current_shear_velocity',
+            'chezy_equivalent_roughness_height',
+        )
+        if computation_type == 'Q3D':
+            fields = (
+                *fields,
+                'q3d_velocity_deficit_coefficient',
+                'q3d_vertical_velocity_gradient',
+                'turbulent_shields_number',
+                'q3d_entrainment_frequency',
+                'q3d_entrainment_height_above_bed',
+            )
+        return tuple(_unique_preserving_order(fields))
     if method_name == 'passive_tracer':
         return tuple(_unique_preserving_order(flow_field_names))
 
@@ -295,6 +337,8 @@ def _unique_preserving_order(values: Sequence[str] | Any) -> list[str]:
 def _shallow_sedtrails_data_clone(sedtrails_data: Any) -> Any:
     cloned_data = copy.copy(sedtrails_data)
     cloned_data._physics_fields = {}
+    for field_name, value in getattr(sedtrails_data, '_physics_fields', {}).items():
+        cloned_data.add_physics_field(field_name, _copy_physics_value(value))
     return cloned_data
 
 
