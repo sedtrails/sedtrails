@@ -2649,7 +2649,6 @@ class ParticlePopulation:
             z_p_after_vertical_advection = self._q3d_height_after_vertical_update(
                 vertical_update_scheme,
                 z_p_old=z_p_current_active,
-                z_old=z_current_active,
                 bed_level_old=bed_level_current_active,
                 bed_level_new=bed_level_new_active,
                 water_depth_new=water_depth_new_active,
