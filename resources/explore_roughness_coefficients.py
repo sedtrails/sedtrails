@@ -1,7 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
-from sedtrails.transport_converter.physics_lib import *
+from sedtrails.transport_converter.physics_lib import (
+    calculate_apparent_bed_roughness_vanrijn2007,
+    calculate_current_related_bed_roughness_vanrijn2007,
+    calculate_equilibrium_bedform_height,
+    calculate_skin_roughness,
+    compute_grain_properties,
+)
 
 def make_parameter_space_plots_uc_uw(
     compute_grain_properties,
@@ -300,7 +306,7 @@ def make_parameter_space_plots_uc_uw(
 
     # overall title (optional)
     fig.suptitle(
-        rf"Parameter space roughness comparison (global color scale), $\phi={phi_deg:.0f}^\circ$",
+        r"Parameter space roughness comparison (global color scale), $\phi={:.0f}^\circ$".format(phi_deg),
         fontsize=12,
     )
 

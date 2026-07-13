@@ -129,7 +129,7 @@ class TestNetCDFWriterStreaming:
     def test_record_writes_minimal_q3d_fields(self, writer, population):
         population.particles['z_p'] = np.array([0.2, 0.3, 0.4])
         population.particles['z_burial'] = np.array([0.9, 0.8, 1.0])
-        population.particles['horizontal_particle_velocity'] = np.array([1.0, 2.0, 3.0])
+        population.particles['first_substep_horizontal_particle_velocity'] = np.array([1.0, 2.0, 3.0])
         population.particles['q3d_motion_substeps'] = np.array([2, 2, 2])
         population.particles['status_suspended'] = np.array([True, False, True])
         population.particles['status_deposited'] = np.array([False, True, False])
@@ -146,8 +146,8 @@ class TestNetCDFWriterStreaming:
         np.testing.assert_allclose(handle['z_p'][0, :], population.particles['z_p'])
         np.testing.assert_allclose(handle['z_burial'][0, :], population.particles['z_burial'])
         np.testing.assert_allclose(
-            handle['horizontal_particle_velocity'][0, :],
-            population.particles['horizontal_particle_velocity'],
+            handle['first_substep_horizontal_particle_velocity'][0, :],
+            population.particles['first_substep_horizontal_particle_velocity'],
         )
         np.testing.assert_array_equal(
             handle['q3d_motion_substeps'][0, :],
@@ -165,11 +165,11 @@ class TestNetCDFWriterStreaming:
                 population.particles[status_name],
             )
         assert not any(name.startswith('is_') for name in handle.variables)
-        assert 'diagnostic_water_depth' not in handle.variables
+        assert 'first_substep_water_depth' not in handle.variables
         handle.close()
 
     def test_full_q3d_diagnostics_are_opt_in(self, writer, population):
-        population.particles['diagnostic_water_depth'] = np.array([4.0, 5.0, 6.0])
+        population.particles['first_substep_water_depth'] = np.array([4.0, 5.0, 6.0])
         handle = writer.open_output(
             'stream.nc', self.N_SLOTS, self.N_PARTICLES,
             self.N_POPULATIONS, self.N_FLOWFIELDS, [population], ['vel'],
@@ -179,8 +179,8 @@ class TestNetCDFWriterStreaming:
         writer.record_output(handle, [population], slot_idx=0, current_time=0.0)
 
         np.testing.assert_allclose(
-            handle['diagnostic_water_depth'][0, :],
-            population.particles['diagnostic_water_depth'],
+            handle['first_substep_water_depth'][0, :],
+            population.particles['first_substep_water_depth'],
         )
         handle.close()
 

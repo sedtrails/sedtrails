@@ -279,4 +279,4 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         sedtrails_data.add_physics_field('suspended_velocity_over_da_velocity', Rs) # this is for debugging purposes
         sedtrails_data.add_physics_field('max_shear_velocity', max_shear_velocity) # this is for debugging purposes
         sedtrails_data.add_physics_field('mean_shear_velocity', mean_shear_velocity) # this is for debugging purposes
-        sedtrails_data.add_physics_field('particle_velocity_over_da_velocity', grain_velocity_magnitude/flow_velocity_magnitude) # this is for debugging purposes
+        sedtrails_data.add_physics_field('particle_velocity_over_da_velocity', PhysicsPlugin.safe_divide(grain_velocity_magnitude, flow_velocity_magnitude, fill=0.0)) # this is for debugging purposes

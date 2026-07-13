@@ -71,13 +71,6 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         max_shear_velocity = physics_lib.compute_shear_velocity(max_bed_shear_stress, self.config.water_density)
 
         # Compute Shields number
-        mean_shields_number = physics_lib.compute_shields(
-            mean_bed_shear_stress,
-            self.config.gravity,
-            self.config.particle_density,
-            self.config.water_density,
-            self.config.grain_diameter,
-        )
         max_shields_number = physics_lib.compute_shields(
             max_bed_shear_stress,
             self.config.gravity,
@@ -334,7 +327,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         computation_type = str(getattr(self.config, 'computationType', '2D')).upper()
         if computation_type != 'Q3D':
             return
-        setattr(self.config, 'current_timestep', float(current_timestep))
+        self.config.current_timestep = float(current_timestep)
         self._add_q3d_timestep_physics(sedtrails_data, grain_properties)
 
     def _add_q3d_timestep_physics(self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float]) -> None:
@@ -362,11 +355,9 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         flow_velocity_x = sedtrails_data.depth_avg_flow_velocity['x']
         flow_velocity_y = sedtrails_data.depth_avg_flow_velocity['y']
         flow_velocity_magnitude = sedtrails_data.depth_avg_flow_velocity['magnitude']
-        selected_shear_velocity = sedtrails_data.selected_shear_velocity
         max_shear_velocity = sedtrails_data.max_shear_velocity
         z_c = sedtrails_data.total_transport_centroid_elevation
         centroid_particle_velocity = sedtrails_data.centroid_particle_velocity['magnitude']
-        selected_bed_shear_stress = getattr(sedtrails_data, 'selected_bed_shear_stress', sedtrails_data.max_bed_shear_stress)
         max_bed_shear_stress = sedtrails_data.max_bed_shear_stress
         s = physics_lib.calculate_relative_density_ratio(self.config.particle_density, self.config.water_density)
 
@@ -667,8 +658,10 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             Components of divU (for diagnostics)
         """
 
-        x = np.asarray(x); y = np.asarray(y)
-        u = np.asarray(u); v = np.asarray(v)
+        x = np.asarray(x)
+        y = np.asarray(y)
+        u = np.asarray(u)
+        v = np.asarray(v)
 
         N = x.size
         divU = np.full(N, np.nan)

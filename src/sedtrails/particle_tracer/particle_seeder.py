@@ -1383,7 +1383,10 @@ class ParticlePopulation:
         if not arrays_to_interpolate:
             return
 
-        interpolated_values = self._field_interpolator_multi(tuple(arrays_to_interpolate), x_points, y_points)
+        if indices is None:
+            interpolated_values = self._interpolate_particle_fields(tuple(arrays_to_interpolate))
+        else:
+            interpolated_values = self._field_interpolator_multi(tuple(arrays_to_interpolate), x_points, y_points)
         value_index = 0
         for job in interpolation_jobs:
             kind = job[0]
@@ -2198,8 +2201,6 @@ class ParticlePopulation:
         bed_level = np.asarray(self.particles['bed_level'], dtype=float)
         water_depth = np.maximum(np.nan_to_num(self.particles['water_depth'], nan=0.0), 0.0)
         skin_roughness = np.maximum(np.nan_to_num(self.particles['skin_roughness_height'], nan=0.0), 0.0)
-        deposition_threshold = 0.25 * skin_roughness
-
         # z is the live absolute particle elevation. It starts as NaN because
         # the configured vertical position can only be resolved after bed_level,
         # water_depth, and possibly the Q3D centroid/entrainment height are known.
@@ -2531,7 +2532,7 @@ class ParticlePopulation:
                     first_substep_bed_level[active_indices] = bed_active
                     first_substep_water_depth[active_indices] = waterdepth_active
                     first_substep_skin_roughness[active_indices] = skin_active
-                    first_substep_shear_velocity[active_indices] = shear_velocity_active
+                    first_substep_shear_velocity[active_indices] = max_shear_velocity_active
                     first_substep_profile_roughness[active_indices] = profile_roughness_active
                     first_substep_z_c[active_indices] = z_c_active
                     first_substep_deficit[active_indices] = deficit_active
