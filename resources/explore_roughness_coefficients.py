@@ -288,7 +288,7 @@ def make_parameter_space_plots_uc_uw(
         hb0 = hexplot(
             axes[r, 0], ks_skin3d,
             show_ylabel=True,
-            ylabel=rf"$d_{{50}}$ [m]" + "\n" + rf"$h={h}$ m",
+            ylabel=r"$d_{50}$ [m]" + "\n" + rf"$h={h}$ m",
             show_xlabel=show_x,
         )
         hb1 = hexplot(axes[r, 1], eta_b, show_xlabel=show_x)
