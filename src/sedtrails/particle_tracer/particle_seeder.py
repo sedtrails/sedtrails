@@ -1558,6 +1558,8 @@ class ParticlePopulation:
         M_b=None,
         E_turb_hor_min=0.02,
         E_turb_vert_min=0.0,
+        compute_horizontal=True,
+        compute_vertical=True,
     ):
         """
         Compute particle-level turbulent diffusion coefficients following MacDonald et al. (2006) equations 45 to 50.
@@ -1582,6 +1584,10 @@ class ParticlePopulation:
             Minimum horizontal turbulent diffusivity [m^2/s]. Default is 0.02 in PTM below eq 48 in MacDonald et al. (2006).
         E_turb_vert_min : float
             Minimum vertical turbulent diffusivity [m^2/s]. Default is 0 in PTM (below eq 49 in MacDonald et al. (2006)).
+        compute_horizontal : bool
+            If false, skip the horizontal coefficient calculation and return zeros.
+        compute_vertical : bool
+            If false, skip the vertical coefficient calculation and return zeros.
 
         Returns
         -------
@@ -1602,16 +1608,20 @@ class ParticlePopulation:
             # TO DO Vassia: adjust this according to eq 47 in MacDonald et al. (2006) if needed, as the current implementation assumes M_b is directly provided at particle positions.
             # Mb = 1.0 + 5 * H_s within the breaker zone and 1 outside the breaker zone, where H_s is the significant wave height. If wave information is not available, M_b can be set to 1 for all particles as a default.
 
-        # Horizontal diffusion coefficient, equation 46 and 48 in MacDonald et al. (2006)
-        horizontal = M_b * K_Et * water_depth * shear_velocity
-        horizontal = np.maximum(np.nan_to_num(horizontal, nan=0.0), E_turb_hor_min)
+        # Horizontal diffusion coefficient, equations 46 and 48 in MacDonald et al. (2006).
+        horizontal = np.zeros_like(water_depth, dtype=float)
+        if compute_horizontal:
+            horizontal = M_b * K_Et * water_depth * shear_velocity
+            horizontal = np.maximum(np.nan_to_num(horizontal, nan=0.0), E_turb_hor_min)
 
-        # Vertical diffusion coefficient, equation 49 and 50 in MacDonald et al. (2006)
-        shape = np.zeros_like(water_depth, dtype=float)
-        valid = water_depth > 0.0
-        shape[valid] = z_p[valid] * (water_depth[valid] - z_p[valid]) ** 2 / water_depth[valid] ** 3
-        vertical = M_b * K_Ev * flow_velocity_magnitude * shape
-        vertical = np.maximum(np.nan_to_num(vertical, nan=0.0), E_turb_vert_min)
+        # Vertical diffusion coefficient, equations 49 and 50 in MacDonald et al. (2006).
+        vertical = np.zeros_like(water_depth, dtype=float)
+        if compute_vertical:
+            shape = np.zeros_like(water_depth, dtype=float)
+            valid = water_depth > 0.0
+            shape[valid] = z_p[valid] * (water_depth[valid] - z_p[valid]) ** 2 / water_depth[valid] ** 3
+            vertical = M_b * K_Ev * flow_velocity_magnitude * shape
+            vertical = np.maximum(np.nan_to_num(vertical, nan=0.0), E_turb_vert_min)
         return horizontal, vertical
 
     def _initialize_vertical_position(
@@ -1959,6 +1969,7 @@ class ParticlePopulation:
         M_b: Any = None,
         E_turb_hor_min: float = 0.02,
         E_turb_vert_min: float = 0.0,
+        q3d_horizontal_diffusion_enabled: bool = True,
         q3d_entrainment_mode: str = 'shields_threshold',
         q3d_entrainment_frequency: Any = None,
         q3d_entrainment_probability_law: str = 'poisson',
@@ -2034,6 +2045,9 @@ class ParticlePopulation:
             Minimum horizontal turbulent diffusivity [m^2/s].
         E_turb_vert_min : float
             Minimum vertical turbulent diffusivity [m^2/s].
+        q3d_horizontal_diffusion_enabled : bool
+            If false, disable horizontal turbulent diffusion while leaving
+            geometric-scheme vertical diffusion unchanged.
         q3d_entrainment_mode : str
             Rule used to decide which available bed particles enter suspension.
             Supported values are shields_threshold, non_zero_particle_velocity,
@@ -2443,35 +2457,45 @@ class ParticlePopulation:
                     np.asarray(self.particles['q3d_wave_breaking_factor'], dtype=float)[active_indices],
                     nan=1.0,
                 )
+            use_horizontal_diffusion = bool(q3d_horizontal_diffusion_enabled)
+            use_vertical_diffusion = vertical_update_scheme == 'geometric'
             horizontal_diffusion_active, vertical_diffusion_active = self._turbulent_diffusion_coefficients(
                 waterdepth_active,
                 z_p_active,
                 da_velocity_magnitude_active,
                 max_shear_velocity_active,
-                K_Et=K_Et, #scalar
-                K_Ev=K_Ev, #scalar
+                K_Et=K_Et,  # scalar
+                K_Ev=K_Ev,  # scalar
                 M_b=M_b_active,
-                E_turb_hor_min=E_turb_hor_min, #scalar
-                E_turb_vert_min=E_turb_vert_min, #scalar
+                E_turb_hor_min=E_turb_hor_min,  # scalar
+                E_turb_vert_min=E_turb_vert_min,  # scalar
+                compute_horizontal=use_horizontal_diffusion,
+                compute_vertical=use_vertical_diffusion,
             )
-            # Random walk diffusion velocities are drawn from a uniform distribution in [-1, 1] 
-            # and scaled to the correct variance for this substep.
-            # equations 51, 52 in MacDonald et al. (2006)
-            random_horizontal_x_active = (
-                2.0
-                * (random_source.random(active_count) - 0.5)
-                * np.sqrt(6.0 * horizontal_diffusion_active / dt_sub)
-            )
-            random_horizontal_y_active = (
-                2.0
-                * (random_source.random(active_count) - 0.5)
-                * np.sqrt(6.0 * horizontal_diffusion_active / dt_sub)
-            )
-            random_vertical_active = (
-                2.0
-                * (random_source.random(active_count) - 0.5)
-                * np.sqrt(6.0 * vertical_diffusion_active / dt_sub)
-            )
+            # Only draw random values for enabled components. Besides avoiding
+            # unnecessary work, this keeps disabled components from advancing
+            # the random-number stream.
+            random_horizontal_x_active = np.zeros(active_count, dtype=float)
+            random_horizontal_y_active = np.zeros(active_count, dtype=float)
+            if use_horizontal_diffusion:
+                random_horizontal_x_active = (
+                    2.0
+                    * (random_source.random(active_count) - 0.5)
+                    * np.sqrt(6.0 * horizontal_diffusion_active / dt_sub)
+                )
+                random_horizontal_y_active = (
+                    2.0
+                    * (random_source.random(active_count) - 0.5)
+                    * np.sqrt(6.0 * horizontal_diffusion_active / dt_sub)
+                )
+
+            random_vertical_active = np.zeros(active_count, dtype=float)
+            if use_vertical_diffusion:
+                random_vertical_active = (
+                    2.0
+                    * (random_source.random(active_count) - 0.5)
+                    * np.sqrt(6.0 * vertical_diffusion_active / dt_sub)
+                )
 
             particle_u_active = np.nan_to_num(
                 modified_u_active + random_horizontal_x_active,

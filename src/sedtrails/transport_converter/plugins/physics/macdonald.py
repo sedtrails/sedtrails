@@ -465,17 +465,31 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # in Eqs. 51-52.
         export_q3d_grid_diagnostics = bool(getattr(self.config, 'q3d_export_grid_diagnostics', False))
         if export_q3d_grid_diagnostics:
+            horizontal_diffusion_enabled = bool(
+                getattr(self.config, 'q3d_horizontal_diffusion_enabled', True)
+            )
+            vertical_diffusion_enabled = (
+                str(getattr(self.config, 'q3d_vertical_update_scheme', 'geometric'))
+                .strip()
+                .lower()
+                .replace('-', '_')
+                == 'geometric'
+            )
             E_turb_hor, E_turb_vert = PhysicsPlugin.compute_turbulent_diffusion_coefficients(
                 water_depth=water_depth,
                 z_p=z_entrainment,
                 flow_velocity_magnitude=flow_velocity_magnitude,
                 shear_velocity=max_shear_velocity,
                 K_Et=getattr(self.config, 'q3d_horizontal_diffusion_factor', 0.15),
+                compute_horizontal=horizontal_diffusion_enabled,
+                compute_vertical=vertical_diffusion_enabled,
             )
             u_Dx, u_Dy, w_D = PhysicsPlugin.compute_random_walk_diffusion_velocities(
                 E_turb_hor=E_turb_hor,
                 E_turb_vert=E_turb_vert,
                 dt=timestep,
+                compute_horizontal=horizontal_diffusion_enabled,
+                compute_vertical=vertical_diffusion_enabled,
             )
 
         # For 2D hydrodynamic input, PTM estimates vertical flow velocity from
@@ -783,6 +797,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         M_b=None,
         E_turb_hor_min=0.02,
         E_turb_vert_min=0.0,
+        compute_horizontal=True,
+        compute_vertical=True,
     ):
         """
         Compute turbulent diffusion coefficients following MacDonald et al. (2006).
@@ -824,26 +840,30 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # Horizontal diffusion
         # Equation (45) + (48)
         # ---------------------
-        E_turb_hor = M_b * K_Et * water_depth * shear_velocity
-        E_turb_hor = np.nan_to_num(E_turb_hor, nan=0.0)
-        E_turb_hor = np.maximum(E_turb_hor, E_turb_hor_min)
+        E_turb_hor = np.zeros_like(water_depth, dtype=float)
+        if compute_horizontal:
+            E_turb_hor = M_b * K_Et * water_depth * shear_velocity
+            E_turb_hor = np.nan_to_num(E_turb_hor, nan=0.0)
+            E_turb_hor = np.maximum(E_turb_hor, E_turb_hor_min)
 
         # ---------------------
         # Vertical diffusion
         # Equations (49) + (50)
         # ---------------------
-        shape = np.zeros_like(water_depth)
-        valid = water_depth > 0
+        E_turb_vert = np.zeros_like(water_depth, dtype=float)
+        if compute_vertical:
+            shape = np.zeros_like(water_depth)
+            valid = water_depth > 0
 
-        shape[valid] = (
-            z_p[valid]
-            * (water_depth[valid] - z_p[valid]) ** 2
-            / water_depth[valid] ** 3
-        )
+            shape[valid] = (
+                z_p[valid]
+                * (water_depth[valid] - z_p[valid]) ** 2
+                / water_depth[valid] ** 3
+            )
 
-        E_turb_vert = M_b * K_Ev * flow_velocity_magnitude * shape
-        E_turb_vert = np.nan_to_num(E_turb_vert, nan=0.0)
-        E_turb_vert = np.maximum(E_turb_vert, E_turb_vert_min)
+            E_turb_vert = M_b * K_Ev * flow_velocity_magnitude * shape
+            E_turb_vert = np.nan_to_num(E_turb_vert, nan=0.0)
+            E_turb_vert = np.maximum(E_turb_vert, E_turb_vert_min)
 
         return E_turb_hor, E_turb_vert
 
@@ -853,7 +873,10 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         E_turb_hor,
         E_turb_vert,
         dt,
-        rng=np.random,# default gives uniformly distributed random numbers in [0,1)
+        rng=np.random,  # default gives uniformly distributed random numbers in [0,1)
+        *,
+        compute_horizontal=True,
+        compute_vertical=True,
     ):
         """
         Compute random-walk diffusion velocities following MacDonald et al. (2006).
@@ -875,19 +898,20 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             Random diffusion velocities [m/s]
         """
 
-        # Uniform random numbers in [0,1]
-        Pi_x = rng.random(E_turb_hor.shape)
-        Pi_y = rng.random(E_turb_hor.shape)
-        Pi_z = rng.random(E_turb_vert.shape)
+        u_Dx = np.zeros_like(E_turb_hor, dtype=float)
+        u_Dy = np.zeros_like(E_turb_hor, dtype=float)
+        if compute_horizontal:
+            Pi_x = rng.random(E_turb_hor.shape)
+            Pi_y = rng.random(E_turb_hor.shape)
+            scale_h = np.sqrt(6.0 * E_turb_hor / dt)
+            u_Dx = 2.0 * (Pi_x - 0.5) * scale_h
+            u_Dy = 2.0 * (Pi_y - 0.5) * scale_h
 
-        # Equation (51): horizontal (isotropic)
-        scale_h = np.sqrt(6.0 * E_turb_hor / dt)
-        u_Dx = 2.0 * (Pi_x - 0.5) * scale_h
-        u_Dy = 2.0 * (Pi_y - 0.5) * scale_h
-
-        # Equation (52): vertical
-        scale_v = np.sqrt(6.0 * E_turb_vert / dt)
-        w_D = 2.0 * (Pi_z - 0.5) * scale_v
+        w_D = np.zeros_like(E_turb_vert, dtype=float)
+        if compute_vertical:
+            Pi_z = rng.random(E_turb_vert.shape)
+            scale_v = np.sqrt(6.0 * E_turb_vert / dt)
+            w_D = 2.0 * (Pi_z - 0.5) * scale_v
 
         return u_Dx, u_Dy, w_D
 
