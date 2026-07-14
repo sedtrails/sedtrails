@@ -10,7 +10,6 @@ from sedtrails.transport_converter.plugins import BasePhysicsPlugin
 from sedtrails.transport_converter import SedtrailsData
 
 
-
 class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the PhysicsPlugin
     """
     Plugin for MacDonald et al. (2006) sediment transport physics calculations.

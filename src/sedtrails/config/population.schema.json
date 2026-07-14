@@ -122,6 +122,11 @@
 				  "default": 1.0,
 				  "description": "Optional cap on suspended-load advection velocity, expressed as a multiple of the depth-averaged flow velocity. If null, no capping is applied."
 				},
+				"q3d_horizontal_diffusion_enabled": {
+				  "type": "boolean",
+				  "default": true,
+				  "description": "If false, disable Q3D horizontal turbulent diffusion and its random-walk velocity components without changing geometric-scheme vertical diffusion."
+				},
 				"q3d_entrainment_mode": {
 				  "type": "string",
 				  "enum": ["shields_threshold", "non_zero_particle_velocity", "entrainment_frequency"],
