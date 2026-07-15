@@ -402,7 +402,7 @@ class NetCDFWriter:
                 if field_name in h.variables:
                     h[field_name][slot_idx, sl] = cls._particle_field(particles, field_name, np.nan)
             for field_name in _Q3D_INT_FIELDS:
-                h[field_name][slot_idx, sl] = cls._particle_field(particles, field_name, 0)
+                h[field_name][slot_idx, sl] = cls._particle_field(particles, field_name, np.int32(-1))
             for status_name, default in _STATUS_DEFAULTS.items():
                 h[status_name][slot_idx, sl] = cls._particle_field(particles, status_name, default)
 
@@ -589,7 +589,7 @@ class NetCDFWriter:
                 for field_name in q3d_float_fields:
                     ds[field_name][sl] = self._particle_field(particles, field_name, np.nan)
                 for field_name in _Q3D_INT_FIELDS:
-                    ds[field_name][sl] = self._particle_field(particles, field_name, 0)
+                    ds[field_name][sl] = self._particle_field(particles, field_name, np.int32(-1))
                 for status_name, default in _STATUS_DEFAULTS.items():
                     ds[status_name][sl] = self._particle_field(particles, status_name, default)
                 particle_offset += n_part

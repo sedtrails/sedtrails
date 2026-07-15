@@ -1,22 +1,3 @@
-# check the install 
-# run in the VSC command line 
-# 1. To activate environment:
-# cd C:\Users\dagalaki\Documents\GitHub\environments\all_env\.venv\Scripts
-# .\activate.bat 
-# 2. To install the correct sedtrails repo
-#  sedtrails --version
-#  python -m ensurepip -upgrade
-
-# if I want to change to a different version: go to the sedtrails folder:
-# cd c:\Users\dagalaki\GitHub\sedtrails\dev\
-# OR 
-# cd /d c:\Users\dagalaki\Documents\GitHub\sedtrails\....
-# python -m pip install -e .
-
-
-
-
-
 import logging
 import os
 import sys

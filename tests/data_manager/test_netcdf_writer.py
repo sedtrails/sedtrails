@@ -168,6 +168,21 @@ class TestNetCDFWriterStreaming:
         assert 'first_substep_water_depth' not in handle.variables
         handle.close()
 
+    def test_missing_q3d_integer_fields_use_fill_value(self, writer, population):
+        """Non-Q3D populations should not be labelled with real Q3D values."""
+        handle = writer.open_output(
+            'stream.nc', self.N_SLOTS, self.N_PARTICLES,
+            self.N_POPULATIONS, self.N_FLOWFIELDS, [population], ['vel'],
+        )
+
+        writer.record_output(handle, [population], slot_idx=0, current_time=0.0)
+
+        for field_name in ('q3d_vertical_update_scheme_code', 'q3d_motion_substeps'):
+            values = handle[field_name][0, :]
+            assert np.all(np.ma.getmaskarray(values))
+            assert handle[field_name]._FillValue == np.int32(-1)
+        handle.close()
+
     def test_full_q3d_diagnostics_are_opt_in(self, writer, population):
         population.particles['first_substep_water_depth'] = np.array([4.0, 5.0, 6.0])
         handle = writer.open_output(
@@ -260,6 +275,22 @@ class TestNetCDFWriterStreaming:
         assert float(ds['time'].values) == pytest.approx(123.0)
         np.testing.assert_array_almost_equal(ds['x'].values, population.particles['x'])
         np.testing.assert_array_equal(ds['population_id'].values, np.zeros(self.N_PARTICLES, dtype=int))
+        ds.close()
+
+    def test_checkpoint_missing_q3d_integer_fields_are_missing(self, writer, population):
+        """Compact output should preserve missing Q3D metadata as fill values."""
+        path = writer.write_checkpoint(
+            'sedtrails_checkpoint.nc',
+            [population],
+            current_time=123.0,
+            reference_date='2020-01-01 00:00:00',
+            time_units='seconds since 2020-01-01 00:00:00',
+        )
+
+        ds = xr.open_dataset(path, engine='netcdf4')
+        for field_name in ('q3d_vertical_update_scheme_code', 'q3d_motion_substeps'):
+            assert np.all(ds[field_name].isnull())
+            assert ds[field_name].encoding['_FillValue'] == np.int32(-1)
         ds.close()
 
     def test_write_end_positions_stores_compact_result_state(self, writer, population):

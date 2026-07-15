@@ -527,7 +527,7 @@ def compute_grain_properties(
 
     MacDonald, N., Davies, M., Zundel, A., Howlett, J., Demirbilek, Z.,
     Gailani, J., Lackey, T., & Smith, J. (2006). *PTM: Particle Tracking Model. 
-    Report 1: Model Theory, Implementation, and Example Applications*.      '
+    Report 1: Model Theory, Implementation, and Example Applications*.
     U.S. Army Corps of Engineers. Equation 28
     """
     # Dimensionless grain size, D* (Soulsby 1997, Equation 75, p. 104)

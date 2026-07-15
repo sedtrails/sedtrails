@@ -2815,30 +2815,32 @@ class ParticlePopulation:
         self.particles['status_mobile'] = is_mobile
 
     def update_burial_depth(self) -> None:
-        """Update the burial depth of particles in the population.
+        """Update burial depth for temporal bed-level accretion or erosion.
 
-        Notes
-        -----
-        Invariant: ``particles['bed_level_previous']`` always holds the bed level
-        at the particle's *current* position at the *previous* timestep, because
-        ``update_bed_level_change_after_movement`` re-samples bed level at the new
-        position after every move.  The difference below is therefore a pure
-        temporal change (zero for a static bed; equal to local morphodynamic
-        accretion/erosion for a dynamic bed).  No spatial correction is needed.
+        ``bed_level_previous`` is the bed level at the particle's current
+        position during the previous timestep. The difference from the current
+        bed level is therefore the local temporal bed change.
         """
+        if len(self.particles['x']) == 0:
+            return
 
-        # Initialize vertical position ('z') based on bed level and burial depth
-        self.particles['z'] = (
-            self.particles['bed_level'] - self.particles['burial_depth']
-        )  # TODO: add to top attributes. This must go to netcdf for every timestep.
+        bed_level_change = self.particles['bed_level'] - self.particles['bed_level_previous']
+        self.particles['burial_depth'] += bed_level_change
+        self.particles['burial_depth'] = np.maximum(self.particles['burial_depth'], 0.0)
+        self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
 
-        # Make sure particles can never be higher than the bed level
-        i_above_bed = self.particles['z'] > self.particles['bed_level']
-        self.particles['z'][i_above_bed] = self.particles['bed_level'][i_above_bed]
+    def update_bed_level_change_after_movement(self, bed_level) -> None:
+        """Resample bed level after movement and update absolute particle z.
 
-        # Update burial depth (is always a positive value)
-        self.particles['burial_depth'] = self.particles['bed_level'] - self.particles['z']
+        This makes the bed level at the particle's new position the reference
+        used by ``update_burial_depth`` during the next timestep.
+        """
+        if len(self.particles['x']) == 0:
+            return
 
+        self._update_particle_field('bed_level', bed_level)
+        self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
+        
     def update_status(self) -> None:
         """
         updates status of particles in the population.
