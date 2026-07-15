@@ -5,6 +5,7 @@ __pycache__/
 
 # Data files
 *.nc
+!src/sedtrails/transport_converter/plugins/physics/macdonald_z_over_h_lookup.nc
 *.dat
 *.def
 
