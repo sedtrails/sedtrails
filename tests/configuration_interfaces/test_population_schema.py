@@ -178,6 +178,15 @@ def test_population_schema_rejects_inline_poly_with_too_few_vertices(tmp_path, s
         _validate_config(tmp_path, config)
 
 
+def test_population_schema_accepts_scalar_burial_depth(tmp_path):
+    """Accept legacy scalar burial depth values."""
+    config = _base_config()
+    config['particles']['populations'][0]['seeding']['burial_depth'] = 1.25
+
+    validated = _validate_config(tmp_path, config)
+
+    assert validated['particles']['populations'][0]['seeding']['burial_depth'] == pytest.approx(1.25)
+
 def test_population_schema_accepts_remove_permanently_buried_boolean(tmp_path):
     """Accept the permanent-burial optimization flag when it is boolean."""
     config = _base_config()

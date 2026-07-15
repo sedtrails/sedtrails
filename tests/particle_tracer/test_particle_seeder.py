@@ -969,6 +969,26 @@ class TestParticleFactory:
         assert particles[0].vertical_position_mode == 'height_above_bed'
         assert particles[0].vertical_position_value == pytest.approx(0.4)
 
+    def test_scalar_burial_depth_is_normalized_to_constant_config(self):
+        """Legacy scalar burial depths should remain valid population input."""
+        config = PopulationConfig(
+            {
+                'name': 'Scalar Burial Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0,0']}},
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': 1.25,
+                },
+            }
+        )
+
+        particles = ParticleFactory.create_particles(config)
+
+        assert config.burial_depth == {'constant': 1.25}
+        assert particles[0].burial_depth == pytest.approx(1.25)
+
     def test_random_burial_depth_is_sampled_with_strategy_seed(self):
         """Seeded random strategies should reproduce stochastic burial depths."""
         config = PopulationConfig(

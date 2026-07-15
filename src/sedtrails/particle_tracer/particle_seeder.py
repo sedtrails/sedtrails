@@ -404,11 +404,13 @@ class PopulationConfig:
         self.particle_type = find_value(self.population_config, 'particle_type', '')
         if not self.particle_type:
             raise MissingConfigurationParameter('"particle_type" is not defined in the population configuration.')
-        _burial_depth = find_value(self.population_config, 'seeding.burial_depth', {})
-        if not _burial_depth:
+        _burial_depth = find_value(self.population_config, 'seeding.burial_depth', MISSING)
+        if _burial_depth is MISSING or _burial_depth is None:
             raise MissingConfigurationParameter('"burial_depth" is not defined in the population configuration.')
-        if not isinstance(_burial_depth, dict):
-            raise TypeError('"seeding.burial_depth" must be a dictionary.')
+        if isinstance(_burial_depth, (int, float)):
+            _burial_depth = {'constant': float(_burial_depth)}
+        elif not isinstance(_burial_depth, dict):
+            raise TypeError('"seeding.burial_depth" must be a dictionary or a number.')
         self.burial_depth = _burial_depth
         self.remove_permanently_buried = bool(
             find_value(self.population_config, 'seeding.remove_permanently_buried', False)

@@ -305,33 +305,43 @@
             "additionalProperties": false,
             "properties": {
                 "burial_depth": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "description": "burial depth configuration for particles. If not used, then burial depth compuations are not considered.",
+                    "description": "Burial depth as a non-negative constant number or as a constant/random configuration object.",
                     "default": {
                         "constant": 0
                     },
-                    "properties": {
-                        "random": {
-                            "type": "number",
-                            "default": 1.0,
-                            "description": "maximum depth from bed level (surface) for random burial depth in meters."
-                        },
-                        "constant": {
-                            "type": "number",
-                            "default": 1.0,
-                            "description": "constant burial depth in meters."
-                        }
-                    },
                     "oneOf": [
                         {
-                            "required": [
-                                "random"
-                            ]
+                            "type": "number",
+                            "minimum": 0
                         },
                         {
-                            "required": [
-                                "constant"
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "random": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "default": 1.0,
+                                    "description": "maximum depth from bed level (surface) for random burial depth in meters."
+                                },
+                                "constant": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "default": 1.0,
+                                    "description": "constant burial depth in meters."
+                                }
+                            },
+                            "oneOf": [
+                                {
+                                    "required": [
+                                        "random"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "constant"
+                                    ]
+                                }
                             ]
                         }
                     ]
