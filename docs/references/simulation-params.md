@@ -295,6 +295,7 @@ The `particles` section contains an array of `populations`, where each populatio
 | `name`                  | string | **Required** | `particle`       | Unique name for this population (e.g., `sediment-fine`, `sand-01`).                                        |
 | `particle_type`         | string | **Required** | `passive`        | Type of particle. Options: `passive`, `sand`, `mud`.                                                       |
 | `characteristics`       | object | **Required** | -                | Type-specific particle properties. See [Particle Characteristics](#particle-characteristics).              |
+| `diffusion`             | object | Optional     | `brownian`, `0.0` | Method, coefficient, and optional seed for horizontal diffusion. See [Per-population diffusion](#per-population-diffusion). |
 | `tracer_methods`        | object | **Required** | -                | Transport calculation method(s). See [Tracer Methods](#tracer-methods).                                    |
 | `transport_probability` | string | Optional     | `no_probability` | How to apply transport probability. Options: `no_probability`, `stochastic_transport`, `reduced_velocity`. |
 | `seeding`               | object | **Required** | -                | Particle release configuration. See [Particle Seeding](#particle-seeding).                                 |
@@ -309,7 +310,18 @@ The `characteristics` object varies by `particle_type`:
 
 | Parameter               | Type   | Required     | Default | Description                        |
 | ----------------------- | ------ | ------------ | ------- | ---------------------------------- |
-| `diffusion_coefficient` | number | **Required** | `0.0`   | Random walk diffusion coefficient (horizontal diffusivity $K_h$). |
+| `diffusion_coefficient` | number | Optional (legacy) | `0.0` | Legacy fallback for the top-level `diffusion.coefficient`; prefer the top-level configuration. |
+
+#### Per-population diffusion
+
+The optional `diffusion` object applies to every particle type and tracer method. `method` is `brownian` (default) or `none`; `coefficient` is a non-negative horizontal diffusivity in `m^2/s` and defaults to `0.0`; `seed` is an optional integer that makes draws reproducible for that population. A zero coefficient and `method: none` both disable diffusion.
+
+```yaml
+diffusion:
+  method: brownian
+  coefficient: 0.05
+  seed: 1234
+```
 
 #### Sand Particles
 
@@ -329,6 +341,12 @@ The `characteristics` object varies by `particle_type`:
 ### Tracer Methods
 
 Exactly one tracer method must be specified per population. Supported method keys are `vanwesten`, `soulsby`, and `passive_tracer`.
+
+For `passive_tracer` populations:
+
+- `particle_type` must be `passive`.
+- `transport_probability` must be `no_probability`.
+- `seeding.burial_depth` is not supported and must be omitted.
 
 #### Van Westen Method
 
@@ -356,6 +374,9 @@ Exactly one tracer method must be specified per population. Supported method key
 | ----------------- | ----- | -------- | ----------------------------- | ----------------------------------------------------- |
 | `flow_field_name` | array | Optional | `["depth_avg_flow_velocity"]` | List of flow field names to use for passive tracers. |
 
+Sediment fraction selection is handled separately via `sediment_fraction_index` or `sediment_fraction_name`. For multi-fraction Delft3D-4 NetCDF inputs, named selection is resolved against the `NAMCON` labels in the file. If the input only contains a single sediment fraction, NAMCON is not used for fraction selection. Name-based fraction selection is not yet available for FM or XBeach inputs, because their transport variable names differ and need separate support.
+A selection in `general.input_model` is the default for populations that do not set either field. A population-level selection replaces that default entirely, and `sediment_fraction_name` takes precedence when both fields are set in the same scope.
+
 (particle-seeding)=
 ### Particle Seeding
 
@@ -370,7 +391,7 @@ Controls where, when, and how particles are released.
 | `lifespan`      | number  | Optional     | `9e+99`         | Maximum particle lifetime [seconds]. Use very large value for unlimited.                      |
 | `release_start` | string  | Optional     | simulation start | Release start time for the population (format: `YYYY-MM-DD HH:MM:SS`). Converted to seconds relative to `general.input_model.reference_date`. |
 | `release_stop`  | string  | Optional     | -               | Release stop time for continuous release. Defaults to immediate stop after first release.     |
-| `burial_depth`  | object  | Optional     | -               | Initial burial depth configuration. See [Burial Depth](#burial-depth).                        |
+| `burial_depth`  | object  | Optional     | -               | Initial burial depth configuration (not allowed for `passive_tracer`). See [Burial Depth](#burial-depth). |
 | `strategy`      | object  | **Required** | -               | Spatial release strategy. See [Release Strategies](#release-strategies).                      |
 
 (burial-depth)=

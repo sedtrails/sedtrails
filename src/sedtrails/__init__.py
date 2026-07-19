@@ -24,7 +24,7 @@ Examples
 --------
 >>> import sedtrails
 >>> sedtrails.run_simulation('config.yml', output='results.nc')
->>> sedtrails.plot_trajectories('results.nc', save=True)
+>>> sedtrails.plot_trajectories('results.nc')
 """
 
 from .__version__ import __version__

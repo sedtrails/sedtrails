@@ -15,33 +15,48 @@ class NetCDFReader:
     This class validates and loads NetCDF files using xugrid's lazy loading functionality.
     The file is automatically validated and loaded upon instantiation.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     file_path : str
         The path to the CF compliant NetCDF file.
 
-    Attributes:
-    -----------
+    Attributes
+    ----------
     file_path : str
         The path to the CF compliant NetCDF file.
     data : xu.UgridDataset
         The loaded NetCDF dataset as an xugrid UgridDataset object.
 
-    Raises:
-    -------
+    Raises
+    ------
     FileNotFoundError
         If the specified file does not exist.
     ValueError
         If the file exists but is not a valid NetCDF file or has an invalid extension.
 
-    Examples:
-    ---------
+    Examples
+    --------
     >>> reader = NetCDFReader('sample-data/example_output.nc')
     >>> print(reader.data)
     >>> particle_id = reader.data['particle_id']
     """
 
     def __init__(self, file_path: str) -> None:
+        """Initialize the reader and load a NetCDF file.
+
+        Parameters
+        ----------
+        file_path : str
+            Path to the CF-compliant NetCDF file to validate and load.
+
+        Raises
+        ------
+        FileNotFoundError
+            If `file_path` does not exist.
+        ValueError
+            If `file_path` does not have a supported NetCDF extension or
+            cannot be loaded as a valid NetCDF file.
+        """
         self.file_path: str = file_path
         self._read_file()
             

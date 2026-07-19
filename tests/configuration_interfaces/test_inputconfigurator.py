@@ -131,6 +131,145 @@ class TestYAMLConfigValidator:
             }
         }
 
+    def test_apply_defaults_does_not_create_missing_choice_container(self, validator):
+        """Do not let descendant defaults select an optional choice object."""
+        schema = {
+            'type': 'object',
+            'properties': {
+                'burial_depth': {
+                    'type': 'object',
+                    'properties': {
+                        'random': {'type': 'number', 'default': 1.0},
+                        'constant': {'type': 'number', 'default': 1.0},
+                    },
+                    'oneOf': [
+                        {'required': ['random']},
+                        {'required': ['constant']},
+                    ],
+                }
+            },
+        }
+
+        result = validator._apply_defaults(schema, {})
+
+        assert result == {}
+
+    def test_apply_defaults_preserves_selected_choice_branch(self, validator):
+        """Do not apply a default that activates another oneOf branch."""
+        schema = {
+            'type': 'object',
+            'properties': {
+                'burial_depth': {
+                    'type': 'object',
+                    'properties': {
+                        'random': {'type': 'number', 'default': 1.0},
+                        'constant': {'type': 'number', 'default': 1.0},
+                    },
+                    'oneOf': [
+                        {'required': ['random']},
+                        {'required': ['constant']},
+                    ],
+                }
+            },
+        }
+        config = {'burial_depth': {'constant': 0.0}}
+
+        result = validator._apply_defaults(schema, config)
+
+        assert result == {'burial_depth': {'constant': 0.0}}
+
+    def test_apply_defaults_keeps_branch_neutral_defaults(self, validator):
+        """Apply defaults that do not change the selected choice branch."""
+        schema = {
+            'type': 'object',
+            'properties': {
+                'domain': {
+                    'type': 'object',
+                    'properties': {
+                        'pol_file': {'type': 'string'},
+                        'inner_boundary_pol_files': {
+                            'type': 'array',
+                            'default': [],
+                        },
+                    },
+                    'anyOf': [
+                        {'required': ['pol_file']},
+                    ],
+                }
+            },
+        }
+        config = {'domain': {'pol_file': 'domain.pol'}}
+
+        result = validator._apply_defaults(schema, config)
+
+        assert result == {
+            'domain': {
+                'pol_file': 'domain.pol',
+                'inner_boundary_pol_files': [],
+            }
+        }
+
+    def test_apply_defaults_respects_conditional_parent_constraints(self, validator):
+        """Do not materialize a container forbidden by an active condition."""
+        schema = {
+            'type': 'object',
+            'properties': {
+                'enabled': {'type': 'boolean'},
+                'optional': {
+                    'type': 'object',
+                    'properties': {
+                        'value': {'type': 'number', 'default': 1.0},
+                    },
+                },
+            },
+            'allOf': [
+                {
+                    'if': {
+                        'properties': {
+                            'enabled': {'const': False},
+                        },
+                        'required': ['enabled'],
+                    },
+                    'then': {
+                        'not': {
+                            'required': ['optional'],
+                        }
+                    },
+                }
+            ],
+        }
+        config = {'enabled': False}
+
+        result = validator._apply_defaults(schema, config)
+
+        assert result == {'enabled': False}
+
+    def test_apply_defaults_respects_reference_sibling_constraints(self, validator):
+        """Apply both a property reference and its sibling constraints."""
+        schema = {
+            'type': 'object',
+            '$defs': {
+                'settings': {
+                    'type': 'object',
+                    'properties': {
+                        'value': {'type': 'number', 'default': 1.0},
+                    },
+                }
+            },
+            'properties': {
+                'optional': {
+                    '$ref': '#/$defs/settings',
+                    'not': {
+                        'required': ['value'],
+                    },
+                }
+            },
+        }
+
+        result = validator._apply_defaults(schema, {})
+
+        assert result == {}
+
     def test_apply_defaults_array(self, validator):
         """Apply item defaults for each element in an array of objects."""
         schema = {'type': 'array', 'items': {'type': 'object', 'properties': {'x': {'type': 'integer', 'default': 1}}}}
@@ -183,6 +322,24 @@ class TestYAMLConfigValidator:
     # -----------------------------
     # Tests for validate_yaml
     # -----------------------------
+    def test_validate_yaml_rejects_invalid_default_expansion(self, tmp_path, monkeypatch):
+        """Reject a configuration that becomes invalid while applying defaults."""
+        config_data = {
+            'inputs': {'data': 'dummy.nc'},
+        }
+        config_file = tmp_path / 'valid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+        validator = YAMLConfigValidator()
+
+        monkeypatch.setattr(
+            validator,
+            '_apply_defaults',
+            lambda schema_content, config_data: {'unexpected': True},
+        )
+
+        with pytest.raises(YamlValidationError, match='after applying defaults'):
+            validator.validate_yaml(str(config_file))
+
     def test_validate_yaml_success(self, tmp_path):
         """
         Test YAML file validation when a YAML file is created successfully

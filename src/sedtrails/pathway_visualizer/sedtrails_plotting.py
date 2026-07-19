@@ -29,10 +29,10 @@ Dimensions:
 Variables (shapes shown in parentheses):
     time (N, T)                float64
     x, y, z (N, T)             float32
-    status_alive (N, T)            int32  (0/1)
-    status_domain (N, T)           int32  (0/1)
-    status_released (N, T)         int32  (0/1)
-    status_mobile (N, T)           int32  (0/1)
+    status_alive (N, T)        int32  (0/1)
+    status_domain (N, T)       int32  (0/1)
+    status_released (N, T)     int32  (0/1)
+    status_mobile (N, T)       int32  (0/1)
     trajectory_id (N,)         (optional char)
     population_id (N,)         int32  (optional)
 
@@ -92,7 +92,19 @@ except Exception:
 
 @dataclass
 class TrajectoryArrays:
-    """Container for required arrays to plot & analyze SedTRAILS trajectories."""
+    """Trajectory arrays used for plotting and analysis.
+
+    Parameters
+    ----------
+    time, x, y : numpy.ndarray
+        Time and horizontal trajectory coordinates.
+    status_alive, status_domain, status_released, status_mobile : numpy.ndarray, optional
+        Per-timestep particle status masks.
+    population_id : numpy.ndarray, optional
+        Population index for each trajectory.
+    trajectory_id : sequence of str, optional
+        Identifier for each trajectory.
+    """
 
     time: np.ndarray  # shape (N, T)
     x: np.ndarray  # shape (N, T)
@@ -322,7 +334,7 @@ def plot_trajectories_by_baseline(
     -----
     Mirrors the rotated-axis idea used in the MATLAB pathway plots. The color
     is computed from the *initial* rotated-X coordinate per particle and then
-    broadcast to all timesteps. 
+    broadcast to all timesteps. :contentReference[oaicite:2]{index=2}
     """
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -636,7 +648,15 @@ def particles_include_exclude(
 
 
 class InteractivePolygonTool:
-    """Interactive polygon drawing to build selection masks in a matplotlib figure."""
+    """Interactive polygon selector for a matplotlib axis.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axis receiving the polygon selector.
+    on_done : callable
+        Callback invoked after selection.
+    """
 
     def __init__(self, ax: plt.Axes, on_done):
         if PolygonSelector is None:
@@ -690,7 +710,7 @@ class ParticleStats:
 
 def compute_particle_stats(tr: TrajectoryArrays, first_stable_index: int = 0) -> List[ParticleStats]:
     """
-    Compute per-particle trajectory statistics similar to analyze_pathways.m.
+    Compute per-particle trajectory statistics similar to analyze_pathways.m. :contentReference[oaicite:3]{index=3}
 
     Parameters
     ----------

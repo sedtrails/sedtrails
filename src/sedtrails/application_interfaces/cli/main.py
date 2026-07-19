@@ -229,12 +229,15 @@ def seeding_gui_cmd(
     input_format: str | None = typer.Option(
         None,
         '--format',
-        help="Override general.input_model.format. Supported GUI formats: 'fm_netcdf' and 'xbeach'.",
+        help=(
+            "Override general.input_model.format. Supported GUI formats: "
+            "'fm_netcdf', 'd3d4_netcdf', 'xbeach', and 'sfincs'."
+        ),
     ),
     variable: str | None = typer.Option(
         None,
         '--variable',
-        help="Bathymetry variable to display. Defaults to 'bedlevel' or 'bed_level'.",
+        help='Bathymetry variable to display. Defaults depend on --format.',
     ),
 ):
     """
@@ -446,17 +449,51 @@ def plot_trajectories_cmd(
         '-f',
         help='Path to the SedTRAILS netCDF file to visualize. By default, it expects an "sedtrails_results.nc" file in the current directory.',
     ),
-    save_fig: bool = typer.Option(
-        False,
-        '--save',
-        '-s',
-        help='Save plot as a PNG file. Creates a "particle_trajectories.png" file',
-    ),
-    output_dir: str = typer.Option(
-        '.',
-        '--output-dir',
+    output: str | None = typer.Option(
+        None,
+        '--output',
         '-o',
-        help='Directory to save plot if --save is used. Default is the current directory.',
+        help=(
+            'Output target. If this is an existing directory, the plot is written as '
+            '"particle_trajectories.png" inside it. Otherwise, this is treated as a '
+            'filename. If omitted, defaults to "particle_trajectories.png" in the '
+            'NetCDF file directory. Pass "." to write in the current working directory.'
+        ),
+    ),
+    max_particles: int | None = typer.Option(
+        10000,
+        '--max-particles',
+        help='Maximum number of particles to plot. Sampling is deterministic and stratified by population.',
+    ),
+    sample_fraction: float | None = typer.Option(
+        None,
+        '--sample-fraction',
+        help='Fraction of particles to plot. Mutually exclusive with --max-particles.',
+    ),
+    sample_seed: int = typer.Option(
+        0,
+        '--sample-seed',
+        help='Seed for deterministic particle sampling.',
+    ),
+    markers: str = typer.Option(
+        'end',
+        '--markers',
+        help='Endpoint markers to draw: none, end, or start-end. Default is end.',
+    ),
+    marker_size: float = typer.Option(
+        3.0,
+        '--marker-size',
+        help='Marker size for start/end points. Default is 3.',
+    ),
+    panels: str = typer.Option(
+        'spatial',
+        '--panels',
+        help='Panels to draw: spatial, distance, population, population-distance, all, or a comma-separated subset.',
+    ),
+    show: bool | None = typer.Option(
+        None,
+        '--show/--no-show',
+        help='Display the figure window. Defaults to no window when saving to a file.',
     ),
 ):
     """
@@ -466,18 +503,38 @@ def plot_trajectories_cmd(
     ----------
     results_file : str
         Path to the SedTRAILS NetCDF results file.
-    save_fig : bool
-        The save fig value.
-    output_dir : str
-        Directory where output files are written.
+    output : str | None
+        Output path or directory.
+    max_particles : int | None
+        Maximum number of particles to plot.
+    sample_fraction : float | None
+        Fraction of particles to plot.
+    sample_seed : int
+        Seed for deterministic sampling.
+    markers : str
+        Endpoint marker mode.
+    marker_size : float
+        Marker size for start/end points.
+    panels : str
+        Panels to draw.
+    show : bool | None
+        Whether to display the figure.
     """
     from sedtrails.application_interfaces.api import plot_trajectories
 
     try:
-        plot_trajectories(results_file, save=save_fig, output_dir=output_dir)
-        if save_fig:
-            typer.echo(f"Plot saved to '{output_dir}/particle_trajectories.png'")
-        else:
+        plot_trajectories(
+            results_file,
+            output=output,
+            max_particles=max_particles,
+            sample_fraction=sample_fraction,
+            sample_seed=sample_seed,
+            markers=markers,
+            marker_size=marker_size,
+            panels=panels,
+            show=show,
+        )
+        if show is True:
             typer.echo('Plot displayed successfully')
     except Exception as e:
         typer.echo(f'Error plotting trajectories: {e}')

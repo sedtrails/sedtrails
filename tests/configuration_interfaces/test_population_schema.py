@@ -178,14 +178,14 @@ def test_population_schema_rejects_inline_poly_with_too_few_vertices(tmp_path, s
         _validate_config(tmp_path, config)
 
 
-def test_population_schema_accepts_scalar_burial_depth(tmp_path):
-    """Accept legacy scalar burial depth values."""
+def test_population_schema_accepts_constant_burial_depth(tmp_path):
+    """Accept configured constant burial depth values."""
     config = _base_config()
-    config['particles']['populations'][0]['seeding']['burial_depth'] = 1.25
+    config['particles']['populations'][0]['seeding']['burial_depth'] = {'constant': 1.25}
 
     validated = _validate_config(tmp_path, config)
 
-    assert validated['particles']['populations'][0]['seeding']['burial_depth'] == pytest.approx(1.25)
+    assert validated['particles']['populations'][0]['seeding']['burial_depth'] == {'constant': 1.25}
 
 def test_population_schema_accepts_remove_permanently_buried_boolean(tmp_path):
     """Accept the permanent-burial optimization flag when it is boolean."""
@@ -201,6 +201,77 @@ def test_population_schema_rejects_non_boolean_remove_permanently_buried(tmp_pat
     """Reject non-boolean permanent-burial optimization values."""
     config = _base_config()
     config['particles']['populations'][0]['seeding']['remove_permanently_buried'] = 'yes'
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+def test_population_schema_accepts_sediment_fraction_index(tmp_path):
+    """Accept per-population sediment fraction selection by index."""
+    config = _base_config()
+    config['particles']['populations'][0]['sediment_fraction_index'] = 2
+
+    validated = _validate_config(tmp_path, config)
+
+    assert validated['particles']['populations'][0]['sediment_fraction_index'] == 2
+
+
+def test_population_schema_rejects_negative_sediment_fraction_index(tmp_path):
+    """Reject invalid negative per-population sediment fraction index values."""
+    config = _base_config()
+    config['particles']['populations'][0]['sediment_fraction_index'] = -1
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+def test_population_schema_leaves_fraction_index_unset_without_an_explicit_override(tmp_path):
+    """Leave absent population selection available for a global default."""
+    config = _base_config()
+
+    validated = _validate_config(tmp_path, config)
+
+    assert 'sediment_fraction_index' not in validated['particles']['populations'][0]
+
+
+def test_population_schema_accepts_sediment_fraction_name(tmp_path):
+    """Accept per-population sediment fraction selection by label."""
+    config = _base_config()
+    config['particles']['populations'][0]['sediment_fraction_name'] = 'sediment300_nat'
+
+    validated = _validate_config(tmp_path, config)
+
+    assert validated['particles']['populations'][0]['sediment_fraction_name'] == 'sediment300_nat'
+
+
+@pytest.mark.parametrize('method', ['none', 'brownian'])
+def test_population_schema_accepts_population_diffusion_methods(tmp_path, method):
+    """Accept both supported per-population diffusion methods."""
+    config = _base_config()
+    config['particles']['populations'][0]['diffusion'] = {
+        'method': method,
+        'coefficient': 0.05,
+        'seed': 1234,
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    assert validated['particles']['populations'][0]['diffusion']['method'] == method
+
+
+@pytest.mark.parametrize(
+    'diffusion',
+    [
+        {'method': 'random', 'coefficient': 0.1},
+        {'method': 'brownian', 'coefficient': -0.1},
+        {'method': 'brownian', 'coefficient': 0.1, 'seed': True},
+        {'method': 'brownian', 'coefficient': 0.1, 'seed': 1.5},
+    ],
+)
+def test_population_schema_rejects_invalid_diffusion_config(tmp_path, diffusion):
+    """Reject unsupported methods and invalid diffusion parameters."""
+    config = _base_config()
+    config['particles']['populations'][0]['diffusion'] = diffusion
 
     with pytest.raises(YamlValidationError, match='YAML config validation error'):
         _validate_config(tmp_path, config)

@@ -2,6 +2,7 @@
 Unit tests for the Simulation class.
 """
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -9,8 +10,11 @@ import pytest
 import yaml
 
 from sedtrails.application_interfaces.configuration_controller import ConfigurationController
+from sedtrails.application_interfaces.validator import YAMLConfigValidator
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer.timer import Duration, Time
+from sedtrails.simulation_orchestrator import simulation_manager
+from sedtrails.simulation_orchestrator.runtime_plan import validate_population_runtime_configurations
 from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
 
@@ -129,6 +133,96 @@ class _CheckpointWriter:
     def write_checkpoint(self, *args, **kwargs):
         """Capture checkpoint arguments."""
         self.calls.append((args, kwargs))
+
+
+class TestSimulationManagerPreflight:
+    """Tests for configuration validation before seeding work starts."""
+
+    def test_run_impl_rejects_passive_burial_depth_before_seeding(self):
+        """Invalid passive burial depth should fail before time or seeding dependencies are accessed."""
+        manager = object.__new__(Simulation)
+        manager._config_is_read = True
+        manager._controller = _Controller(
+            {
+                'particles.populations': [
+                    {
+                        'particle_type': 'passive',
+                        'tracer_methods': {'passive_tracer': {}},
+                        'seeding': {'burial_depth': {'constant': 0.0}},
+                    }
+                ]
+            }
+        )
+
+        with pytest.raises(ConfigurationError, match='seeding.burial_depth'):
+            manager._run_impl()
+
+    @pytest.mark.parametrize('example_name', ['config.example_sfincs.yaml', 'sedtrails-example-passive.yaml'])
+    def test_passive_examples_pass_runtime_preflight(self, example_name):
+        """Committed passive examples must satisfy their runtime-only constraints."""
+        example_file = Path(__file__).parents[2] / 'examples' / example_name
+        config = YAMLConfigValidator().validate_yaml(str(example_file))
+
+        validate_population_runtime_configurations(config['particles']['populations'])
+
+    def test_plan_retrievers_pass_population_and_global_fraction_selection(self, monkeypatch):
+        """Each plan build should receive its population config and shared input-model defaults."""
+        calls = []
+
+        def fake_build_plan_sedtrails_data(
+            sedtrails_data,
+            tracer_plan,
+            population_config=None,
+            default_fraction_index=0,
+            default_fraction_name=None,
+        ):
+            calls.append(
+                {
+                    'sedtrails_data': sedtrails_data,
+                    'tracer_plan': tracer_plan,
+                    'population_config': population_config,
+                    'default_fraction_index': default_fraction_index,
+                    'default_fraction_name': default_fraction_name,
+                }
+            )
+            return object()
+
+        monkeypatch.setattr(simulation_manager, 'build_plan_sedtrails_data', fake_build_plan_sedtrails_data)
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller(
+            {
+                'general.input_model': {
+                    'sediment_fraction_index': 2,
+                    'sediment_fraction_name': 'global_silt',
+                }
+            }
+        )
+        sedtrails_data = object()
+        runtime_plans = (
+            SimpleNamespace(
+                population_index=3,
+                population_config={'sediment_fraction_index': 1},
+                tracer=object(),
+            ),
+            SimpleNamespace(
+                population_index=7,
+                population_config={'sediment_fraction_name': 'local_sand'},
+                tracer=object(),
+            ),
+            SimpleNamespace(population_index=9, population_config={}, tracer=object()),
+        )
+
+        retrievers = manager._build_plan_retrievers(sedtrails_data, runtime_plans)
+
+        assert set(retrievers) == {3, 7, 9}
+        assert [call['population_config'] for call in calls] == [
+            {'sediment_fraction_index': 1},
+            {'sediment_fraction_name': 'local_sand'},
+            {},
+        ]
+        assert all(call['sedtrails_data'] is sedtrails_data for call in calls)
+        assert [call['default_fraction_index'] for call in calls] == [2, 2, 2]
+        assert [call['default_fraction_name'] for call in calls] == ['global_silt'] * 3
 
 
 class TestSimulationManagerTimeConfig:
@@ -442,6 +536,32 @@ class TestSimulationManagerTimeConfig:
     def test_output_sample_due_on_interval_or_final_time(self, sample_time, next_output_time, end_time, expected):
         """Samples should be saved only on configured boundaries or at final time."""
         assert Simulation._is_output_sample_due(sample_time, next_output_time, end_time) is expected
+
+    @pytest.mark.parametrize(
+        'method_name,transport_probability_method,expected',
+        [
+            ('vanwesten', 'stochastic_transport', True),
+            ('vanwesten', 'reduced_velocity', True),
+            ('vanwesten', 'no_probability', True),
+            ('soulsby', 'no_probability', True),
+            ('passive_tracer', 'no_probability', True),
+            ('soulsby', 'reduced_velocity', False),
+            ('passive_tracer', 'stochastic_transport', False),
+        ],
+    )
+    def test_should_update_bed_level_after_movement_policy(
+        self,
+        method_name,
+        transport_probability_method,
+        expected,
+    ):
+        """Post-move bed-level updates should follow tracer and transport policy rules."""
+        tracer_plan = SimpleNamespace(
+            method_name=method_name,
+            transport_probability_method=transport_probability_method,
+        )
+
+        assert Simulation._should_update_bed_level_after_movement(tracer_plan) is expected
 
     def test_initialize_population_output_status_supplies_required_fields(self):
         """The seeded initial sample should have status fields before the first physics update."""

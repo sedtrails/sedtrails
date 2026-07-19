@@ -103,11 +103,12 @@
           "type": "string",
           "enum": [
             "fm_netcdf",
+            "d3d4_netcdf",
             "xbeach",
             "sfincs"
           ],
           "default": "fm_netcdf",
-          "description": "'fm_netcdf' = D-Flow FM, 'xbeach' = XBeach, 'sfincs' = SFINCS"
+          "description": "'fm_netcdf' = D-Flow FM, 'd3d4_netcdf' = Delft3D-4 NetCDF, 'xbeach' = XBeach, 'sfincs' = SFINCS"
         },
         "reference_date": {
           "type": "string",
@@ -118,6 +119,16 @@
           "type": "number",
           "default": 1,
           "description": "morphological acceleration factor for time decompression (default: 1 = no decompression)"
+        },
+        "sediment_fraction_index": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Delft3D4 only: zero-based sediment fraction index to select when multiple fractions are present (e.g. LSED/LSEDTOT dimensions)."
+        },
+        "sediment_fraction_name": {
+          "type": "string",
+          "description": "Delft3D4 only: sediment fraction name to select when available in fraction coordinates (takes precedence over sediment_fraction_index)."
         }
       }
     },
@@ -145,7 +156,7 @@
         },
         "input_model": {
           "$ref": "#/$defs/input_model_type",
-          "description": "input model for the simulations (supported formats: fm_netcdf, xbeach, sfincs)"
+          "description": "input model for the simulations (supported formats: fm_netcdf, d3d4_netcdf, xbeach, sfincs)"
         },
         "n_runs": {
           "type": "integer",
