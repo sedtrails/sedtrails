@@ -281,18 +281,18 @@
 /* save buttons: clean monochrome icons right of the logo; a small accent dot
    marks unsaved changes (class .attn, set in settings.js updateChip) */
 #tb-actions { display: flex; gap: 5px; align-items: center; }
-#tb-actions button {
+#tb-actions button, #tb-appdata {
   display: flex; align-items: center; gap: 2px; position: relative;
   background: none; border: 1px solid var(--border); border-radius: 6px;
   height: 26px; padding: 0 7px; color: var(--text);
 }
-#tb-actions button:hover { border-color: var(--text); color: var(--text); background: var(--panel2); }
+#tb-actions button:hover, #tb-appdata:hover { border-color: var(--text); color: var(--text); background: var(--panel2); }
 #tb-actions button:disabled { opacity: .4; }
 #tb-actions button.attn::after {
   content: ""; position: absolute; top: -3px; right: -3px; width: 8px; height: 8px;
   border-radius: 50%; background: var(--accent); border: 1px solid var(--panel);
 }
-#tb-actions svg { display: block; }
+#tb-actions svg, #tb-appdata svg { display: block; }
 #tb-actions .tb-ellipsis { font-size: 11px; line-height: 1; font-weight: 700; }
 
 /* timeline coverage bands (which span is forcing / particles) */

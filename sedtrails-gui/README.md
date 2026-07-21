@@ -12,7 +12,13 @@ A local GUI covering the full SedTRAILS workflow in five tabs:
 
 ## Run it
 
-Select the sedtrails venv interpreter and run directly (VS Code or terminal):
+With the sedtrails venv active, from anywhere in the repository:
+
+```
+sedtrails gui
+```
+
+or select the sedtrails venv interpreter and run directly (VS Code or terminal):
 
 ```
 python sedtrails_gui.py

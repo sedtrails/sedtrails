@@ -35,6 +35,11 @@
     <button class="tabbtn" data-tab="connectivity">Connectivity</button>
   </nav>
   <span id="cfgchip" title=""></span>
+  <button id="tb-appdata" title="Data locations — where the GUI stores its files">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+  </button>
 </div>
 <div id="infopop"></div>
 <div id="sidebar">
@@ -363,6 +368,16 @@
     </div>
     <footer><button data-close="modal-poly">Cancel</button>
       <button class="primary" id="poly-save">Save</button></footer>
+  </div>
+</div>
+
+<!-- Data locations: every folder the GUI writes to (registry + drawn objects,
+     result bundles, forcing caches). Body built by showAppData() in app.js. -->
+<div class="modal-back" id="modal-appdata" style="display:none">
+  <div class="modal" style="width:min(560px,92vw)">
+    <header><b>Data locations</b><button class="x mini" data-close="modal-appdata">✕</button></header>
+    <div class="body" id="appdata-body"></div>
+    <footer><button data-close="modal-appdata">Close</button></footer>
   </div>
 </div>
 

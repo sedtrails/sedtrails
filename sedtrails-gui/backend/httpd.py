@@ -18,7 +18,7 @@ from .run_manager import MANAGER as run_manager
 from .bundle import (_classify_progress, _polygons_lock, _polygons_path,
                      _registry_lock, classify, import_polygon_dir, import_run,
                      load_poly_txt, load_registry, registry_find, save_registry)
-from .settings import WEB_DIR
+from .settings import APP_DIR, VIEWER_APP_DIR, WEB_DIR
 from .util import (_browse, _jobs, _jobs_lock, _log, _read_json, _video_jobs,
                    _write_json, native_pick, native_save)
 
@@ -91,6 +91,25 @@ class GuiHandler(BaseHTTPRequestHandler):
                 return self._send_file(fpath, ctype, cache=False)
             if route == "/api/registry":
                 return self._send(200, load_registry())
+            if route == "/api/appinfo":
+                # every place the GUI writes/caches data on disk
+                locs = [{"label": "App data — simulation registry + drawn objects",
+                         "path": str(APP_DIR),
+                         "note": "registry.json (imported simulations), polygons.json (drawn objects)"}]
+                if VIEWER_APP_DIR.is_dir():
+                    locs.append({"label": "Standalone-viewer app data (merged read-only)",
+                                 "path": str(VIEWER_APP_DIR), "note": ""})
+                for s in load_registry()["simulations"]:
+                    locs.append({"label": f"Result bundle — {s.get('name') or s['id']}",
+                                 "path": s["bundle_dir"],
+                                 "note": "cached tracks / mesh / classification, next to the result file"})
+                for f in forcing._store.values():
+                    locs.append({"label": f"Forcing cache — {Path(f['path']).name}",
+                                 "path": str(f["cache_dir"]),
+                                 "note": "cached Voronoi mesh, next to the forcing file"})
+                for loc in locs:
+                    loc["exists"] = os.path.isdir(loc["path"])
+                return self._send(200, {"locations": locs})
             if route == "/api/schema":
                 return self._send(200, config_api.get_schemas())
             if route == "/api/run/status":
@@ -199,6 +218,16 @@ class GuiHandler(BaseHTTPRequestHandler):
 
             body = self._json_body()
 
+            if route == "/api/openfolder":
+                p = Path(body.get("path", ""))
+                if not p.is_dir():
+                    return self._send(400, {"error": f"folder not found: {p}"})
+                if sys.platform == "win32":
+                    os.startfile(str(p))
+                else:
+                    import subprocess
+                    subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(p)])
+                return self._send(200, {"ok": True})
             if route == "/api/connectivity/compute":
                 return self._send(200, connectivity.compute(
                     body["bundle_id"], body.get("polygons", []),
