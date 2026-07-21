@@ -37,13 +37,13 @@ OPEN_BROWSER = True
 APP_WINDOW = True                # own window without address bar (Edge/Chrome); False = normal browser tab
 DATA_ROOTS = []                  # extra browse roots (absolute paths); drives + home are added automatically
 
-from backend import settings
+from backend import settings  # noqa: E402  (after the env-var setup above)
 
 settings.DATA_ROOTS = DATA_ROOTS
 
-from backend.bundle import load_registry
-from backend.httpd import GuiHandler, QuietServer
-from backend.util import _log
+from backend.bundle import load_registry  # noqa: E402
+from backend.httpd import GuiHandler, QuietServer  # noqa: E402
+from backend.util import _log  # noqa: E402
 
 
 def _open_window(url):

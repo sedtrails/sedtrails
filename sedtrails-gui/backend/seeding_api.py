@@ -6,7 +6,6 @@ strategies (particle_seeder.py), so the preview matches the simulation exactly
 """
 
 import copy
-from pathlib import Path
 
 from .util import resolve_input_path
 

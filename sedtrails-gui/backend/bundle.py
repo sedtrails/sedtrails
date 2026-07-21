@@ -620,7 +620,8 @@ def _classify_missing(bdir, meta, missing, bundle_id=""):
 
     def qbox(poly):
         bx0, bx1, by0, by1 = poly["bbox"]
-        c = lambda v, vmin, s: np.uint16(min(max((v - vmin) / s, 0), QMAX))
+        def c(v, vmin, s):
+            return np.uint16(min(max((v - vmin) / s, 0), QMAX))
         return (c(bx0, q["xmin"], q["sx"]), c(bx1, q["xmin"], q["sx"]) + 1,
                 c(by0, q["ymin"], q["sy"]), c(by1, q["ymin"], q["sy"]) + 1)
 
@@ -642,7 +643,7 @@ def _classify_missing(bdir, meta, missing, bundle_id=""):
         last_qx[valid] = qx[valid]
         last_qy[valid] = qy[valid]
 
-        for poly, s in zip(missing, st):
+        for poly, s in zip(missing, st, strict=False):
             bx0, bx1, by0, by1 = s["qbox"]
             inbox = (qx >= bx0) & (qx < bx1) & (qy >= by0) & (qy < by1)
             track = s["at0"] & ~s["left"]
@@ -672,7 +673,7 @@ def _classify_missing(bdir, meta, missing, bundle_id=""):
     fx = last_qx.astype(np.float64) * q["sx"] + q["xmin"]
     fy = last_qy.astype(np.float64) * q["sy"] + q["ymin"]
     has_last = np.flatnonzero(last_qx != SENTINEL)
-    for poly, s in zip(missing, st):
+    for poly, s in zip(missing, st, strict=False):
         at_end = np.zeros(N, bool)
         at_end[_contains(poly, fx, fy, has_last)] = True
         flags = (s["at0"].astype(np.uint8)

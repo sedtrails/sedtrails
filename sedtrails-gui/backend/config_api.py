@@ -167,8 +167,6 @@ def load_config(path):
 def _patch(node, new, yml):
     """Recursively apply `new` (plain dict/list) into a ruamel node in place,
     keeping comments/order of everything that did not change."""
-    from ruamel.yaml.comments import CommentedMap, CommentedSeq
-
     if isinstance(node, dict) and isinstance(new, dict):
         for k in [k for k in node.keys() if k not in new]:
             del node[k]
