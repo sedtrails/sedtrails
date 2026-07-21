@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SedTRAILS GUI</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='5' cy='6' r='3' fill='%231f6fd6'/><circle cx='11' cy='10' r='2.4' fill='%23ff8a3d'/></svg>">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<canvas id="glcanvas"></canvas>
+
+<div id="topbar">
+  <div id="topbrand"><b>SedTRAILS</b></div>
+  <span id="tb-actions">
+    <button id="tb-save" title="Save config">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+        <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+    </button>
+    <button id="tb-saveas" title="Save config as…">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+        <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      <span class="tb-ellipsis">…</span>
+    </button>
+  </span>
+  <nav id="tabbar">
+    <button class="tabbtn" data-tab="settings">Settings</button>
+    <button class="tabbtn" data-tab="seeding">Populations</button>
+    <button class="tabbtn" data-tab="run">Run</button>
+    <button class="tabbtn" data-tab="viewer">Viewer</button>
+    <button class="tabbtn" data-tab="connectivity">Connectivity</button>
+  </nav>
+  <span id="cfgchip" title=""></span>
+</div>
+<div id="infopop"></div>
+<div id="sidebar">
+  <div id="brand"><b id="paneltitle">Result viewer</b>
+    <button class="mini panel-toggle" style="margin-left:auto" id="btn-hide-side" title="Hide panel">⟨</button>
+  </div>
+  <div class="tabpanel active" data-tab="viewer">
+
+  <details>
+    <summary>Simulations</summary>
+    <div class="sec">
+      <div id="simlist"></div>
+      <div class="hint" id="sim-import-status" style="display:none"></div>
+      <div class="row"><button class="primary" id="btn-add-sim">＋ Add simulation…</button></div>
+    </div>
+  </details>
+
+  <!-- base map controls moved to the Background section below; the model-layer
+       rows stay hidden (dropped from the GUI, wiring kept) -->
+  <div style="display:none">
+      <div class="row small"><span class="dim" style="width:78px">Model layer</span>
+        <button class="eye" id="eye-model" title="show/hide model layer">👁</button>
+        <select id="sel-model" class="grow"><option value="bed">bathymetry</option></select></div>
+      <div class="row small" id="row-mesh-alpha"><span class="dim" style="width:78px">Layer opacity</span>
+        <input type="range" id="rng-mesh-alpha" min="0.15" max="1" step="0.05" value="1"></div>
+  </div>
+
+  <!-- polygons are managed in the floating Objects panel; the legacy controls
+       stay in the DOM (hidden) because the panel reuses their handlers -->
+  <div style="display:none">
+    <div id="poly-opts">
+      <div id="polylist"></div>
+      <button class="eye" id="eye-poly">👁</button>
+      <button id="btn-poly-import">Import…</button>
+      <button id="btn-poly-draw">✏ Draw new</button>
+    </div>
+  </div>
+
+  <details>
+    <summary>Filter &amp; color</summary>
+    <div class="sec">
+      <div id="rulelist"></div>
+      <div class="row"><button id="btn-add-rule">＋ Add rule</button></div>
+      <div id="pointscale"></div>
+      <div class="row small dim" id="classify-status"></div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Particle display <button class="eye" id="eye-points" title="show/hide particles">👁</button></summary>
+    <div class="sec" id="points-opts">
+      <div class="row small"><span class="dim" style="width:72px">Point size</span>
+        <input type="range" id="rng-size" min="1" max="8" step="0.5" value="3"></div>
+      <div class="row small"><span class="dim" style="width:72px">Opacity</span>
+        <input type="range" id="rng-alpha" min="0.05" max="1" step="0.05" value="0.85"></div>
+      <div class="row small"><span class="dim" style="width:72px">Particles</span>
+        <select id="sel-decim">
+          <option value="1">all</option><option value="4">1 / 4</option>
+          <option value="16">1 / 16</option><option value="64">1 / 64</option>
+        </select></div>
+      <!-- fade-buried / fade-immobile hidden for now (wiring kept intact) -->
+      <div style="display:none">
+        <div class="row small"><label><input type="checkbox" id="chk-fade-bur"> Fade buried, fully at ≥</label>
+          <input type="number" id="inp-fade-depth" value="0.05" step="0.01" min="0" style="width:56px">
+          <span class="dim">m</span></div>
+        <div class="row small"><label><input type="checkbox" id="chk-fade-imm"> Fade immobile (inactive) particles</label></div>
+        <div class="row small" id="row-fade-alpha"><span class="dim" style="width:72px">Faded opacity</span>
+          <input type="range" id="rng-fade-alpha" min="0" max="0.6" step="0.05" value="0.1"></div>
+      </div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Paths display <button class="eye" id="eye-paths" title="show/hide paths of the filtered particles">👁</button></summary>
+    <div class="sec" id="paths-opts">
+      <div class="row small"><span class="dim" style="width:72px">Width</span>
+        <input type="range" id="rng-pwidth" min="0.5" max="6" step="0.5" value="1.5"></div>
+      <div class="row small"><span class="dim" style="width:72px">Opacity</span>
+        <input type="range" id="rng-palpha" min="0.05" max="1" step="0.05" value="0.6"></div>
+      <div class="row small"><span class="dim" style="width:72px">Color</span>
+        <select id="sel-pathcolor">
+          <option value="age">by age</option>
+          <option value="dist">by distance travelled</option>
+          <option value="burial">by burial depth</option>
+          <option value="solid">solid color</option>
+        </select>
+        <span id="pathcolor-swatch"></span></div>
+      <div id="pathscale"></div>
+      <div class="row small dim" id="paths-note"></div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Forcing layers <button class="eye" id="eye-frc" title="show/hide all forcing layers">👁</button></summary>
+    <div class="sec">
+      <!-- single source of truth: the forcing file comes from the config's
+           inputs.data (Settings tab); the manual pathbox stays hidden -->
+      <div class="pathbox" style="display:none"><input type="text" id="frc-path" placeholder="…\forcing_sedtrails.nc">
+        <button id="frc-open">Browse…</button>
+        <button id="frc-load">Open</button></div>
+      <div class="hint" id="frc-src">no config loaded — set the forcing file in Settings → inputs → data</div>
+      <div class="hint" id="frc-info"></div>
+      <div id="frc-layers"></div>
+      <div class="row"><select id="frc-add-var" class="grow"></select>
+        <button class="primary mini" id="frc-add">＋ Add layer</button></div>
+      <div class="hint">Layers draw bottom-up; the top card draws on top. Use ▲▼ to reorder.</div>
+    </div>
+  </details>
+  <!-- fine-step time slider removed: ONE main time slider (play bar) drives
+       everything; the elements stay hidden because forcing.js still syncs them -->
+  <div style="display:none">
+    <button id="frc-step-b" class="mini">⏮</button>
+    <button id="frc-step-f" class="mini">⏭</button>
+    <span class="dim small" id="frc-tlabel">–</span>
+    <input type="range" id="frc-time" min="0" max="0" step="1" value="0">
+  </div>
+
+  <details>
+    <summary>Overlays</summary>
+    <!-- seeding previews / objects / connectivity network — eyes + legends,
+         rendered by LayersPanel.refresh() (which replaced the floating panel) -->
+    <div class="sec" id="ov-body"></div>
+  </details>
+
+  <details>
+    <summary>Background <button class="eye" id="eye-basemap" title="show/hide base map">👁</button></summary>
+    <div class="sec">
+      <div class="row small"><span class="dim" style="width:78px">Base map</span>
+        <select id="sel-basemap" class="grow">
+          <option value="sat" selected>satellite</option>
+          <option value="gray">gray map</option>
+        </select></div>
+    </div>
+  </details>
+  </div>
+  <div class="tabpanel" data-tab="settings">
+    <div class="sec">
+      <div class="field"><div class="lbl">Configuration yaml</div>
+        <div class="pathbox"><input type="text" id="set-path" placeholder="…\sedtrails-config.yaml"
+            title="type a path and press Enter to load">
+          <button id="set-open" title="Native file dialog">Open…</button></div></div>
+      <div id="set-estimate" class="hint"></div>
+      <div id="set-errors"></div>
+    </div>
+    <div id="settings-form"></div>
+  </div>
+  <!-- the Forcing viewer tab was merged into the Viewer tab: its sections
+       (Forcing layers + hidden fine-step slider) live in the viewer panel -->
+  <div class="tabpanel" data-tab="seeding">
+    <div class="sec">
+      <div class="row">
+        <button id="seed-goto-settings">All settings…</button>
+      </div>
+    </div>
+    <div id="seeding-pops"></div>
+  </div>
+  <div class="tabpanel" data-tab="run">
+    <details>
+      <summary>Simulation</summary>
+      <div class="sec">
+        <div id="run-summary"></div>
+        <div class="row">
+          <button class="primary" id="run-start">▶ Start run</button>
+          <button class="danger" id="run-stop" style="display:none">■ Stop</button>
+          <button id="run-import" style="display:none">Import &amp; view result</button>
+        </div>
+        <div class="row small" id="run-state"></div>
+        <div class="progress" id="run-prog" style="display:none"><div></div></div>
+        <div class="hint" id="run-progtxt"></div>
+      </div>
+    </details>
+    <!-- plain div, not <details>: Chrome's internal ::details-content box
+         breaks the flex chain that lets the log scroll inside itself -->
+    <div class="sec" id="run-logsec">
+      <div class="dim small">Log</div>
+      <pre id="run-log"></pre>
+    </div>
+  </div>
+  <div class="tabpanel" data-tab="connectivity">
+    <details>
+      <summary>Connectivity matrix</summary>
+      <div class="sec">
+        <div class="row small"><span class="dim" style="width:72px">Simulation</span>
+          <select id="con-sim" class="grow"></select></div>
+        <div class="row small"><span class="dim" style="width:72px">Mode</span>
+          <select id="con-mode" class="grow">
+            <option value="start_end">start → end position</option>
+            <option value="start_ever" title="re-entry rule: the start polygon itself only counts after leaving and returning">start → ever visited (re-entry rule)</option>
+          </select></div>
+        <div class="row small"><span class="dim" style="width:72px">Values</span>
+          <select id="con-norm" class="grow">
+            <option value="count">particle counts</option>
+            <option value="fraction">fraction of source</option>
+          </select></div>
+        <div class="row small"><span class="dim" style="width:72px">Auto cells</span>
+          <input type="number" id="con-ncells" min="2" max="200" value="12" style="width:58px">
+          <button id="con-gencells" class="grow"
+            title="k-means clustering of the forcing bathymetry (geomorphic cells, Pearson et al. 2021); replaces previous auto_cell_* objects">⚙ Generate polygons</button>
+          <button id="con-delcells" class="mini" title="Remove all auto-generated cells">✕</button></div>
+        <div class="hint" id="con-info"></div>
+        <div class="row">
+          <button class="primary" id="con-compute">Compute</button>
+          <button id="con-csv" style="display:none">⬇ CSV</button>
+        </div>
+        <div class="hint" id="con-status"></div>
+      </div>
+    </details>
+    <details id="con-resultsec">
+      <summary>Result</summary>
+      <div class="sec" style="overflow-x:auto">
+        <div id="con-result" class="hint">No result yet.</div>
+      </div>
+    </details>
+  </div>
+</div>
+<button id="sidebtn" class="mini panel-toggle" title="Show panel">⟩</button>
+<div id="sideresize" title="drag to resize the panel"></div>
+
+<div id="statusbar">
+  <span id="st-sel"><b>0</b> selected</span>
+  <span id="st-fps"><b>–</b> fps</span>
+  <span id="st-load" style="display:none">loading <b>0%</b></span>
+  <span id="st-frc" style="display:none">⏳ forcing…</span>
+</div>
+<div id="floatpanels">
+  <!-- the floating Layers panel was replaced by the Viewer tab's sidebar
+       (Overlays/Background sections); it stays hidden, not deleted -->
+  <details id="layerspanel" style="display:none">
+    <summary><button class="mini panel-toggle" tabindex="-1"
+      title="collapse / expand">▾</button>Layers</summary>
+    <div id="lp-body"></div>
+  </details>
+  <details id="objectspanel">
+    <summary><button class="mini panel-toggle" tabindex="-1"
+      title="collapse / expand">▾</button>Objects</summary>
+    <div id="op-body"></div>
+  </details>
+</div>
+<!-- export-viewport framing overlay: aspect-locked frame; the map underneath
+     stays interactive (pan/zoom), only the bottom bar catches clicks -->
+<div id="vpselect" style="display:none">
+  <div id="vpselect-rect"></div>
+  <div id="vpselect-bar">
+    <span class="dim small">Pan &amp; zoom the map until the frame is right</span>
+    <button id="vpselect-ok">✓ Save viewport</button>
+    <button id="vpselect-cancel">Cancel</button>
+  </div>
+</div>
+<div id="coords"></div>
+<div id="attribution"></div>
+<div id="colorbars"></div>
+<div id="drawhint"><span id="drawhint-text">Click to add vertices · <b>Enter</b>/double-click to finish · <b>Esc</b> to cancel</span><button id="btn-edit-done" style="display:none">✓ Done</button></div>
+<div id="swatchpop"><div class="grid"></div><div class="more">custom…</div>
+  <input type="color" id="swatch-custom" style="position:absolute;visibility:hidden"></div>
+
+<div id="playbar">
+  <button id="btn-play" title="Space">▶</button>
+  <button id="btn-step-b" title="1 day back">⏮</button>
+  <button id="btn-step-f" title="1 day forward">⏭</button>
+  <div id="tlwrap">
+    <div id="tl-cover">
+      <div id="tl-cov-frc"><span>forcing</span></div>
+      <div id="tl-cov-par"><span>particles</span></div>
+    </div>
+    <input type="range" id="timeline" min="0" max="1000" step="1" value="0">
+  </div>
+  <span id="datelabel" class="dim">–</span>
+  <span id="speedwrap"><span class="dim small">speed</span>
+    <input type="range" id="rng-speed" min="0" max="1" step="0.005" value="0.167">
+    <span class="dim small" id="lbl-speed">3.0 h/s</span></span>
+  <button id="btn-export" title="Export PNG / MP4">⬇ Export</button>
+</div>
+
+<div class="modal-back" id="modal-open" style="display:none">
+  <div class="modal">
+    <header><b>Open simulation</b><button class="x mini" data-close="modal-open">✕</button></header>
+    <div class="body">
+      <div class="field">
+        <div class="lbl">Recent</div>
+        <select id="sel-recent" style="width:100%">
+          <option value="">— pick a recent simulation to reopen —</option>
+        </select>
+      </div>
+      <div class="field">
+        <div class="lbl">SedTRAILS results netCDF</div>
+        <div class="pathbox"><input type="text" id="inp-nc" placeholder="…\03_output\run\sedtrails_results.nc">
+          <button data-browse="inp-nc" data-ext=".nc">Browse…</button></div>
+      </div>
+      <div class="field">
+        <div class="lbl">Forcing / DFM netCDF — optional, enables the bathymetry &amp; bed-change model layers</div>
+        <div class="pathbox"><input type="text" id="inp-forcing" placeholder="(optional)">
+          <button data-browse="inp-forcing" data-ext=".nc">Browse…</button></div>
+      </div>
+      <div class="field" style="display:flex;gap:14px">
+        <div class="grow"><div class="lbl">Display name</div><input type="text" id="inp-name" style="width:100%"></div>
+        <div><div class="lbl">Load every n-th particle</div>
+          <select id="inp-stride"><option value="1">1 (all)</option><option value="2">2</option>
+            <option value="4">4</option><option value="10">10</option></select></div>
+      </div>
+      <div class="progress" id="import-prog" style="display:none"><div></div></div>
+      <div class="hint" id="import-msg"></div>
+    </div>
+    <footer><button data-close="modal-open">Cancel</button>
+      <button class="primary" id="btn-import">Open</button></footer>
+  </div>
+</div>
+
+<div class="modal-back" id="modal-browse" style="display:none">
+  <div class="modal">
+    <header><b id="browse-title">Select file</b><button class="x mini" data-close="modal-browse">✕</button></header>
+    <div class="body">
+      <div class="pathbox"><input type="text" id="browse-path"><button id="browse-go">Go</button></div>
+      <div class="filelist" id="browse-list"></div>
+      <div class="hint" id="browse-hint"></div>
+    </div>
+    <footer><button data-close="modal-browse">Cancel</button>
+      <button class="primary" id="browse-usedir" style="display:none">Use this folder</button></footer>
+  </div>
+</div>
+
+<div class="modal-back" id="modal-poly" style="display:none">
+  <div class="modal" style="width:min(420px,92vw)">
+    <header><b id="modal-poly-title">New polygon</b><button class="x mini" data-close="modal-poly">✕</button></header>
+    <div class="body">
+      <div class="field"><div class="lbl">Name</div><input type="text" id="poly-name" style="width:100%"></div>
+    </div>
+    <footer><button data-close="modal-poly">Cancel</button>
+      <button class="primary" id="poly-save">Save</button></footer>
+  </div>
+</div>
+
+<!-- Modify-seeding dialog: the ONLY place where particle release positions are
+     changed (object, distribution, coordinates, seed, counts). Body is built by
+     SeedingTab.openSeedingModal(); Apply commits, Cancel discards the draft. -->
+<div class="modal-back" id="modal-seeding" style="display:none">
+  <div class="modal" style="width:min(440px,92vw)">
+    <header><b id="modal-seeding-title">Modify seeding</b><button class="x mini" data-close="modal-seeding">✕</button></header>
+    <div class="body" id="modal-seeding-body"></div>
+    <footer><span class="dim small" id="modal-seeding-count" style="margin-right:auto"></span>
+      <button data-close="modal-seeding">Cancel</button>
+      <button class="primary" id="modal-seeding-apply">Apply</button></footer>
+  </div>
+</div>
+
+<div class="modal-back" id="modal-export" style="display:none">
+  <div class="modal" style="width:min(460px,92vw)">
+    <header><b>Export</b><button class="x mini" data-close="modal-export">✕</button></header>
+    <div class="body">
+      <div class="row"><label><input type="radio" name="expfmt" value="png" checked> PNG image</label>
+        <label><input type="radio" name="expfmt" value="mp4"> MP4 animation</label></div>
+      <div class="field"><div class="lbl">Resolution</div>
+        <select id="exp-res">
+          <option value="current">current window</option>
+          <option value="1920x1080" selected>1920 × 1080</option>
+          <option value="2560x1440">2560 × 1440</option>
+          <option value="3840x2160">3840 × 2160</option>
+        </select></div>
+      <div class="field"><div class="lbl">Viewport</div>
+        <div class="row">
+          <select id="exp-vp" class="grow"><option value="">current map view</option></select>
+          <button id="exp-vp-new" class="mini" title="frame a fixed viewport on the map">＋ define…</button>
+          <button id="exp-vp-del" class="mini danger" title="delete this saved viewport" style="display:none">✕</button>
+        </div>
+        <div class="hint">"Current map view" exports what you see (cropped to the chosen aspect
+          ratio). A saved viewport pins the exact framing, so the export can be reproduced
+          later — with different layers/particles if you like.</div>
+      </div>
+      <div id="exp-mp4opts" style="display:none">
+        <div class="field" style="display:flex;gap:12px">
+          <div><div class="lbl">Frame rate (fps)</div><input type="number" id="exp-fps" value="12" min="1" max="60"></div>
+          <div><div class="lbl">Days per frame</div><input type="number" id="exp-dpf" value="1" min="0.25" step="0.25"></div>
+        </div>
+        <div class="field" style="display:flex;gap:12px">
+          <div><div class="lbl">From</div><input type="date" id="exp-t0"></div>
+          <div><div class="lbl">To</div><input type="date" id="exp-t1"></div>
+        </div>
+        <div class="hint" id="exp-duration"></div>
+      </div>
+      <div class="progress" id="exp-prog" style="display:none"><div></div></div>
+      <div class="hint" id="exp-msg"></div>
+    </div>
+    <footer><button data-close="modal-export">Cancel</button>
+      <button class="primary" id="btn-do-export">Save as…</button></footer>
+  </div>
+</div>
+
+<script src="js/core/util.js"></script>
+<script src="js/core/state.js"></script>
+<script src="js/core/gl.js"></script>
+<script src="js/core/tiles.js"></script>
+<script src="js/core/mesh.js"></script>
+<script src="js/tabs/viewer.js"></script>
+<script src="js/core/playbar.js"></script>
+<script src="js/core/render.js"></script>
+<script src="js/tabs/viewer-export.js"></script>
+<script src="js/tabs/viewer-ui.js"></script>
+<script src="js/core/interact.js"></script>
+<script src="js/tabs/viewer-wiring.js"></script>
+<script src="js/tabs/schema-form.js"></script>
+<script src="js/core/tabs.js"></script>
+<script src="js/tabs/settings.js"></script>
+<script src="js/tabs/forcing.js"></script>
+<script src="js/tabs/seeding.js"></script>
+<script src="js/tabs/run.js"></script>
+<script src="js/tabs/connectivity.js"></script>
+<script src="js/core/layers-panel.js"></script>
+<script src="js/core/objects-panel.js"></script>
+<script src="js/core/app.js"></script>
+</body>
+</html>
