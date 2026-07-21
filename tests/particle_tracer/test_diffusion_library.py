@@ -1,139 +1,34 @@
+"""Unit tests for the supported Brownian diffusion strategy."""
+
 import numpy as np
 
-from sedtrails.particle_tracer.diffusion_library import (
-    DiffusionCalculator,
-    GradientDiffusionStrategy,
-    RandomDiffusionStrategy,
-)
+from sedtrails.particle_tracer.diffusion_library import BrownianDiffusionStrategy, DiffusionCalculator
 
 
-class TestDiffusion:
-    """
-    Test suite for diffusion strategies and the diffusion calculator.
+def test_brownian_diffusion_with_seeded_generator_is_reproducible():
+    """Independent calculators with the same seed generate identical walks."""
+    x = np.array([0.0, 1.0])
+    y = np.array([0.0, 1.0])
+    u = np.zeros_like(x)
+    v = np.zeros_like(y)
 
-    This class contains tests for:
-    - The deterministic GradientDiffusionStrategy strategy.
-    - The stochastic RandomDiffusionStrategy strategy.
-    - The DiffusionCalculator class and its strategy switching.
+    first = DiffusionCalculator(BrownianDiffusionStrategy(), rng=np.random.default_rng(1234))
+    second = DiffusionCalculator(BrownianDiffusionStrategy(), rng=np.random.default_rng(1234))
 
-    Methods
-    -------
-    test_gradient_diffusion_calculation():
-        Test the GradientDiffusionStrategy strategy returns output arrays with
-        the correct shape and type.
-    test_random_diffusion_calculation():
-        Test the RandomDiffusionStrategy strategy returns output arrays with
-        the correct shape and determinism when seeding the RNG.
-    test_diffusion_calculator_strategy():
-        Test that DiffusionCalculator correctly uses the provided
-        diffusion strategy and allows switching strategies.
-    """
+    first_x, first_y = first.calc_diffusion(x, y, u, v, 0.5, 0.1)
+    second_x, second_y = second.calc_diffusion(x, y, u, v, 0.5, 0.1)
 
-    def setup_method(self):
-        """
-        Set up common test data for diffusion strategy tests.
+    np.testing.assert_allclose(first_x, second_x)
+    np.testing.assert_allclose(first_y, second_y)
 
-        This method creates simple arrays for x, y, u, and v that are used
-        in the tests for both GradientDiffusionStrategy and RandomDiffusionStrategy.
-        """
-        # Create a simple grid and corresponding velocity arrays.
-        self.x = np.array([0.0, 1.0, 2.0])
-        self.y = np.array([0.0, 1.0, 0.0])
-        self.u = np.array([1.0, 2.0, 3.0])
-        self.v = np.array([1.0, 1.0, 1.0])
-        self.dt = 0.1
-        self.kh = 0.5
 
-    def test_gradient_diffusion_calculation(self):
-        """
-        Test the GradientDiffusionStrategy strategy.
+def test_brownian_diffusion_zero_coefficient_is_a_noop():
+    """A zero coefficient preserves coordinates without consuming randomness."""
+    x = np.array([0.0, 1.0])
+    y = np.array([2.0, 3.0])
+    strategy = BrownianDiffusionStrategy()
 
-        Verifies that the calculate method returns two NumPy arrays of the same shape as the input.
-        """
-        strategy = GradientDiffusionStrategy()
-        xdif, ydif = strategy.calculate(
-            self.dt, self.x, self.y, self.u, self.v, self.kh
-        )
+    x_new, y_new = strategy.calculate(1.0, x, y, np.zeros_like(x), np.zeros_like(y), 0.0)
 
-        # Check that the returned values are NumPy arrays.
-        assert isinstance(xdif, np.ndarray), "xdif should be a numpy array."
-        assert isinstance(ydif, np.ndarray), "ydif should be a numpy array."
-
-        # Check that the output shapes match the input shape.
-        assert xdif.shape == self.x.shape, "xdif shape mismatch."
-        assert ydif.shape == self.y.shape, "ydif shape mismatch."
-
-    def test_random_diffusion_calculation(self):
-        """
-        Test the RandomDiffusionStrategy strategy.
-
-        Verifies that the calculate method returns two NumPy arrays of the same shape as the input.
-        Checks for deterministic behavior when seeding the random number generator.
-        """
-        strategy = RandomDiffusionStrategy()
-
-        # Set a fixed random seed and calculate diffusion.
-        np.random.seed(42)
-        xdif1, ydif1 = strategy.calculate(
-            self.dt, self.x, self.y, self.u, self.v, self.kh
-        )
-
-        # Reset the seed and calculate again to ensure reproducibility.
-        np.random.seed(42)
-        xdif2, ydif2 = strategy.calculate(
-            self.dt, self.x, self.y, self.u, self.v, self.kh
-        )
-
-        # Check that the returned values are NumPy arrays.
-        assert isinstance(xdif1, np.ndarray), "xdif should be a numpy array."
-        assert isinstance(ydif1, np.ndarray), "ydif should be a numpy array."
-
-        # Check that the output shapes match the input shape.
-        assert xdif1.shape == self.x.shape, "xdif shape mismatch."
-        assert ydif1.shape == self.y.shape, "ydif shape mismatch."
-
-        # Check that the outputs are the same with the same seed.
-        assert np.allclose(xdif1, xdif2), (
-            "Random diffusion x output not reproducible with fixed seed."
-        )
-        assert np.allclose(ydif1, ydif2), (
-            "Random diffusion y output not reproducible with fixed seed."
-        )
-
-    def test_diffusion_calculator_strategy(self):
-        """
-        Test the DiffusionCalculator class with different strategies.
-
-        Verifies that DiffusionCalculator correctly uses the assigned diffusion strategy
-        and that the strategy property can be updated to switch between different diffusion models.
-        """
-        # Initialize with GradientDiffusionStrategy strategy.
-        gradient_strategy = GradientDiffusionStrategy()
-        calc = DiffusionCalculator(strategy=gradient_strategy)
-        xdif_grad, ydif_grad = calc.calc_diffusion(
-            self.x, self.y, self.u, self.v, self.kh, self.dt
-        )
-
-        # Ensure output from gradient strategy is as expected.
-        assert isinstance(xdif_grad, np.ndarray), (
-            "xdif from gradient strategy should be a numpy array."
-        )
-        assert xdif_grad.shape == self.x.shape, "Gradient strategy xdif shape mismatch."
-        assert ydif_grad.shape == self.y.shape, "Gradient strategy ydif shape mismatch."
-
-        # Switch to RandomDiffusionStrategy strategy.
-        random_strategy = RandomDiffusionStrategy()
-        calc.strategy = random_strategy
-
-        # Set a fixed seed for reproducibility.
-        np.random.seed(100)
-        xdif_rand, ydif_rand = calc.calc_diffusion(
-            self.x, self.y, self.u, self.v, self.kh, self.dt
-        )
-
-        # Check that the output from the random strategy is a NumPy array with the expected shape.
-        assert isinstance(xdif_rand, np.ndarray), (
-            "xdif from random strategy should be a numpy array."
-        )
-        assert xdif_rand.shape == self.x.shape, "Random strategy xdif shape mismatch."
-        assert ydif_rand.shape == self.y.shape, "Random strategy ydif shape mismatch."
+    np.testing.assert_array_equal(x_new, x)
+    np.testing.assert_array_equal(y_new, y)

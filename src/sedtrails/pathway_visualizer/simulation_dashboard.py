@@ -22,7 +22,19 @@ from scipy.spatial import ConvexHull, QhullError, cKDTree
 
 @dataclass
 class RasterInterpolationWeights:
-    """Cached mapping from dashboard raster pixels to source grid faces."""
+    """Cached mapping from dashboard raster pixels to source grid faces.
+
+    Parameters
+    ----------
+    geometry_key : tuple
+        Key identifying the source-grid geometry.
+    shape : tuple of int
+        Raster pixel dimensions.
+    extent : tuple of float
+        Raster bounds as xmin, xmax, ymin, ymax.
+    face_indices, weights, valid_mask, quiver_indices : numpy.ndarray
+        Interpolation and rendering lookup arrays.
+    """
 
     geometry_key: tuple
     shape: tuple[int, int]
@@ -34,16 +46,29 @@ class RasterInterpolationWeights:
 
 
 class SimulationDashboard:
-    """Real-time visualization dashboard for particle simulations."""
+    """Real-time visualization dashboard for particle simulations.
+
+    Parameters
+    ----------
+    reference_date : str, optional
+        ISO-8601 reference date used to convert simulation times.
+    """
 
     LARGE_GRID_POINT_LIMIT = 5_000
     LARGE_GRID_QUIVER_LIMIT = 100
     PARTICLE_RENDER_LIMIT = 5_000
     RASTER_MAX_SIDE = 700
     RASTER_K_NEIGHBORS = 4
+    STRANDED_PARTICLE_COLOR = '#ffb3b3'
 
     def __init__(self, reference_date: str = '1970-01-01'):
-        """Initialize the dashboard."""
+        """Initialize the dashboard.
+
+        Parameters
+        ----------
+        reference_date : str, optional
+            ISO-8601 reference date used to convert simulation times.
+        """
         self.fig = None
         self.axes = {}
         self.lines = {}
@@ -459,6 +484,42 @@ class SimulationDashboard:
         """Flatten field data for plotting without copying when possible."""
         return np.asarray(values).ravel()
 
+    @staticmethod
+    def _particle_status_mask(
+        particles: Dict[str, np.ndarray], status_name: str, n_particles: int, default: bool = False
+    ) -> np.ndarray:
+        """Return a boolean particle status mask with a safe fallback for older payloads."""
+        status = particles.get(status_name)
+        if status is None:
+            return np.full(n_particles, default, dtype=bool)
+
+        status = np.asarray(status, dtype=bool)
+        if status.shape != (n_particles,):
+            return np.full(n_particles, default, dtype=bool)
+        return status
+
+    def _particle_trajectory_history(self, n_particles: int) -> tuple[np.ndarray, np.ndarray] | None:
+        """Return stored particle trajectory arrays when all snapshots match the current particle count."""
+        trajectories = getattr(self, 'trajectories', {})
+        x_history = trajectories.get('x', [])
+        y_history = trajectories.get('y', [])
+        if len(x_history) < 2 or len(x_history) != len(y_history):
+            return None
+
+        x_arrays = [np.asarray(values, dtype=float).ravel() for values in x_history]
+        y_arrays = [np.asarray(values, dtype=float).ravel() for values in y_history]
+        if any(values.shape != (n_particles,) for values in x_arrays + y_arrays):
+            return None
+
+        return np.vstack(x_arrays), np.vstack(y_arrays)
+
+    @staticmethod
+    def _particle_trail_segments(trail_x: np.ndarray, trail_y: np.ndarray, particle_indices: np.ndarray) -> np.ndarray:
+        """Return line-collection segments for selected particle trajectory columns."""
+        if particle_indices.size == 0:
+            return np.empty((0, 0, 2), dtype=float)
+        return np.stack((trail_x[:, particle_indices], trail_y[:, particle_indices]), axis=-1).transpose(1, 0, 2)
+
     def _geometry_key(self, x: np.ndarray, y: np.ndarray, mesh_geometry: Dict[str, Any] | None) -> tuple:
         extent = self._spatial_extent(x, y, mesh_geometry)
         if mesh_geometry is None:
@@ -819,28 +880,63 @@ class SimulationDashboard:
 
         # Plot particles
         particle_artists = getattr(self, '_particle_artists', [])
-        if len(particles['x']) > 0:
-            # Current positions (white circles)
-            particle_artists.append(
-                ax.scatter(
-                    particles['x'],
-                    particles['y'],
-                    color='white',
-                    s=50,
-                    marker='o',
-                    edgecolors='black',
-                    linewidth=1,
-                    label='Current',
-                    zorder=5,
-                )
-            )
+        particle_x = np.asarray(particles['x'])
+        particle_y = np.asarray(particles['y'])
+        n_particles = len(particle_x)
+        if n_particles > 0:
+            left_domain = self._particle_status_mask(particles, 'status_left_domain', n_particles)
+            beached = self._particle_status_mask(particles, 'status_beached', n_particles)
+            visible_particles = ~left_domain
+            active_particles = visible_particles & ~beached
+            stranded_particles = visible_particles & beached
 
-            # Initial positions (white crosses)
-            if 'x_initial' in particles:
+            # Current in-domain positions (white circles)
+            if np.any(active_particles):
                 particle_artists.append(
                     ax.scatter(
-                        particles['x_initial'],
-                        particles['y_initial'],
+                        particle_x[active_particles],
+                        particle_y[active_particles],
+                        color='white',
+                        s=50,
+                        marker='o',
+                        edgecolors='black',
+                        linewidth=1,
+                        label='Current',
+                        zorder=5,
+                    )
+                )
+
+            # Current stranded/beached positions (light-red circles)
+            if np.any(stranded_particles):
+                particle_artists.append(
+                    ax.scatter(
+                        particle_x[stranded_particles],
+                        particle_y[stranded_particles],
+                        color=self.STRANDED_PARTICLE_COLOR,
+                        s=50,
+                        marker='o',
+                        edgecolors='black',
+                        linewidth=1,
+                        label='Stranded',
+                        zorder=6,
+                    )
+                )
+
+            initial_x = particles.get('x_initial')
+            initial_y = particles.get('y_initial')
+            has_initial_positions = initial_x is not None and initial_y is not None
+            if has_initial_positions:
+                initial_x = np.asarray(initial_x)
+                initial_y = np.asarray(initial_y)
+                has_initial_positions = initial_x.shape == particle_x.shape and initial_y.shape == particle_y.shape
+
+            # Initial positions (white crosses), excluding particles that left the domain.
+            if has_initial_positions and np.any(visible_particles):
+                visible_indices = np.flatnonzero(visible_particles)
+                particle_artists.append(
+                    ax.scatter(
+                        initial_x[visible_particles],
+                        initial_y[visible_particles],
                         color='white',
                         s=50,
                         marker='x',
@@ -850,19 +946,28 @@ class SimulationDashboard:
                     )
                 )
 
-                segments = self._particle_displacement_segments(particles)
+                trajectory_history = self._particle_trajectory_history(n_particles)
+                if trajectory_history is None:
+                    trail_x = np.vstack((initial_x, particle_x))
+                    trail_y = np.vstack((initial_y, particle_y))
+                else:
+                    trail_x, trail_y = trajectory_history
+
+                segments = self._particle_trail_segments(trail_x, trail_y, visible_indices)
                 if segments.size:
-                    displacement_lines = LineCollection(
+                    trails = LineCollection(
                         segments,
                         colors='white',
-                        alpha=0.7,
                         linewidths=1,
+                        alpha=0.7,
                         zorder=4,
+                        label='_particle_trails',
                     )
-                    ax.add_collection(displacement_lines)
-                    particle_artists.append(displacement_lines)
+                    ax.add_collection(trails)
+                    particle_artists.append(trails)
 
-            ax.legend(loc='upper right')
+            if particle_artists:
+                ax.legend(loc='upper right')
         self._particle_artists = particle_artists
 
         ax.set_xlabel('X (m)')

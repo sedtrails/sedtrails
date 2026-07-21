@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import numpy as np
 from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any, Mapping, Sequence
 
@@ -72,6 +73,38 @@ def build_population_runtime_plans(
     )
 
 
+def validate_population_runtime_configurations(
+    population_configs: Sequence[Mapping[str, Any]],
+) -> None:
+    """Validate config-only runtime constraints before particle seeding.
+
+    Parameters
+    ----------
+    population_configs : Sequence[Mapping[str, Any]]
+        Population configuration mappings to validate.
+
+    Returns
+    -------
+    None
+        The function raises ConfigurationError when validation fails.
+    """
+    for population_index, population_config in enumerate(population_configs):
+        tracer_methods = population_config.get('tracer_methods')
+        if not isinstance(tracer_methods, Mapping) or len(tracer_methods) != 1:
+            continue
+        if 'passive_tracer' not in tracer_methods:
+            continue
+
+        transport_probability_method = population_config.get(
+            'transport_probability', DEFAULT_TRANSPORT_PROBABILITY_METHOD
+        )
+        _validate_passive_tracer_configuration(
+            population_index,
+            population_config,
+            transport_probability_method,
+        )
+
+
 def unique_flow_field_names(runtime_plans: Sequence[PopulationRuntimePlan]) -> list[str]:
     """
     Return configured flow field names across plans, preserving first-seen order.
@@ -94,7 +127,13 @@ def unique_flow_field_names(runtime_plans: Sequence[PopulationRuntimePlan]) -> l
     )
 
 
-def build_plan_sedtrails_data(sedtrails_data: Any, tracer_plan: TracerRuntimePlan) -> Any:
+def build_plan_sedtrails_data(
+    sedtrails_data: Any,
+    tracer_plan: TracerRuntimePlan,
+    population_config: Mapping[str, Any] | None = None,
+    default_fraction_index: int = 0,
+    default_fraction_name: str | None = None,
+) -> Any:
     """
     Run plan physics and return a clone containing only plan-required physics fields.
 
@@ -104,6 +143,14 @@ def build_plan_sedtrails_data(sedtrails_data: Any, tracer_plan: TracerRuntimePla
         SedTRAILS data object to process.
     tracer_plan : TracerRuntimePlan
         Runtime plan for the tracer population.
+    population_config : Mapping[str, Any], optional
+        Configuration for the population. Its sediment fraction selection takes
+        precedence over the input-model defaults.
+    default_fraction_index : int, default 0
+        Input-model fallback sediment fraction index.
+    default_fraction_name : str, optional
+        Input-model fallback sediment fraction name. When provided, it takes
+        precedence over the fallback index.
 
     Returns
     -------
@@ -111,13 +158,20 @@ def build_plan_sedtrails_data(sedtrails_data: Any, tracer_plan: TracerRuntimePla
         Requested value.
     """
 
-    working_data = _shallow_sedtrails_data_clone(sedtrails_data)
+    fraction_selected_data = _select_population_fraction_data(
+        sedtrails_data,
+        population_config=population_config,
+        default_fraction_index=default_fraction_index,
+        default_fraction_name=default_fraction_name,
+    )
+
+    working_data = _shallow_sedtrails_data_clone(fraction_selected_data)
     tracer_plan.converter.convert_physics(
         sedtrails_data=working_data,
         transport_probability_method=tracer_plan.transport_probability_method,
     )
 
-    plan_data = _shallow_sedtrails_data_clone(sedtrails_data)
+    plan_data = _shallow_sedtrails_data_clone(fraction_selected_data)
     for field_name in tracer_plan.required_physics_fields:
         if working_data.has_physics_field(field_name):
             plan_data.add_physics_field(field_name, _copy_physics_value(getattr(working_data, field_name)))
@@ -154,6 +208,12 @@ def _build_population_runtime_plan(
     transport_probability_method = population_config.get(
         'transport_probability', DEFAULT_TRANSPORT_PROBABILITY_METHOD
     )
+    if method_name == 'passive_tracer':
+        _validate_passive_tracer_configuration(
+            population_index,
+            population_config,
+            transport_probability_method,
+        )
     physics_config = build_physics_config(base_physics_config, population_config, method_name, method_config)
     tracer_config = {method_name: dict(method_config)}
     converter = PhysicsConverter(physics_config, tracer_config)
@@ -272,6 +332,34 @@ def _get_flow_field_names(
     return tuple(flow_field_names)
 
 
+def _validate_passive_tracer_configuration(
+    population_index: int,
+    population_config: Mapping[str, Any],
+    transport_probability_method: str,
+) -> None:
+    particle_type = population_config.get('particle_type')
+    if particle_type != 'passive':
+        raise ConfigurationError(
+            f'Population {population_index} uses tracer method "passive_tracer" but particle_type is '
+            f'{particle_type!r}. Set particle_type to "passive".'
+        )
+
+    seeding = population_config.get('seeding', {})
+    if isinstance(seeding, Mapping) and 'burial_depth' in seeding:
+        raise ConfigurationError(
+            f'Population {population_index} uses tracer method "passive_tracer" but defines '
+            'seeding.burial_depth. Passive tracer does not support burial depth; remove '
+            'seeding.burial_depth from this population.'
+        )
+
+    if transport_probability_method != DEFAULT_TRANSPORT_PROBABILITY_METHOD:
+        raise ConfigurationError(
+            f'Population {population_index} uses tracer method "passive_tracer" with '
+            f'transport_probability={transport_probability_method!r}. Only "no_probability" is allowed '
+            'for passive_tracer.'
+        )
+
+
 def _physics_config_to_dict(config: PhysicsConfig | Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(config, PhysicsConfig):
         return asdict(config)
@@ -303,3 +391,123 @@ def _copy_physics_value(value: Any) -> Any:
     if isinstance(value, dict):
         return dict(value)
     return value
+
+
+def _select_population_fraction_data(
+    sedtrails_data: Any,
+    population_config: Mapping[str, Any] | None,
+    default_fraction_index: int,
+    default_fraction_name: str | None,
+) -> Any:
+    """Return a fraction-selected clone when multi-fraction data is available."""
+    fractions = int(getattr(sedtrails_data, 'fractions', 1) or 1)
+    if fractions <= 1:
+        return sedtrails_data
+
+    selected_fraction_index, selected_fraction_name = _resolve_fraction_selection(
+        population_config,
+        default_fraction_index=default_fraction_index,
+        default_fraction_name=default_fraction_name,
+    )
+
+    if selected_fraction_name:
+        available_labels = _available_fraction_labels(sedtrails_data)
+        if not available_labels:
+            raise ConfigurationError(
+                f"Configured sediment_fraction_name '{selected_fraction_name}' could not be resolved because "
+                f'fraction labels are not available in input metadata. Detected {fractions} sediment fractions. '
+                'Set sediment_fraction_index explicitly for this population, for example:\n'
+                'particles:\n'
+                '  populations:\n'
+                '    - name: your_population_name\n'
+                '      sediment_fraction_index: 0'
+            )
+        else:
+            normalized_labels = [str(label).strip().lower() for label in available_labels]
+            requested_name = str(selected_fraction_name).strip().lower()
+            if requested_name not in normalized_labels:
+                raise ConfigurationError(
+                    f"Configured sediment_fraction_name '{selected_fraction_name}' was not found. "
+                    f'Available NAMCON labels: {available_labels}'
+                )
+            selected_fraction_index = normalized_labels.index(requested_name)
+
+    try:
+        selected_fraction_index = int(selected_fraction_index)
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError(
+            f'Configured sediment_fraction_index must be an integer, got {selected_fraction_index!r}'
+        ) from exc
+
+    if selected_fraction_index < 0 or selected_fraction_index >= fractions:
+        raise ConfigurationError(
+            f'Configured sediment_fraction_index={selected_fraction_index} is out of bounds for '
+            f'available fractions={fractions}.'
+        )
+
+    selected_data = _shallow_sedtrails_data_clone(sedtrails_data)
+    selected_data.fractions = 1
+
+    for field_name, value in list(vars(selected_data).items()):
+        if field_name.startswith('_') or field_name == 'fractions':
+            continue
+        selected_value = _select_fraction_value(value, fractions, selected_fraction_index)
+        if selected_value is not value:
+            setattr(selected_data, field_name, selected_value)
+
+    return selected_data
+
+
+def _resolve_fraction_selection(
+    population_config: Mapping[str, Any] | None,
+    *,
+    default_fraction_index: int,
+    default_fraction_name: str | None,
+) -> tuple[Any, str | None]:
+    """Return one population selection, falling back to the global selection."""
+    if not isinstance(population_config, Mapping):
+        return default_fraction_index, default_fraction_name
+
+    population_fraction_name = population_config.get('sediment_fraction_name')
+    if population_fraction_name:
+        return population_config.get('sediment_fraction_index', 0), str(population_fraction_name)
+
+    if 'sediment_fraction_index' in population_config:
+        return population_config.get('sediment_fraction_index'), None
+
+    return default_fraction_index, default_fraction_name
+
+
+def _select_fraction_value(value: Any, fractions: int, fraction_index: int) -> Any:
+    """Select a single fraction from arrays or vector-field dictionaries when present."""
+    if isinstance(value, dict) and {'x', 'y', 'magnitude'}.issubset(value.keys()):
+        selected_value = dict(value)
+        selection_applied = False
+        for component_name in ('x', 'y', 'magnitude'):
+            component = np.asarray(value[component_name])
+            if component.ndim >= 3 and component.shape[1] == fractions:
+                selected_value[component_name] = component[:, fraction_index, ...]
+                selection_applied = True
+        return selected_value if selection_applied else value
+
+    if isinstance(value, np.ndarray) and value.ndim >= 3 and value.shape[1] == fractions:
+        return value[:, fraction_index, ...]
+
+    return value
+
+
+def _available_fraction_labels(sedtrails_data: Any) -> list[str] | None:
+    """Return normalized sediment fraction labels from data metadata when available."""
+    if not hasattr(sedtrails_data, 'metadata'):
+        return None
+    metadata = sedtrails_data.metadata
+
+    labels = None
+    if hasattr(metadata, 'get'):
+        labels = metadata.get('sediment_fraction_labels', None)
+    elif hasattr(metadata, 'sediment_fraction_labels'):
+        labels = metadata.sediment_fraction_labels
+
+    if labels is None:
+        return None
+    return [str(label).strip() for label in labels]

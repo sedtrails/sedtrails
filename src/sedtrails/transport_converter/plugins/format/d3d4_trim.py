@@ -27,4 +27,4 @@ class FormatPlugin(BaseFormatPlugin):
         NotImplementedError
             Always raised because Delft3D4 TRIM conversion is not implemented.
         """
-        raise NotImplementedError('Delft3D trim file conversion is not yet implemented.')
+        raise NotImplementedError('Delft3D trim file conversion will not be implemented.')

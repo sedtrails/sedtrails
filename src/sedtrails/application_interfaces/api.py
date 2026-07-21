@@ -27,6 +27,7 @@ def run_simulation(
     config_file: str,
     verbose: bool = False,
     enable_dashboard: Optional[bool] = None,
+    report_domain_exits: bool = True,
 ) -> str:
     """
     Run a SedTRAILS simulation from a configuration file.
@@ -42,6 +43,8 @@ def run_simulation(
         Enable verbose logging output. Default is False.
     enable_dashboard : bool, optional
         Override the dashboard setting from configuration. If None, uses config value.
+    report_domain_exits : bool, optional
+        Report particles that leave the model domain or beach on land during and after the run.
 
     Returns
     -------
@@ -71,7 +74,11 @@ def run_simulation(
 
     # Create simulation instance with dashboard override
     try:
-        simulation = Simulation(config_file, enable_dashboard=enable_dashboard)
+        simulation = Simulation(
+            config_file,
+            enable_dashboard=enable_dashboard,
+            report_domain_exits=report_domain_exits,
+        )
     except Exception as e:
         raise ConfigurationError(f'Failed to initialize simulation: {e}') from e
 
@@ -277,8 +284,14 @@ def create_restart_config(
 
 def plot_trajectories(
     results_file: str,
-    save: bool = False,
-    output_dir: str = '.',
+    output: str | None = None,
+    max_particles: int | None = None,
+    sample_fraction: float | None = None,
+    sample_seed: int = 0,
+    markers: str = 'start-end',
+    marker_size: float = 12.0,
+    panels: str = 'spatial',
+    show: bool | None = None,
 ) -> None:
     """
     Plot particle trajectories from a SedTRAILS NetCDF results file.
@@ -287,25 +300,61 @@ def plot_trajectories(
     ----------
     results_file : str
         Path to the SedTRAILS NetCDF results file.
-    save : bool, optional
-        Whether to save the plot as a PNG file. Default is False (display only).
-    output_dir : str, optional
-        Directory where the plot will be saved if save=True.
-        Default is current directory.
+    output : str, optional
+        Output target. If ``output`` is an existing directory, the plot is
+        written as ``particle_trajectories.png`` inside it. Otherwise,
+        ``output`` is treated as a filename. If omitted, the default output
+        is ``particle_trajectories.png`` in the NetCDF file directory.
+    max_particles : int, optional
+        Maximum number of particles to plot. Mutually exclusive with
+        ``sample_fraction``.
+    sample_fraction : float, optional
+        Fraction of particles to plot. Mutually exclusive with
+        ``max_particles``.
+    sample_seed : int, optional
+        Seed used for deterministic sampling.
+    markers : str, optional
+        Endpoint marker mode: ``none``, ``end``, or ``start-end``.
+    marker_size : float, optional
+        Marker size for start/end points. Default is 12.
+    panels : str, optional
+        Panels to draw. Default is ``spatial`` for the fast single-panel plot.
+        Use ``all`` for the previous four-panel figure, or a comma-separated
+        subset of ``spatial``, ``distance``, ``population``, and
+        ``population-distance``.
+    show : bool, optional
+        Whether to display the figure. Defaults to display-only when no output
+        path is requested.
 
     Examples
     --------
     >>> import sedtrails
-    >>> sedtrails.plot_trajectories('results.nc', save=True)
-
-    >>> # Display without saving
     >>> sedtrails.plot_trajectories('results.nc')
+
+    >>> # Save in an existing folder using the default file name
+    >>> sedtrails.plot_trajectories('results.nc', output='plots')
+
+    >>> # Save to an explicit file
+    >>> sedtrails.plot_trajectories('results.nc', output='plots/custom_name.png')
     """
     from sedtrails.pathway_visualizer import plot_trajectories as _plot
     from sedtrails.pathway_visualizer import read_netcdf
 
     ds = read_netcdf(results_file)
-    _plot(ds, save_plot=save, output_dir=output_dir)
+    try:
+        _plot(
+            ds,
+            output=output,
+            max_particles=max_particles,
+            sample_fraction=sample_fraction,
+            sample_seed=sample_seed,
+            markers=markers,
+            marker_size=marker_size,
+            panels=panels,
+            show=show,
+        )
+    finally:
+        ds.close()
 
 
 def inspect_netcdf(results_file: str) -> 'NetCDFInspector':

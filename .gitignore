@@ -189,3 +189,4 @@ cython_debug/
 .pypirc
 /examples/output
 results/particle_trajectories.png
+/examples/results

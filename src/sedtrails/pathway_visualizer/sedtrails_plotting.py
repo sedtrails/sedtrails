@@ -92,7 +92,19 @@ except Exception:
 
 @dataclass
 class TrajectoryArrays:
-    """Container for required arrays to plot & analyze SedTRAILS trajectories."""
+    """Trajectory arrays used for plotting and analysis.
+
+    Parameters
+    ----------
+    time, x, y : numpy.ndarray
+        Time and horizontal trajectory coordinates.
+    status_alive, status_domain, status_released, status_mobile : numpy.ndarray, optional
+        Per-timestep particle status masks.
+    population_id : numpy.ndarray, optional
+        Population index for each trajectory.
+    trajectory_id : sequence of str, optional
+        Identifier for each trajectory.
+    """
 
     time: np.ndarray  # shape (N, T)
     x: np.ndarray  # shape (N, T)
@@ -636,7 +648,15 @@ def particles_include_exclude(
 
 
 class InteractivePolygonTool:
-    """Interactive polygon drawing to build selection masks in a matplotlib figure."""
+    """Interactive polygon selector for a matplotlib axis.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axis receiving the polygon selector.
+    on_done : callable
+        Callback invoked after selection.
+    """
 
     def __init__(self, ax: plt.Axes, on_done):
         if PolygonSelector is None:

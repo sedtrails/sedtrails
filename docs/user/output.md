@@ -49,7 +49,6 @@ DIMENSIONS:
   n_populations: 2
   n_timesteps: 25
   n_flowfields: 2
-  name_strlen: 24
 
 COORDINATES:
 ------------------------------------------------------------
@@ -57,14 +56,14 @@ COORDINATES:
 
 DATA VARIABLES:
 ------------------------------------------------------------
-  population_name: ('n_populations', 'name_strlen') |S1 (2, 24)
-  population_particle_type: ('n_populations',) int32 (2,)
+  population_name: ('n_populations',) str (2,)
+  population_particle_type: ('n_populations',) str (2,)
   population_start_idx: ('n_populations',) int32 (2,)
   population_count: ('n_populations',) int32 (2,)
   population_repr_volume: ('n_populations',) float64 (2,)
-  trajectory_id: ('n_particles', 'name_strlen') |S1 (15, 24)
+  trajectory_id: ('n_particles',) int64 (15,)
   population_id: ('n_particles',) int32 (15,)
-  flowfield_name: ('n_flowfields', 'name_strlen') |S1 (2, 24)
+  flowfield_name: ('n_flowfields',) str (2,)
   time: ('n_particles', 'n_timesteps') float64 (15, 25)
   x: ('n_particles', 'n_timesteps') float64 (15, 25)
   y: ('n_particles', 'n_timesteps') float64 (15, 25)
@@ -77,6 +76,8 @@ DATA VARIABLES:
   status_transported: ('n_particles', 'n_timesteps') int32 (15, 25)
   status_released: ('n_particles', 'n_timesteps') int32 (15, 25)
   status_mobile: ('n_particles', 'n_timesteps') int32 (15, 25)
+  status_beached: ('n_particles', 'n_timesteps') int32 (15, 25)
+  status_left_domain: ('n_particles', 'n_timesteps') int32 (15, 25)
   covered_distance: ('n_flowfields', 'n_particles', 'n_timesteps') float64 (2, 15, 25)
 
 ====================================================================================
@@ -107,34 +108,35 @@ Dimensions define the axes used by the data variables.
 - ``n_populations``: Number of particle populations in the configuration.
 - ``n_timesteps``: Number of saved output slots. This is not the number of internal CFL timesteps.
 - ``n_flowfields``: Number of transport flow fields recorded in the output metadata. If no flow-field names are available, the writer still creates one flow-field slot.
-- ``name_strlen``: Fixed string length used for character-array variables such as ``population_name`` and ``trajectory_id``.
 
 ### Coordinates
 
-The current streaming writer creates dimensions but does not create separate coordinate variables for those dimensions. As a result, the ``COORDINATES`` section can be empty even though the dimensions are valid. Consumers should use zero-based positional indices for ``n_particles``, ``n_populations``, ``n_timesteps``, ``n_flowfields``, and ``name_strlen`` when needed.
+The current streaming writer creates dimensions but does not create separate coordinate variables for those dimensions. As a result, the ``COORDINATES`` section can be empty even though the dimensions are valid. Consumers should use zero-based positional indices for ``n_particles``, ``n_populations``, ``n_timesteps``, ``n_flowfields`` when needed.
 
 ### Data Variables
 
 The main output variables are:
 
-- ``population_name``: Fixed-width character array containing the configured population names.
-- ``population_particle_type``: Numeric particle-type code stored by the runtime population object. Use ``population_name`` and the original configuration for the human-readable particle type when needed.
+- ``population_name``: NetCDF-4 variable-length string array containing the configured population names.
+- ``population_particle_type``: NetCDF-4 variable-length string array containing the configured particle types.
 - ``population_start_idx``: Start index of each population in the combined particle axis.
 - ``population_count``: Number of particles in each population.
 - ``population_repr_volume``: Representative volume for each population when available; otherwise ``NaN``.
-- ``trajectory_id``: Fixed-width generated trajectory identifiers, such as ``traj_0``.
+- ``trajectory_id``: Zero-based numeric identifier for each particle along the combined particle axis.
 - ``population_id``: Population index for each particle along the combined particle axis.
-- ``flowfield_name``: Names of the transport flow fields used by the runtime tracer plans, such as ``bed_load_velocity`` or ``suspended_velocity``.
+- ``flowfield_name``: NetCDF-4 variable-length string array naming the transport flow fields used by the runtime tracer plans, such as ``bed_load_velocity`` or ``suspended_velocity``.
 - ``time``: Numeric simulation time for each particle and saved output slot, following the global ``time_units`` attribute.
 - ``x``, ``y``, ``z``: Particle coordinates at each saved output slot.
 - ``burial_depth``: Particle burial depth at each saved output slot.
 - ``mixing_depth``: Local mixing-layer depth sampled for each particle at each saved output slot, when available.
 - ``status_alive``: ``1`` for particles still active in the simulation, ``0`` for particles removed from consideration.
 - ``status_buried``: ``1`` for particles considered buried and therefore not mobile, ``0`` for particles considered exposed.
-- ``status_domain``: ``1`` for particles inside the domain envelope, ``0`` for particles outside it.
+- ``status_domain``: ``1`` for particles inside the active particle-tracking mesh, ``0`` for particles outside it. The active mesh excludes holes created by ``domain.inner_boundary_pol_files``.
 - ``status_transported``: ``1`` for particles selected for transport during the current update, ``0`` for particles not selected for transport.
 - ``status_released``: ``1`` for particles whose release time has passed, ``0`` for particles waiting for release.
 - ``status_mobile``: ``1`` only when all mobility gates pass: in domain, alive, exposed, released, and selected for transport.
+- ``status_beached``: ``1`` for particles that touched or crossed a boundary edge classified as ``land`` during that timestep. Beached particles remain at their last valid in-domain position and can become mobile again later.
+- ``status_left_domain``: ``1`` for particles that crossed a boundary edge classified as ``open``. This state is persistent; those particles are marked not alive and are removed from subsequent movement calculations.
 - ``covered_distance``: Reserved for per-flow-field distance accounting. The current streaming writer creates this variable for schema compatibility but does not populate it, so values remain ``NaN``.
 
 Floating-point variables use ``NaN`` for missing or unwritten values. Integer status variables use ``-1`` for unwritten slots. Written status values are stored as ``0`` or ``1``.
@@ -147,6 +149,18 @@ Use ``sedtrails viz trajectories`` to plot the saved ``x``, ``y``, and ``time`` 
 sedtrails viz trajectories -f C:\your-filepath-here\sedtrails_results.nc
 ```
 
+By default, the command draws only the spatial trajectory panel so it remains usable for large particle sets. Write directly to a file and plot a deterministic sample for the fastest workflow:
+
+```text
+sedtrails viz trajectories -f C:\your-filepath-here\sedtrails_results.nc --output trajectories.png --max-particles 2000 --markers end
+```
+
+Use ``--panels all`` to draw the previous four-panel summary, or request selected optional panels:
+
+```text
+sedtrails viz trajectories -f C:\your-filepath-here\sedtrails_results.nc --panels spatial,population --output trajectories.png
+```
+
 ![SedTRAILS trajectory example](../_static/img/example-trajectory-plots.png)
 
 The built-in trajectory plotter reads the saved particle coordinates directly. Its distance panel is computed from each particle's saved ``x`` and ``y`` positions relative to that particle's first valid position; it does not use ``covered_distance``.
@@ -154,8 +168,16 @@ The built-in trajectory plotter reads the saved particle coordinates directly. I
 The following options can be used to save and customize the plot:
 
 - ``--file`` or ``-f``: Path to the SedTRAILS NetCDF file to visualize. By default, it expects ``sedtrails_results.nc`` in the current directory.
-- ``--save`` or ``-s``: Save the figure as ``particle_trajectories.png``.
-- ``--output-dir`` or ``-o``: Directory for the saved PNG when ``--save`` is used. The default is the current directory.
+- ``--output``: Exact plot file path to write. When used, the plot is saved directly and no figure window is opened by default.
+ - ``--save``/``--no-save`` or ``-s``: Save the figure as ``particle_trajectories.png`` (default). Use ``--no-save`` to display the figure instead.
+ - ``--output-dir`` or ``-o``: Directory for the saved PNG when ``--output`` is not provided. Defaults to the NetCDF file directory.
+- ``--max-particles``: Maximum number of particles to plot. The sample is deterministic and stratified by population where population IDs are available.
+- ``--sample-fraction``: Fraction of particles to plot. This cannot be combined with ``--max-particles``.
+- ``--sample-seed``: Seed for deterministic sampling. The default is ``0``.
+- ``--markers``: Endpoint markers to draw: ``none``, ``end``, or ``start-end``. The default is ``end``.
+- ``--marker-size``: Marker size for start/end points. The default is ``3``.
+- ``--panels``: Panels to draw. The default is ``spatial``. Use ``all`` for the previous four-panel plot, or a comma-separated subset of ``spatial``, ``distance``, ``population``, and ``population-distance``.
+- ``--show`` or ``--no-show``: Override whether an interactive figure window is displayed. By default, saved plots are not shown and unsaved plots are shown.
 - ``--help`` or ``-h``: Show the command help.
 
 :::warning

@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -67,6 +68,7 @@ class YAMLConfigValidator:
         """
 
         self.config: Dict[str, Any] = {}
+        self.raw_config: Dict[str, Any] = {}
         self._applied_defaults: bool = False
         self.__registry = None
         self.__validator = self._validator()
@@ -147,6 +149,7 @@ class YAMLConfigValidator:
         """
         if schema_root is None:
             schema_root = schema_content
+        validator = jsonschema.Draft202012Validator(schema_root, registry=self.__registry)
 
         schema_type = schema_content.get('type')
 
@@ -174,28 +177,61 @@ class YAMLConfigValidator:
                 resolved_prop_schema = self._resolve_schema_reference(prop_schema, schema_root)
                 resolved_prop_root = self._schema_root_for_reference(prop_schema, resolved_prop_schema, schema_root)
                 if key not in config_data:
-                    can_create_missing_container = self._can_create_missing_container(schema_content)
-                    # Create missing property with default value
+                    candidate_created = False
+                    candidate_value = None
+
+                    # Explicit property defaults may intentionally materialize
+                    # selector objects. Descendant defaults may not.
                     if 'default' in prop_schema:
-                        config_data[key] = self._deep_copy_default(prop_schema['default'])
-                    elif 'default' in resolved_prop_schema and (
-                        resolved_prop_schema.get('type') not in {'object', 'array'} or can_create_missing_container
-                    ):
-                        config_data[key] = self._deep_copy_default(resolved_prop_schema['default'])
-                    elif can_create_missing_container and resolved_prop_schema.get('type') == 'object':
-                        # Create empty object and apply defaults recursively
-                        config_data[key] = {}
-                        config_data[key] = self._apply_defaults_with_resolver(
-                            resolved_prop_schema, config_data[key], validator, resolved_prop_root
-                        )
+                        candidate_value = self._deep_copy_default(prop_schema['default'])
+                        candidate_created = True
+                    elif 'default' in resolved_prop_schema:
+                        candidate_value = self._deep_copy_default(resolved_prop_schema['default'])
+                        candidate_created = True
                     elif (
-                        can_create_missing_container
+                        self._can_create_missing_container(prop_schema)
+                        and self._can_create_missing_container(resolved_prop_schema)
+                        and resolved_prop_schema.get('type') == 'object'
+                    ):
+                        candidate_value = self._apply_defaults_with_resolver(
+                            resolved_prop_schema, {}, validator, resolved_prop_root
+                        )
+                        candidate_created = self._candidate_satisfies_container_requirements(
+                            resolved_prop_schema,
+                            candidate_value,
+                        ) and self._candidate_satisfies_container_requirements(prop_schema, candidate_value)
+                    elif (
+                        self._can_create_missing_container(prop_schema)
+                        and self._can_create_missing_container(resolved_prop_schema)
                         and resolved_prop_schema.get('type') == 'array'
                         and 'items' in resolved_prop_schema
                         and self._array_items_define_default(resolved_prop_schema, resolved_prop_root)
                     ):
-                        # Handle arrays with default items
-                        config_data[key] = []
+                        candidate_value = []
+                        candidate_created = self._candidate_satisfies_container_requirements(
+                            resolved_prop_schema,
+                            candidate_value,
+                        ) and self._candidate_satisfies_container_requirements(prop_schema, candidate_value)
+
+                    if candidate_created:
+                        candidate_value = self._apply_defaults_to_value(
+                            resolved_prop_schema,
+                            candidate_value,
+                            validator,
+                            resolved_prop_root,
+                        )
+                        candidate_created = self._schema_matches(prop_schema, candidate_value, validator)
+
+                    if candidate_created:
+                        candidate_config = self._deep_copy_default(config_data)
+                        candidate_config[key] = candidate_value
+                        if self._preserves_parent_constraints(
+                            schema_content,
+                            config_data,
+                            candidate_config,
+                            validator,
+                        ):
+                            config_data[key] = candidate_value
                 else:
                     # Property exists, apply defaults recursively if it's an object or array
                     if resolved_prop_schema.get('type') == 'object' and isinstance(config_data[key], dict):
@@ -229,6 +265,77 @@ class YAMLConfigValidator:
         """Return whether missing object or array properties should be materialized."""
         choice_keywords = {'anyOf', 'oneOf', 'maxProperties'}
         return not any(keyword in schema_content for keyword in choice_keywords)
+
+    def _apply_defaults_to_value(
+        self,
+        schema_content: Dict[str, Any],
+        value: Any,
+        validator: jsonschema.Draft202012Validator,
+        schema_root: Dict[str, Any],
+    ) -> Any:
+        """Apply nested defaults to an object or array value."""
+        schema_type = schema_content.get('type')
+        if schema_type == 'object' and isinstance(value, dict):
+            return self._apply_defaults_with_resolver(schema_content, value, validator, schema_root)
+        if schema_type == 'array' and isinstance(value, list):
+            return self._apply_defaults_with_resolver(schema_content, value, validator, schema_root)
+        return value
+
+    @staticmethod
+    def _candidate_satisfies_container_requirements(
+        schema_content: Dict[str, Any],
+        candidate_value: Any,
+    ) -> bool:
+        """Return whether a generated container meets structural requirements."""
+        if isinstance(candidate_value, dict):
+            required_properties = schema_content.get('required', [])
+            if not all(property_name in candidate_value for property_name in required_properties):
+                return False
+            return len(candidate_value) >= schema_content.get('minProperties', 0)
+
+        if isinstance(candidate_value, list):
+            return len(candidate_value) >= schema_content.get('minItems', 0)
+
+        return False
+
+    def _preserves_parent_constraints(
+        self,
+        schema_content: Dict[str, Any],
+        current_data: Dict[str, Any],
+        candidate_data: Dict[str, Any],
+        validator: jsonschema.Draft202012Validator,
+    ) -> bool:
+        """Return whether a candidate preserves its parent schema constraints."""
+        if self._schema_matches(schema_content, current_data, validator) and not self._schema_matches(
+            schema_content,
+            candidate_data,
+            validator,
+        ):
+            return False
+
+        for choice_keyword in ('anyOf', 'oneOf'):
+            choices = schema_content.get(choice_keyword, [])
+            current_matches = self._matching_choice_indices(choices, current_data, validator)
+            candidate_matches = self._matching_choice_indices(choices, candidate_data, validator)
+            if current_matches != candidate_matches:
+                return False
+
+        max_properties = schema_content.get('maxProperties')
+        if max_properties is not None and len(candidate_data) > max_properties:
+            return False
+
+        return True
+
+    def _matching_choice_indices(
+        self,
+        choices: list[Dict[str, Any]],
+        data: Dict[str, Any],
+        validator: jsonschema.Draft202012Validator,
+    ) -> tuple[int, ...]:
+        """Return indices of choice branches matching the supplied data."""
+        return tuple(
+            index for index, choice in enumerate(choices) if self._schema_matches(choice, data, validator)
+        )
 
     def _array_items_define_default(self, schema_content: Dict[str, Any], schema_root: Dict[str, Any]) -> bool:
         """Return whether an array schema's items define a default."""
@@ -275,12 +382,9 @@ class YAMLConfigValidator:
     def _schema_matches(
         self, schema: Dict[str, Any], data: Dict[str, Any], validator: jsonschema.Draft202012Validator
     ) -> bool:
-        """
-        Check if data matches a schema (used for anyOf/oneOf conditions).
-        """
+        """Return whether data matches a schema in the active reference context."""
         try:
-            # Create a temporary validator for this schema
-            temp_validator = jsonschema.Draft202012Validator(schema, registry=self.__registry)
+            temp_validator = validator.evolve(schema=schema)
             temp_validator.validate(data)
             return True
         except jsonschema.ValidationError:
@@ -379,6 +483,7 @@ class YAMLConfigValidator:
                 yaml_data: Dict[str, Any] = yaml.load(f, Loader=SedtrailsYamlLoader)
         except Exception as e:
             raise YamlParsingError(f'Error reading YAML file: {e}') from e
+        self.raw_config = deepcopy(yaml_data)
 
         # Validate the YAML data against the schema
         try:
@@ -393,12 +498,19 @@ class YAMLConfigValidator:
 
         # Apply default values from the schema
         try:
-            config_with_defaults = self._apply_defaults(self.schema_content, yaml_data.copy())
-            self.config = config_with_defaults
-            self._applied_defaults = True
+            config_with_defaults = self._apply_defaults(self.schema_content, deepcopy(yaml_data))
         except Exception as e:
             raise ValueError(f'Error applying defaults: {e}') from e
 
+        try:
+            self.__validator.validate(config_with_defaults)
+        except jsonschema.ValidationError as e:
+            raise YamlValidationError(
+                f'YAML config validation error after applying defaults: {e.message}'
+            ) from e
+
+        self.config = config_with_defaults
+        self._applied_defaults = True
         return self.config
 
     def export_schema(self, output_file: Optional[str] = None) -> str | None:

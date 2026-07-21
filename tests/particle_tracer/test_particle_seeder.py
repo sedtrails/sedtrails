@@ -2,6 +2,8 @@
 Unit tests for particle seeding strategies.
 """
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -17,10 +19,10 @@ from sedtrails.particle_tracer.particle_seeder import (
     PopulationConfig,
     RandomStrategy,
     TransectStrategy,
-    _parse_polygon,
-    _read_polygon_file,
     _compute_seeding_area,
     _log_seeding_box_volume,
+    _parse_polygon,
+    _read_polygon_file,
 )
 
 
@@ -1153,7 +1155,189 @@ def population_config():
 
 class TestParticlePopulation:
     @staticmethod
+    def _diffusing_passive_population(diffusion_coefficient=0.5):
+        """Create mobile passive particles on a unit-square grid."""
+        config = PopulationConfig(
+            {
+                'name': 'Diffusing Passive Particles',
+                'particle_type': 'passive',
+                'characteristics': {'diffusion_coefficient': diffusion_coefficient},
+                'transport_probability': 'no_probability',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0.5,0.5', '0.6,0.6']}},
+                    'quantity': 1,
+                    'release_start': '0',
+                    'burial_depth': {'constant': 0.0},
+                },
+            }
+        )
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=config,
+        )
+        population.particles['status_mobile'] = np.ones(2, dtype=bool)
+        return population
+
+    def test_passive_diffusion_is_applied_after_advection(self, monkeypatch):
+        """Configured passive diffusivity adds one Brownian displacement per axis."""
+        population = self._diffusing_passive_population(diffusion_coefficient=0.5)
+
+        draws = iter((np.array([1.0, -1.0]), np.array([0.5, -0.5])))
+        monkeypatch.setattr(np.random, 'standard_normal', lambda size: next(draws))
+
+        population.update_position(
+            flow_field={'u': np.zeros(4), 'v': np.zeros(4)},
+            current_timestep=0.02,
+        )
+
+        sigma = np.sqrt(2.0 * 0.5 * 0.02)
+        np.testing.assert_allclose(population.particles['x'], np.array([0.5, 0.6]) + sigma * np.array([1.0, -1.0]))
+        np.testing.assert_allclose(population.particles['y'], np.array([0.5, 0.6]) + sigma * np.array([0.5, -0.5]))
+
+    def test_diffusion_receives_velocity_arrays_matching_particle_coordinates(self, monkeypatch):
+        """Diffusion strategies always receive coordinate-shaped velocity inputs."""
+        population = self._diffusing_passive_population()
+        observed = {}
+
+        def check_velocity_shapes(x, y, u, v, kh, dt):
+            observed['x_shape'] = x.shape
+            observed['y_shape'] = y.shape
+            observed['u_shape'] = u.shape
+            observed['v_shape'] = v.shape
+            np.testing.assert_allclose(u, 0.0)
+            np.testing.assert_allclose(v, 0.0)
+            return x, y
+
+        monkeypatch.setattr(population._diffusion_calculator, 'calc_diffusion', check_velocity_shapes)
+        population.update_position({'u': np.zeros(4), 'v': np.zeros(4)}, 0.02)
+
+        assert observed['u_shape'] == observed['x_shape']
+        assert observed['v_shape'] == observed['y_shape']
+
+    def test_zero_diffusivity_skips_random_draws(self, monkeypatch):
+        """The zero-diffusion default keeps the optimized advection-only path."""
+        population = self._diffusing_passive_population(diffusion_coefficient=0.0)
+        monkeypatch.setattr(
+            np.random,
+            'standard_normal',
+            lambda size: pytest.fail('zero diffusivity must not draw random values'),
+        )
+
+        population.update_position(
+            flow_field={'u': np.ones(4), 'v': np.zeros(4)},
+            current_timestep=0.1,
+        )
+
+        np.testing.assert_allclose(population.particles['x'], np.array([0.6, 0.7]))
+        np.testing.assert_allclose(population.particles['y'], np.array([0.5, 0.6]))
+
+    def test_diffusion_open_boundary_exit_marks_particle_left_domain(self, monkeypatch):
+        """A Brownian step through an open edge removes the particle."""
+        config = _boundary_action_config('0.2,0.2')
+        config['particle_type'] = 'passive'
+        config['characteristics'] = {'diffusion_coefficient': 0.5}
+        population = ParticleSeeder([config]).seed(_boundary_action_field_data())[0]
+        population._current_time = 0.0
+        population.update_status()
+        draws = iter((np.zeros(1), -np.ones(1)))
+        monkeypatch.setattr(np.random, 'standard_normal', lambda size: next(draws))
+
+        population.update_position({'u': np.zeros(3), 'v': np.zeros(3)}, 0.5)
+
+        assert population.particles['status_left_domain'].tolist() == [True]
+        assert population.particles['status_alive'].tolist() == [False]
+        assert population.particles['status_domain'].tolist() == [False]
+
+    def test_diffusion_land_boundary_exit_rolls_back_to_advected_position(self, monkeypatch):
+        """A Brownian step through land keeps the particle at its prior position."""
+        config = _boundary_action_config('0.2,0.2')
+        config['particle_type'] = 'passive'
+        config['characteristics'] = {'diffusion_coefficient': 0.5}
+        population = ParticleSeeder([config]).seed(_boundary_action_field_data())[0]
+        population._current_time = 0.0
+        population.update_status()
+        draws = iter((-np.ones(1), np.zeros(1)))
+        monkeypatch.setattr(np.random, 'standard_normal', lambda size: next(draws))
+
+        population.update_position({'u': np.zeros(3), 'v': np.zeros(3)}, 0.5)
+
+        np.testing.assert_allclose(population.particles['x'], [0.2])
+        np.testing.assert_allclose(population.particles['y'], [0.2])
+        assert population.particles['status_beached'].tolist() == [True]
+        assert population.particles['status_domain'].tolist() == [True]
+        assert population.particles['status_mobile'].tolist() == [False]
+
+    def test_advection_land_contact_skips_diffusion(self, monkeypatch):
+        """A land contact during advection cannot receive a later Brownian step."""
+        config = _boundary_action_config('0.2,0.2')
+        config['particle_type'] = 'passive'
+        config['characteristics'] = {'diffusion_coefficient': 0.5}
+        population = ParticleSeeder([config]).seed(_boundary_action_field_data())[0]
+        population._current_time = 0.0
+        population.update_status()
+        monkeypatch.setattr(np.random, 'standard_normal', lambda size: pytest.fail('land contact must skip diffusion'))
+
+        population.update_position({'u': -np.ones(3), 'v': np.zeros(3)}, 0.5)
+
+        np.testing.assert_allclose(population.particles['x'], [0.2])
+        np.testing.assert_allclose(population.particles['y'], [0.2])
+
+    @pytest.mark.parametrize('coefficient', [-1.0, np.inf, np.nan, True])
+    def test_invalid_diffusion_coefficient_is_rejected(self, coefficient):
+        """Diffusivity must be finite and non-negative before tracing starts."""
+        with pytest.raises(ValueError, match='diffusion_coefficient'):
+            self._diffusing_passive_population(diffusion_coefficient=coefficient)
+
+    @pytest.mark.parametrize(
+        ('particle_type', 'tracer_methods', 'characteristics'),
+        [
+            ('passive', {'passive_tracer': {}}, {}),
+            (
+                'sand',
+                {'vanwesten': {'flow_field_name': ['bed_load_velocity']}},
+                {'density': 2650.0, 'grain_size': 0.00025},
+            ),
+            ('mud', {'soulsby': {'flow_field_name': ['grain_velocity']}}, {'density': 2000.0, 'size': 0.00005}),
+        ],
+    )
+    def test_top_level_brownian_diffusion_applies_to_all_population_methods(
+        self, particle_type, tracer_methods, characteristics
+    ):
+        """Top-level diffusion is independent of particle and tracer method."""
+        population = _diffusion_population(
+            particle_type, tracer_methods, characteristics, {'method': 'brownian', 'coefficient': 0.1, 'seed': 7}
+        )
+
+        assert population.population_config.diffusion_method == 'brownian'
+        assert population._diffusion_calculator is not None
+
+    @pytest.mark.parametrize('diffusion', [{'method': 'none', 'coefficient': 0.1}, {'coefficient': 0.0}, None])
+    def test_top_level_diffusion_noop_modes_skip_calculator(self, diffusion):
+        """None, zero coefficient, and omitted diffusion retain the fast path."""
+        population = _diffusion_population('passive', {'passive_tracer': {}}, {}, diffusion)
+
+        assert population._diffusion_calculator is None
+
+    def test_population_diffusion_seed_is_reproducible_over_multiple_steps(self):
+        """Same per-population seeds give identical multi-step tracks."""
+        diffusion = {'method': 'brownian', 'coefficient': 0.1, 'seed': 42}
+        first = _diffusion_population('passive', {'passive_tracer': {}}, {}, diffusion)
+        second = _diffusion_population('passive', {'passive_tracer': {}}, {}, diffusion)
+        third = _diffusion_population('passive', {'passive_tracer': {}}, {}, {**diffusion, 'seed': 43})
+
+        for population in (first, second, third):
+            population.particles['status_mobile'] = np.ones(1, dtype=bool)
+            for _ in range(2):
+                population.update_position({'u': np.zeros(4), 'v': np.zeros(4)}, 0.01)
+
+        np.testing.assert_allclose(first.particles['x'], second.particles['x'])
+        np.testing.assert_allclose(first.particles['y'], second.particles['y'])
+        assert not np.allclose(first.particles['x'], third.particles['x'])
+
+    @staticmethod
     def _status_test_population(current_time=0.0):
+
         config = PopulationConfig(
             {
                 'name': 'Status Test Config',
@@ -1326,10 +1510,7 @@ class TestParticlePopulation:
             calls.append(len(fields))
             assert len(fields) == 3
             np.testing.assert_array_equal(simplex_ids, population._particle_simplices)
-            particle_values = tuple(
-                np.full(len(x_points), value, dtype=float)
-                for value in (0.5, 0.75, 1.25)
-            )
+            particle_values = tuple(np.full(len(x_points), value, dtype=float) for value in (0.5, 0.75, 1.25))
             return particle_values, np.zeros(len(x_points), dtype=np.int64)
 
         population._field_interpolator = fail_single_field
@@ -1444,6 +1625,67 @@ class TestParticlePopulation:
         np.testing.assert_allclose(population.particles['z'], np.full(n_particles, 1.0))
         np.testing.assert_array_equal(population._particle_simplices, np.zeros(n_particles, dtype=np.int64))
 
+    def test_update_information_batches_static_field_interpolation(self, point_config_simple, monkeypatch):
+        """Static particle fields should share one cached interpolation pass."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=point_config_simple,
+        )
+        calls = []
+        initial_simplices = population._particle_simplices.copy()
+
+        def fake_interpolate_fields(fields, x_points, y_points, simplex_ids=None):
+            calls.append((len(fields), simplex_ids.copy()))
+            values = tuple(np.full(len(x_points), float(index + 1)) for index, _ in enumerate(fields))
+            return values, np.zeros(len(x_points), dtype=np.int64)
+
+        monkeypatch.setattr(population, '_field_interpolator_multi_with_simplex', fake_interpolate_fields)
+
+        population.update_information(
+            current_time=0.0,
+            mixing_depth=np.arange(4.0),
+            transport_probability=np.arange(4.0) + 10.0,
+            bed_level=np.arange(4.0) + 20.0,
+        )
+
+        assert len(calls) == 1
+        assert calls[0][0] == 3
+        np.testing.assert_array_equal(calls[0][1], initial_simplices)
+        np.testing.assert_allclose(population.particles['mixing_depth'], 1.0)
+        np.testing.assert_allclose(population.particles['transport_probability'], 2.0)
+        np.testing.assert_allclose(population.particles['bed_level'], 3.0)
+        np.testing.assert_allclose(population.particles['bed_level_previous'], 3.0)
+
+    def test_update_information_batches_temporal_field_interpolation(self, point_config_simple, monkeypatch):
+        """Temporal particle fields should use the cached lower/upper interpolation path."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=point_config_simple,
+        )
+        calls = []
+
+        def fake_interpolate_fields(fields, x_points, y_points, simplex_ids=None):
+            calls.append(len(fields))
+            raw_values = (0.0, 10.0) if len(calls) == 1 else (20.0, 40.0)
+            values = tuple(np.full(len(x_points), value) for value in raw_values)
+            return values, np.zeros(len(x_points), dtype=np.int64)
+
+        monkeypatch.setattr(population, '_field_interpolator_multi_with_simplex', fake_interpolate_fields)
+
+        population.update_information(
+            current_time=0.0,
+            mixing_depth={'lower': np.arange(4.0), 'upper': np.arange(4.0), 'weight': 0.25},
+            transport_probability=1.0,
+            bed_level={'lower': np.arange(4.0), 'upper': np.arange(4.0), 'weight': 0.5},
+        )
+
+        assert calls == [2, 2]
+        np.testing.assert_allclose(population.particles['mixing_depth'], 2.5)
+        np.testing.assert_allclose(population.particles['transport_probability'], 1.0)
+        np.testing.assert_allclose(population.particles['bed_level'], 30.0)
+
     def test_update_status_uses_status_keys_and_mobile_mask_composition(self, monkeypatch):
         """Only particles that satisfy every status flag should be mobile."""
         population = self._status_test_population(current_time=0.0)
@@ -1479,11 +1721,7 @@ class TestParticlePopulation:
         population._outer_envelope = type(
             'FailingEnvelope',
             (),
-            {
-                'contains_points': lambda self, points: pytest.fail(
-                    'status_domain should use cached simplex ids'
-                )
-            },
+            {'contains_points': lambda self, points: pytest.fail('status_domain should use cached simplex ids')},
         )()
         monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
 
@@ -1491,14 +1729,15 @@ class TestParticlePopulation:
 
         np.testing.assert_array_equal(population.particles['status_domain'], np.array([True, False, True, False]))
 
-    def test_update_status_refreshes_stale_simplex_ids_after_coordinate_mutation(self, monkeypatch):
-        """Direct coordinate edits should refresh domain status before mobile-mask composition."""
+    def test_update_status_refreshes_invalidated_simplex_ids_after_coordinate_mutation(self, monkeypatch):
+        """Invalidated coordinate edits should refresh domain status before mobile-mask composition."""
         population = self._status_test_population(current_time=0.0)
         population.particles['x'][:] = 0.5
         population.particles['y'][:] = 0.5
         population._refresh_particle_simplices()
         population.particles['x'][2] = 2.0
         population.particles['y'][2] = 2.0
+        population._invalidate_particle_simplices()
         monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
 
         population.update_status()
@@ -1516,6 +1755,238 @@ class TestParticlePopulation:
 
         np.testing.assert_array_equal(population.particles['status_released'], np.array([False, False, False, False]))
         np.testing.assert_array_equal(population.particles['status_mobile'], np.array([False, False, False, False]))
+
+    def test_update_status_no_probability_skips_random_draw(self, monkeypatch):
+        """No-probability transport should mark particles transported without RNG allocation."""
+        population = _single_particle_population(release_start='0')
+        population._current_time = 0.0
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: pytest.fail('np.random.rand should not be called'))
+
+        population.update_status()
+
+        np.testing.assert_array_equal(population.particles['status_transported'], np.array([True]))
+        np.testing.assert_array_equal(population.particles['status_mobile'], np.array([True]))
+
+    def test_no_probability_keeps_burial_and_buried_status_zero_over_time(self, monkeypatch):
+        """With no_probability, burial/state stay zero and z follows bed level each timestep."""
+        population = _single_particle_population(release_start='0')
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: pytest.fail('np.random.rand should not be called'))
+
+        bed_levels = [0.0, 0.35, -0.2, 0.8]
+        for step, bed_level in enumerate(bed_levels):
+            current_time = float(step)
+            population.update_information(
+                current_time=current_time,
+                mixing_depth=1.0,
+                transport_probability=0.2,
+                bed_level=bed_level,
+            )
+            population.update_status()
+            population.update_bed_level_change_after_movement(bed_level)
+
+            np.testing.assert_allclose(population.particles['burial_depth'], np.array([0.0]))
+            np.testing.assert_array_equal(population.particles['status_buried'], np.array([False]))
+            np.testing.assert_allclose(population.particles['z'], np.array([bed_level]))
+            np.testing.assert_allclose(population.particles['bed_level'], np.array([bed_level]))
+
+    def test_update_status_no_probability_does_not_require_mixing_depth(self, monkeypatch):
+        """No-probability mode should remain independent from mixing-depth fields."""
+        config = PopulationConfig(
+            {
+                'name': 'No Probability Population',
+                'particle_type': 'sand',
+                'transport_probability': 'no_probability',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0.5,0.5']}},
+                    'quantity': 1,
+                    'release_start': '0',
+                    'burial_depth': {'constant': 0.0},
+                },
+            }
+        )
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 0.0, 1.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=config,
+            reference_date=np.datetime64('1970-01-01T00:00:00', 's'),
+        )
+        population._current_time = 0.0
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: pytest.fail('np.random.rand should not be called'))
+
+        population.update_status()
+
+        np.testing.assert_array_equal(population.particles['status_transported'], np.array([True]))
+        np.testing.assert_array_equal(population.particles['status_buried'], np.array([False]))
+
+    def test_update_status_reuses_cached_particle_locations(self, monkeypatch):
+        """Unchanged particles should not be relocated on every status update."""
+        population = _single_particle_population(release_start='0')
+        population._current_time = 0.0
+
+        def fail_locate_points(*args, **kwargs):
+            pytest.fail('locate_points should not be called for unchanged particles')
+
+        monkeypatch.setattr(population.grid_geometry, 'locate_points', fail_locate_points)
+
+        population.update_status()
+
+        np.testing.assert_array_equal(population.particles['status_domain'], np.array([True]))
+
+    def test_update_status_relocates_invalidated_externally_moved_particles(self, monkeypatch):
+        """Particles whose coordinates change outside update_position can be relocated once."""
+        population = _single_particle_population(release_start='0')
+        population._current_time = 0.0
+        calls = []
+
+        def fake_locate_points(x_points, y_points, start_simplices=None):
+            calls.append((np.asarray(x_points).copy(), np.asarray(y_points).copy()))
+            return np.array([0], dtype=np.int64)
+
+        monkeypatch.setattr(population.grid_geometry, 'locate_points', fake_locate_points)
+        population.particles['x'][0] = 0.25
+        population.particles['y'][0] = 0.25
+        population._invalidate_particle_simplices()
+
+        population.update_status()
+
+        assert len(calls) == 1
+        np.testing.assert_allclose(calls[0][0], np.array([0.25]))
+        np.testing.assert_allclose(calls[0][1], np.array([0.25]))
+        np.testing.assert_array_equal(population.particles['status_domain'], np.array([True]))
+        assert not population._particle_simplices_stale
+
+    def test_update_information_skips_stale_simplex_ids_after_invalidation(self, monkeypatch):
+        """Invalidated particle coordinates should not seed interpolation with stale simplex ids."""
+        population = _single_particle_population(release_start='0')
+        population._current_time = 0.0
+        calls = []
+
+        def fake_interpolate(fields, x_points, y_points, simplex_ids=None):
+            calls.append(simplex_ids)
+            return (np.array([[1.0], [1.0], [0.0]]), np.array([0], dtype=np.int64))
+
+        monkeypatch.setattr(population, '_field_interpolator_multi_with_simplex', fake_interpolate)
+        population.particles['x'][0] = 0.25
+        population.particles['y'][0] = 0.25
+        population._invalidate_particle_simplices()
+
+        population.update_information(
+            current_time=0.0,
+            mixing_depth=np.array([1.0]),
+            transport_probability=np.array([1.0]),
+            bed_level=np.array([0.0]),
+        )
+
+        assert calls == [None]
+        assert not population._particle_simplices_stale
+
+    def test_update_status_uses_active_connectivity_holes_for_domain_mask(self, monkeypatch):
+        """Particles inside a mesh hole should be outside the active domain."""
+
+        config = {
+            'name': 'Hole Domain Config',
+            'particle_type': 'sand',
+            'transport_probability': 'no_probability',
+            'seeding': {
+                'strategy': {'point': {'locations': ['1.0,1.0', '1.0,0.4']}},
+                'quantity': 1,
+                'release_start': '0',
+                'burial_depth': {'constant': 0.0},
+            },
+        }
+        field_data = SimpleNamespace(
+            x=np.array([0.0, 2.0, 2.0, 0.0, 0.8, 1.2, 1.2, 0.8]),
+            y=np.array([0.0, 0.0, 2.0, 2.0, 0.8, 0.8, 1.2, 1.2]),
+            face_node_connectivity=np.array(
+                [
+                    [0, 1, 5],
+                    [0, 5, 4],
+                    [1, 2, 6],
+                    [1, 6, 5],
+                    [2, 3, 7],
+                    [2, 7, 6],
+                    [3, 0, 4],
+                    [3, 4, 7],
+                ],
+                dtype=np.int64,
+            ),
+        )
+        population = ParticleSeeder([config]).seed(field_data)[0]
+        population._current_time = 0.0
+        population.particles['transport_probability'] = np.ones(2)
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
+
+        population.update_status()
+
+        np.testing.assert_array_equal(population.particles['status_domain'], np.array([False, True]))
+
+    def test_open_boundary_exit_marks_particle_left_domain(self, monkeypatch):
+        """Particles crossing open boundary edges are removed from later movement."""
+        population = ParticleSeeder([_boundary_action_config('0.2,0.2')]).seed(_boundary_action_field_data())[0]
+        population._current_time = 0.0
+        population.particles['transport_probability'] = np.ones(1)
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
+
+        population.update_status()
+        population.update_position(
+            flow_field={'u': np.zeros(3), 'v': -np.ones(3)},
+            current_timestep=0.5,
+        )
+
+        assert population.particles['status_left_domain'].tolist() == [True]
+        assert population.particles['status_alive'].tolist() == [False]
+        assert population.particles['status_domain'].tolist() == [False]
+        assert population.particles['status_mobile'].tolist() == [False]
+
+        population.update_status()
+
+        assert population.particles['status_alive'].tolist() == [False]
+        assert population.particles['status_mobile'].tolist() == [False]
+
+    def test_open_boundary_exit_keeps_original_update_mask_shape(self, monkeypatch):
+        """Boundary exits should not shrink the mobile mask before position assignment."""
+        config = _boundary_action_config('0.2,0.2')
+        config['seeding']['strategy']['point']['locations'] = ['0.2,0.2', '0.4,0.2']
+        population = ParticleSeeder([config]).seed(_boundary_action_field_data())[0]
+        population._current_time = 0.0
+        population.particles['transport_probability'] = np.ones(2)
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
+
+        population.update_status()
+        population.update_position(
+            flow_field={'u': np.zeros(3), 'v': -np.ones(3)},
+            current_timestep=0.5,
+        )
+
+        assert population.particles['status_left_domain'].tolist() == [True, True]
+        assert population.particles['status_mobile'].tolist() == [False, False]
+
+    def test_land_boundary_contact_marks_beached_without_removing_particle(self, monkeypatch):
+        """Particles crossing land boundary edges stay put and can reactivate later."""
+        population = ParticleSeeder([_boundary_action_config('0.2,0.2')]).seed(_boundary_action_field_data())[0]
+        population._current_time = 0.0
+        population.particles['transport_probability'] = np.ones(1)
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
+
+        population.update_status()
+        population.update_position(
+            flow_field={'u': -np.ones(3), 'v': np.zeros(3)},
+            current_timestep=0.5,
+        )
+
+        np.testing.assert_allclose(population.particles['x'], np.array([0.2]))
+        np.testing.assert_allclose(population.particles['y'], np.array([0.2]))
+        assert population.particles['status_beached'].tolist() == [True]
+        assert population.particles['status_left_domain'].tolist() == [False]
+        assert population.particles['status_alive'].tolist() == [True]
+        assert population.particles['status_domain'].tolist() == [True]
+        assert population.particles['status_mobile'].tolist() == [False]
+
+        population.update_status()
+
+        assert population.particles['status_beached'].tolist() == [False]
+        assert population.particles['status_alive'].tolist() == [True]
+        assert population.particles['status_mobile'].tolist() == [True]
 
     def test_update_position_carries_cached_simplex_ids(self, point_config_simple):
         """Position updates should reuse and refresh particle simplex ids."""
@@ -1568,6 +2039,7 @@ class TestParticlePopulation:
 # ---------------------------------------------------------------------------
 # Polygon helpers
 # ---------------------------------------------------------------------------
+
 
 class TestParsePolygon:
     """Tests for _parse_polygon and _read_polygon_file."""
@@ -1628,18 +2100,20 @@ class TestParsePolygon:
 # RandomStrategy with poly
 # ---------------------------------------------------------------------------
 
-class TestRandomStrategyPoly:
 
+class TestRandomStrategyPoly:
     def _make_config(self, poly, nlocations=10, seed=42):
-        return PopulationConfig({
-            'particle_type': 'sand',
-            'seeding': {
-                'strategy': {'random': {'poly': poly, 'nlocations': nlocations, 'seed': seed}},
-                'quantity': 1,
-                'release_start': '2025-01-01 00:00:00',
-                'burial_depth': {'constant': 0.0},
-            },
-        })
+        return PopulationConfig(
+            {
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'random': {'poly': poly, 'nlocations': nlocations, 'seed': seed}},
+                    'quantity': 1,
+                    'release_start': '2025-01-01 00:00:00',
+                    'burial_depth': {'constant': 0.0},
+                },
+            }
+        )
 
     def test_inline_poly_all_inside(self):
         # Unit square polygon
@@ -1667,15 +2141,17 @@ class TestRandomStrategyPoly:
         assert len(result) == 5
 
     def test_missing_both_bbox_and_poly(self):
-        config = PopulationConfig({
-            'particle_type': 'sand',
-            'seeding': {
-                'strategy': {'random': {'nlocations': 1, 'seed': 1}},
-                'quantity': 1,
-                'release_start': '2025-01-01 00:00:00',
-                'burial_depth': {'constant': 0.0},
-            },
-        })
+        config = PopulationConfig(
+            {
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'random': {'nlocations': 1, 'seed': 1}},
+                    'quantity': 1,
+                    'release_start': '2025-01-01 00:00:00',
+                    'burial_depth': {'constant': 0.0},
+                },
+            }
+        )
         with pytest.raises(MissingConfigurationParameter, match='"bbox" or "poly"'):
             RandomStrategy().seed(config)
 
@@ -1694,21 +2170,25 @@ class TestRandomStrategyPoly:
 # GridStrategy with poly
 # ---------------------------------------------------------------------------
 
-class TestGridStrategyPoly:
 
+class TestGridStrategyPoly:
     def _make_config(self, poly, dx=1.0, dy=1.0):
-        return PopulationConfig({
-            'particle_type': 'sand',
-            'seeding': {
-                'strategy': {'grid': {
-                    'poly': poly,
-                    'separation': {'dx': dx, 'dy': dy},
-                }},
-                'quantity': 1,
-                'release_start': '2025-01-01 00:00:00',
-                'burial_depth': {'constant': 0.0},
-            },
-        })
+        return PopulationConfig(
+            {
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {
+                        'grid': {
+                            'poly': poly,
+                            'separation': {'dx': dx, 'dy': dy},
+                        }
+                    },
+                    'quantity': 1,
+                    'release_start': '2025-01-01 00:00:00',
+                    'burial_depth': {'constant': 0.0},
+                },
+            }
+        )
 
     def test_inline_unit_square_grid(self):
         # 2x2 unit square: grid at 0,0  0,1  1,0  1,1 (corners on boundary)
@@ -1746,15 +2226,17 @@ class TestGridStrategyPoly:
         assert (3.0, 3.0) in positions
 
     def test_missing_both_bbox_and_poly(self):
-        config = PopulationConfig({
-            'particle_type': 'sand',
-            'seeding': {
-                'strategy': {'grid': {'separation': {'dx': 1.0, 'dy': 1.0}}},
-                'quantity': 1,
-                'release_start': '2025-01-01 00:00:00',
-                'burial_depth': {'constant': 0.0},
-            },
-        })
+        config = PopulationConfig(
+            {
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'grid': {'separation': {'dx': 1.0, 'dy': 1.0}}},
+                    'quantity': 1,
+                    'release_start': '2025-01-01 00:00:00',
+                    'burial_depth': {'constant': 0.0},
+                },
+            }
+        )
         with pytest.raises(MissingConfigurationParameter, match='"bbox" or "poly"'):
             GridStrategy().seed(config)
 
@@ -1772,8 +2254,8 @@ class TestGridStrategyPoly:
 # Seeding box volume logging
 # ---------------------------------------------------------------------------
 
-class TestComputeSeedingArea:
 
+class TestComputeSeedingArea:
     def test_bbox_string(self):
         area = _compute_seeding_area('random', {'bbox': '0,0 4,3'})
         assert area == pytest.approx(12.0)
@@ -1805,18 +2287,19 @@ class TestComputeSeedingArea:
 
 
 class TestLogSeedingBoxVolume:
-
     def _make_random_config(self, burial_depth, bbox='0,0 4,3', nlocations=6, quantity=2):
-        return PopulationConfig({
-            'name': 'test_pop',
-            'particle_type': 'sand',
-            'seeding': {
-                'strategy': {'random': {'bbox': bbox, 'nlocations': nlocations, 'seed': 1}},
-                'quantity': quantity,
-                'release_start': '2025-01-01 00:00:00',
-                'burial_depth': burial_depth,
-            },
-        })
+        return PopulationConfig(
+            {
+                'name': 'test_pop',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'random': {'bbox': bbox, 'nlocations': nlocations, 'seed': 1}},
+                    'quantity': quantity,
+                    'release_start': '2025-01-01 00:00:00',
+                    'burial_depth': burial_depth,
+                },
+            }
+        )
 
     def test_logs_when_random_burial_and_bbox(self, caplog):
         config = self._make_random_config({'random': 3.0})
@@ -1839,53 +2322,59 @@ class TestLogSeedingBoxVolume:
         assert caplog.records == []
 
     def test_no_log_for_point_strategy(self, caplog):
-        config = PopulationConfig({
-            'name': 'pts',
-            'particle_type': 'sand',
-            'seeding': {
-                'strategy': {'point': {'locations': ['0,0', '1,1']}},
-                'quantity': 1,
-                'release_start': '2025-01-01 00:00:00',
-                'burial_depth': {'random': 2.0},
-            },
-        })
+        config = PopulationConfig(
+            {
+                'name': 'pts',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0,0', '1,1']}},
+                    'quantity': 1,
+                    'release_start': '2025-01-01 00:00:00',
+                    'burial_depth': {'random': 2.0},
+                },
+            }
+        )
         positions = [(1, 0.0, 0.0), (1, 1.0, 1.0)]
         with caplog.at_level('INFO', logger='sedtrails.particle_tracer.particle_seeder'):
             _log_seeding_box_volume(config, positions)
         assert caplog.records == []
 
     def test_logs_with_poly(self, caplog):
-        config = PopulationConfig({
-            'name': 'poly_pop',
-            'particle_type': 'sand',
-            'seeding': {
-                'strategy': {'random': {'poly': ['0,0', '2,0', '2,2', '0,2'], 'nlocations': 4, 'seed': 1}},
-                'quantity': 1,
-                'release_start': '2025-01-01 00:00:00',
-                'burial_depth': {'random': 5.0},
-            },
-        })
+        config = PopulationConfig(
+            {
+                'name': 'poly_pop',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'random': {'poly': ['0,0', '2,0', '2,2', '0,2'], 'nlocations': 4, 'seed': 1}},
+                    'quantity': 1,
+                    'release_start': '2025-01-01 00:00:00',
+                    'burial_depth': {'random': 5.0},
+                },
+            }
+        )
         # 4 positions × qty 1 = 4 particles; area=4, depth=5, volume=20, repr=5
         positions = [(1, 0.5, 0.5), (1, 1.5, 0.5), (1, 0.5, 1.5), (1, 1.5, 1.5)]
         with caplog.at_level('INFO', logger='sedtrails.particle_tracer.particle_seeder'):
             _log_seeding_box_volume(config, positions)
         assert len(caplog.records) == 1
         msg = caplog.records[0].message
-        assert '20' in msg   # volume
-        assert '4' in msg    # n_particles or area
-        assert '5' in msg    # depth or repr volume
+        assert '20' in msg  # volume
+        assert '4' in msg  # n_particles or area
+        assert '5' in msg  # depth or repr volume
 
     def test_factory_emits_log_for_random_burial_bbox(self, caplog):
-        config = PopulationConfig({
-            'name': 'factory_test',
-            'particle_type': 'sand',
-            'seeding': {
-                'strategy': {'random': {'bbox': '0,0 10,10', 'nlocations': 5, 'seed': 42}},
-                'quantity': 2,
-                'release_start': '2025-01-01 00:00:00',
-                'burial_depth': {'random': 2.0},
-            },
-        })
+        config = PopulationConfig(
+            {
+                'name': 'factory_test',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'random': {'bbox': '0,0 10,10', 'nlocations': 5, 'seed': 42}},
+                    'quantity': 2,
+                    'release_start': '2025-01-01 00:00:00',
+                    'burial_depth': {'random': 2.0},
+                },
+            }
+        )
         with caplog.at_level('INFO', logger='sedtrails.particle_tracer.particle_seeder'):
             ParticleFactory.create_particles(config)
         assert any('volume' in r.message.lower() for r in caplog.records)
@@ -1895,19 +2384,22 @@ class TestLogSeedingBoxVolume:
 # Permanently-buried particle removal
 # ---------------------------------------------------------------------------
 
+
 def _make_population(burial_depth_cfg, remove_flag=False, n_pts=4):
     """Create a minimal ParticlePopulation on a unit-square grid."""
-    config = PopulationConfig({
-        'name': 'test_pop',
-        'particle_type': 'sand',
-        'seeding': {
-            'strategy': {'point': {'locations': [f'{i},{i}' for i in range(n_pts)]}},
-            'quantity': 1,
-            'release_start': '2025-01-01 00:00:00',
-            'burial_depth': burial_depth_cfg,
-            'remove_permanently_buried': remove_flag,
-        },
-    })
+    config = PopulationConfig(
+        {
+            'name': 'test_pop',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'point': {'locations': [f'{i},{i}' for i in range(n_pts)]}},
+                'quantity': 1,
+                'release_start': '2025-01-01 00:00:00',
+                'burial_depth': burial_depth_cfg,
+                'remove_permanently_buried': remove_flag,
+            },
+        }
+    )
     # Grid: unit square with enough nodes to contain the seed points
     field_x = np.array([0.0, 4.0, 4.0, 0.0])
     field_y = np.array([0.0, 0.0, 4.0, 4.0])
@@ -1915,7 +2407,6 @@ def _make_population(burial_depth_cfg, remove_flag=False, n_pts=4):
 
 
 class TestRemovePermanentlyBuriedParticles:
-
     def test_flag_off_removes_nothing(self):
         pop = _make_population({'constant': 5.0}, remove_flag=False)
         n_before = len(pop.particles['x'])
@@ -1951,17 +2442,19 @@ class TestRemovePermanentlyBuriedParticles:
         # max_exposure at nodes: [10, 10, 0.5, 0.5]
         #   → particles at (0,0),(4,0): 2.0 ≤ 10  → kept
         #   → particles at (4,4),(0,4): 2.0 > 0.5 → removed
-        config = PopulationConfig({
-            'name': 'partial_test',
-            'particle_type': 'sand',
-            'seeding': {
-                'strategy': {'point': {'locations': ['0,0', '4,0', '4,4', '0,4']}},
-                'quantity': 1,
-                'release_start': '2025-01-01 00:00:00',
-                'burial_depth': {'constant': 2.0},
-                'remove_permanently_buried': True,
-            },
-        })
+        config = PopulationConfig(
+            {
+                'name': 'partial_test',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0,0', '4,0', '4,4', '0,4']}},
+                    'quantity': 1,
+                    'release_start': '2025-01-01 00:00:00',
+                    'burial_depth': {'constant': 2.0},
+                    'remove_permanently_buried': True,
+                },
+            }
+        )
         field_x = np.array([0.0, 4.0, 4.0, 0.0])
         field_y = np.array([0.0, 0.0, 4.0, 4.0])
         pop = ParticlePopulation(field_x=field_x, field_y=field_y, population_config=config)
@@ -2011,29 +2504,35 @@ class TestRemovePermanentlyBuriedParticles:
         assert any('no permanently buried' in r.message.lower() for r in caplog.records)
 
     def test_config_flag_read_from_population_config(self):
-        config = PopulationConfig({
-            'name': 'p', 'particle_type': 'sand',
-            'seeding': {
-                'strategy': {'point': {'locations': ['0,0']}},
-                'quantity': 1,
-                'release_start': '2025-01-01 00:00:00',
-                'burial_depth': {'constant': 0.0},
-                'remove_permanently_buried': True,
-            },
-        })
+        config = PopulationConfig(
+            {
+                'name': 'p',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0,0']}},
+                    'quantity': 1,
+                    'release_start': '2025-01-01 00:00:00',
+                    'burial_depth': {'constant': 0.0},
+                    'remove_permanently_buried': True,
+                },
+            }
+        )
         assert config.remove_permanently_buried is True
 
     def test_config_flag_defaults_to_false(self):
-        config = PopulationConfig({
-            'name': 'p', 'particle_type': 'sand',
-            'seeding': {
-                'strategy': {'point': {'locations': ['0,0']}},
-                'quantity': 1,
-                'release_start': '2025-01-01 00:00:00',
-                'burial_depth': {'constant': 0.0},
-                # remove_permanently_buried not specified
-            },
-        })
+        config = PopulationConfig(
+            {
+                'name': 'p',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0,0']}},
+                    'quantity': 1,
+                    'release_start': '2025-01-01 00:00:00',
+                    'burial_depth': {'constant': 0.0},
+                    # remove_permanently_buried not specified
+                },
+            }
+        )
         assert config.remove_permanently_buried is False
 
     def test_release_time_is_converted_to_seconds_since_reference_date(self):
@@ -2139,4 +2638,54 @@ def _single_particle_population(release_start):
         field_y=np.array([0.0, 0.0, 1.0, 1.0]),
         population_config=config,
         reference_date=np.datetime64('1970-01-01T00:00:00', 's'),
+    )
+
+
+def _diffusion_population(particle_type, tracer_methods, characteristics, diffusion):
+    """Build a one-particle population using the canonical diffusion config."""
+    config = {
+        'name': 'Configured Diffusion Population',
+        'particle_type': particle_type,
+        'characteristics': characteristics,
+        'tracer_methods': tracer_methods,
+        'transport_probability': 'no_probability',
+        'seeding': {
+            'strategy': {'point': {'locations': ['0.5,0.5']}},
+            'quantity': 1,
+            'release_start': '0',
+            'burial_depth': {'constant': 0.0},
+        },
+    }
+    if diffusion is not None:
+        config['diffusion'] = diffusion
+    return ParticlePopulation(
+        field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+        field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+        population_config=PopulationConfig(config),
+    )
+
+
+def _boundary_action_config(location):
+    return {
+        'name': 'Boundary Action Config',
+        'particle_type': 'sand',
+        'transport_probability': 'no_probability',
+        'seeding': {
+            'strategy': {'point': {'locations': [location]}},
+            'quantity': 1,
+            'release_start': '0',
+            'burial_depth': {'constant': 0.0},
+        },
+    }
+
+
+def _boundary_action_field_data():
+    return SimpleNamespace(
+        x=np.array([0.0, 1.0, 0.0]),
+        y=np.array([0.0, 0.0, 1.0]),
+        face_node_connectivity=np.array([[0, 1, 2]], dtype=np.int64),
+        boundary_edge_classification={
+            'edge_nodes': [[0, 1], [2, 0], [1, 2]],
+            'edge_classes': ['open', 'land', 'unclassified'],
+        },
     )

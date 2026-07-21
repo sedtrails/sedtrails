@@ -30,6 +30,7 @@ Controls basic simulation behavior and model configuration.
 | `input_model`            | object  | Optional | -       | Configuration for the input flow model. See [Input Model Configuration](#input-model-configuration). |
 | `n_runs`                 | integer | Optional | `1`     | Number of simulation runs to execute.                                                                |
 | `display_input_metadata` | boolean | Optional | `false` | Display all metadata from input files during loading.                                                |
+| `report_domain_exit_updates` | boolean | Optional | `false` | Log per-timestep messages when particles newly leave the domain or beach on land. Final totals remain controlled by the CLI domain-exit reporting option. |
 | `numerical_scheme`       | string  | Optional | `rk4`   | Numerical integration method. Options: `rk4` (Runge-Kutta 4th order), `euler` (Euler method).        |
 
 (input-model-configuration)=
@@ -51,6 +52,7 @@ is omitted and populated with the nested defaults below.
 ```yaml
 general:
   preprocess: true
+  report_domain_exit_updates: false
   numerical_scheme: rk4
   input_model:
     format: fm_netcdf
@@ -87,20 +89,83 @@ inputs:
 (domain-definition)=
 ## Domain Definition
 
-Defines the spatial extent of the simulation area. You must specify **one** of the following methods to define the domain.
+Defines optional custom domain controls. If the `domain` section is omitted, SedTRAILS uses the active grid from the input model without extra cutouts or boundary-class overrides.
+
+If the `domain` section is present, you must specify **exactly one** of the following methods to define the active extent:
 
 ⚠️ **Mutually Exclusive Options**: Choose only ONE method from the following:
 - **Method 1**: `pol_file` - Use a polygon file
 - **Method 2**: `subset_x` and `subset_y` - Use coordinate ranges
 
-| Parameter         | Type    | Required     | Default | Description                                                                                               |
-| ----------------- | ------- | ------------ | ------- | --------------------------------------------------------------------------------------------------------- |
-| `pol_file`        | string  | Conditional* | -       | Path to Deltares `.pol` file containing domain boundary polygon.                                          |
-| `subset_x`        | string  | Conditional* | -       | X-coordinate range as `min:max` (e.g., `35000:52000`).                                                    |
-| `subset_y`        | string  | Conditional* | -       | Y-coordinate range as `min:max` (e.g., `12000:150000`).                                                   |
-| `flow_field_data` | object  | Optional     | -       | Flow field format-specific settings. See [Flow Field Data Configuration](#flow-field-data-configuration). |
+Do not include an empty `domain: {}` block. `inner_boundary_pol_files` and `boundary_class_pol_files` do not define the simulation extent by themselves. They can be used with either domain method above. This means `pol_file` can be omitted when `subset_x` and `subset_y` are present, and boundary classes will still be applied. If no custom extent, inner boundaries, or boundary classes are needed, omit the `domain` section entirely.
 
-*Conditional: One method must be specified.
+| Parameter                  | Type    | Required     | Default | Description                                                                                               |
+| -------------------------- | ------- | ------------ | ------- | --------------------------------------------------------------------------------------------------------- |
+| `pol_file`                 | string  | Conditional* | -       | Path to Deltares `.pol` file containing domain boundary polygon.                                          |
+| `subset_x`                 | string  | Conditional* | -       | X-coordinate range as `min:max` (e.g., `35000:52000`).                                                    |
+| `subset_y`                 | string  | Conditional* | -       | Y-coordinate range as `min:max` (e.g., `12000:150000`).                                                   |
+| `inner_boundary_pol_files` | array   | Optional     | `[]`    | Tekal `.pol` files with island or cutout polygons to remove from the active particle-tracking mesh.       |
+| `boundary_class_pol_files` | object  | Optional     | `{}`    | User override Tekal `.pol` files that classify active boundary edges as `open` or `land`.                 |
+| `flow_field_data`          | object  | Optional     | -       | Flow field format-specific settings. See [Flow Field Data Configuration](#flow-field-data-configuration). |
+
+*Conditional: if `domain` is present, one extent method must be specified. Use either `pol_file` or both `subset_x` and `subset_y`; omit the entire `domain` section when no custom domain controls are needed.
+
+### Inner Boundaries and Boundary Actions
+
+For FM and SFINCS inputs, SedTRAILS can use Tekal polygon files to mask islands/cutouts. For FM, SFINCS, and XBeach inputs, SedTRAILS can use Tekal polygon files to distinguish open offshore boundaries from land boundaries.
+
+`inner_boundary_pol_files` removes candidate faces or triangles whose centroids fall inside any configured polygon. This creates holes in the active particle mesh. Particles inside those holes are not treated as valid in-domain particles.
+
+`boundary_class_pol_files` classifies active mesh boundary edges. Each class can point to one or more Tekal `.pol` files, and each file may contain multiple polygon blocks. Boundary edge classification uses the midpoint of each active boundary edge:
+
+- `open`: particles crossing this edge are marked as having left the model domain and are removed from later movement calculations.
+- `land`: particles crossing this edge are marked as beached for that timestep, remain at their last valid in-domain position, and can become mobile again on a later timestep if hydrodynamic and transport conditions permit.
+
+If an edge midpoint is selected by both `open` and `land` override polygons, `land` takes priority. The source match is still kept in diagnostics.
+
+Boundary-class polygons therefore do not need to be thin lines that exactly trace the boundary. A wider swath is allowed as long as it selects only the intended boundary-edge midpoints. Avoid polygons that are so wide they also contain midpoints from neighboring or unrelated open/land edges.
+
+**Example:**
+
+```yaml
+domain:
+  pol_file: ./outer_domain.pol
+  inner_boundary_pol_files:
+    - ./islands.pol
+    - ./harbour_cutouts.pol
+  boundary_class_pol_files:
+    open:
+      - ./offshore_open_edges.pol
+      - ./lateral_open_edges.pol
+    land:
+      - ./coastline_edges.pol
+      - ./island_edges.pol
+```
+
+The same boundary-class configuration can be used with a rectangular subset instead of `pol_file`:
+
+```yaml
+domain:
+  subset_x: "35000:65000"
+  subset_y: "12000:45000"
+  boundary_class_pol_files:
+    open:
+      - ./offshore_open_edges.pol
+    land:
+      - ./coastline_edges.pol
+```
+
+Relative polygon paths are resolved relative to the YAML configuration file.
+
+The converted flow field metadata stores diagnostics under:
+
+- `inner_boundary_pol_files`
+- `inner_boundary_polygon_count`
+- `inner_boundary_masked_face_count`
+- `inner_boundary_active_face_count`
+- `boundary_edge_classification`
+
+The `boundary_edge_classification` metadata contains edge node ids, edge midpoints, assigned edge classes, source matches, polygon counts, and class counts.
 
 (flow-field-data-configuration)=
 ### Flow Field Data Configuration
@@ -230,6 +295,7 @@ The `particles` section contains an array of `populations`, where each populatio
 | `name`                  | string | **Required** | `particle`       | Unique name for this population (e.g., `sediment-fine`, `sand-01`).                                        |
 | `particle_type`         | string | **Required** | `passive`        | Type of particle. Options: `passive`, `sand`, `mud`.                                                       |
 | `characteristics`       | object | **Required** | -                | Type-specific particle properties. See [Particle Characteristics](#particle-characteristics).              |
+| `diffusion`             | object | Optional     | `brownian`, `0.0` | Method, coefficient, and optional seed for horizontal diffusion. See [Per-population diffusion](#per-population-diffusion). |
 | `tracer_methods`        | object | **Required** | -                | Transport calculation method(s). See [Tracer Methods](#tracer-methods).                                    |
 | `transport_probability` | string | Optional     | `no_probability` | How to apply transport probability. Options: `no_probability`, `stochastic_transport`, `reduced_velocity`. |
 | `seeding`               | object | **Required** | -                | Particle release configuration. See [Particle Seeding](#particle-seeding).                                 |
@@ -244,7 +310,18 @@ The `characteristics` object varies by `particle_type`:
 
 | Parameter               | Type   | Required     | Default | Description                        |
 | ----------------------- | ------ | ------------ | ------- | ---------------------------------- |
-| `diffusion_coefficient` | number | **Required** | `0.0`   | Random walk diffusion coefficient (horizontal diffusivity $K_h$). |
+| `diffusion_coefficient` | number | Optional (legacy) | `0.0` | Legacy fallback for the top-level `diffusion.coefficient`; prefer the top-level configuration. |
+
+#### Per-population diffusion
+
+The optional `diffusion` object applies to every particle type and tracer method. `method` is `brownian` (default) or `none`; `coefficient` is a non-negative horizontal diffusivity in `m^2/s` and defaults to `0.0`; `seed` is an optional integer that makes draws reproducible for that population. A zero coefficient and `method: none` both disable diffusion.
+
+```yaml
+diffusion:
+  method: brownian
+  coefficient: 0.05
+  seed: 1234
+```
 
 #### Sand Particles
 
@@ -264,6 +341,12 @@ The `characteristics` object varies by `particle_type`:
 ### Tracer Methods
 
 Exactly one tracer method must be specified per population. Supported method keys are `vanwesten`, `soulsby`, and `passive_tracer`.
+
+For `passive_tracer` populations:
+
+- `particle_type` must be `passive`.
+- `transport_probability` must be `no_probability`.
+- `seeding.burial_depth` is not supported and must be omitted.
 
 #### Van Westen Method
 
@@ -291,6 +374,9 @@ Exactly one tracer method must be specified per population. Supported method key
 | ----------------- | ----- | -------- | ----------------------------- | ----------------------------------------------------- |
 | `flow_field_name` | array | Optional | `["depth_avg_flow_velocity"]` | List of flow field names to use for passive tracers. |
 
+Sediment fraction selection is handled separately via `sediment_fraction_index` or `sediment_fraction_name`. For multi-fraction Delft3D-4 NetCDF inputs, named selection is resolved against the `NAMCON` labels in the file. If the input only contains a single sediment fraction, NAMCON is not used for fraction selection. Name-based fraction selection is not yet available for FM or XBeach inputs, because their transport variable names differ and need separate support.
+A selection in `general.input_model` is the default for populations that do not set either field. A population-level selection replaces that default entirely, and `sediment_fraction_name` takes precedence when both fields are set in the same scope.
+
 (particle-seeding)=
 ### Particle Seeding
 
@@ -305,7 +391,7 @@ Controls where, when, and how particles are released.
 | `lifespan`      | number  | Optional     | `9e+99`         | Maximum particle lifetime [seconds]. Use very large value for unlimited.                      |
 | `release_start` | string  | Optional     | simulation start | Release start time for the population (format: `YYYY-MM-DD HH:MM:SS`). Converted to seconds relative to `general.input_model.reference_date`. |
 | `release_stop`  | string  | Optional     | -               | Release stop time for continuous release. Defaults to immediate stop after first release.     |
-| `burial_depth`  | object  | Optional     | -               | Initial burial depth configuration. See [Burial Depth](#burial-depth).                        |
+| `burial_depth`  | object  | Optional     | -               | Initial burial depth configuration (not allowed for `passive_tracer`). See [Burial Depth](#burial-depth). |
 | `strategy`      | object  | **Required** | -               | Spatial release strategy. See [Release Strategies](#release-strategies).                      |
 
 (burial-depth)=
@@ -461,6 +547,7 @@ Controls what results are saved and where.
 | --------------------- | ------- | ----------- | ---------- | ------------------------------------------------------------------------------------------------------- |
 | `directory`           | string  | Optional    | `./output` | Path to directory for storing simulation results.                                                       |
 | `save_interval`       | string  | Optional    | `1H`       | How often to store trajectory samples. CFL integration can use shorter internal steps; output stores the initial sample, scheduled samples, and final sample. |
+| `sync_interval`       | string  | Optional    | `save_interval` | Compatibility setting for how often to flush streaming NetCDF output to disk. Prefer `outputs.netcdf.sync_interval` for new configs. |
 | `store_tracks`        | boolean | Optional    | `true`     | Store complete particle trajectories over time. Set to `false` for compact final-state output. |
 | `store_end_positions` | boolean | Optional    | `false`    | Store only final particle positions in `sedtrails_results.nc`. Creates a compact one-state file and skips full trajectory output. |
 
@@ -470,6 +557,7 @@ Controls what results are saved and where.
 outputs:
   directory: ./results/simulation_001
   save_interval: "30M"
+  sync_interval: "2H"
   store_tracks: true
   netcdf:
     compression: auto
@@ -592,6 +680,13 @@ inputs:
 domain:
   subset_x: "35000:65000"
   subset_y: "12000:45000"
+  inner_boundary_pol_files:
+    - ./islands.pol
+  boundary_class_pol_files:
+    open:
+      - ./offshore_boundary_edges.pol
+    land:
+      - ./coastline_boundary_edges.pol
   flow_field_data:
     fm: sedtrails_nc
 
@@ -668,8 +763,13 @@ visualization:
 
 ### Domain Definition
 
+- Omit the `domain` section entirely when the input model's active grid is the intended simulation extent and no cutout or boundary-class overrides are needed
 - Use `domain.pol_file` for complex, irregular simulation domains
 - Use `subset_x` and `subset_y` for simple rectangular domains
+- Use `inner_boundary_pol_files` when the flow grid contains island or cutout regions that should not be valid water for particle tracking
+- Use `boundary_class_pol_files.open` for offshore boundaries where particles should leave the model
+- Use `boundary_class_pol_files.land` for coastlines, islands, and cutouts where particles should beach temporarily and remain available for later remobilization
+- Keep open and land override polygons narrow enough to select the intended boundary-edge midpoints only
 - Always visualize your domain boundary before running long simulations
 
 

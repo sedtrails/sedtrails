@@ -7,11 +7,13 @@ import pytest
 import xarray as xr
 import yaml
 
+from sedtrails.application_interfaces import seeding_gui
 from sedtrails.application_interfaces.seeding_gui import (
     BathymetryViewData,
     MAP_ZOOM_IN_FACTOR,
     SeedingGuiApp,
     SeedingGuiError,
+    _create_masked_triangulation,
     add_population_from_existing,
     clip_points_by_elevation,
     default_seeded_config_path,
@@ -365,6 +367,280 @@ def test_load_bathymetry_view_data_supports_xbeach(tmp_path, monkeypatch):
     np.testing.assert_allclose(view_data.y, np.array([10.0, 11.0, 12.0, 13.0]))
     np.testing.assert_allclose(view_data.values, np.array([-1.0, -2.0, -3.0, -4.0]))
     assert view_data.variable == 'zb_mean'
+
+
+def test_load_bathymetry_view_data_supports_d3d4_netcdf(tmp_path, monkeypatch):
+    """Bathymetry loading extracts Delft3D4 XZ/YZ and maps DPS0 depth to elevation."""
+
+    config_file = tmp_path / 'config.yaml'
+    input_file = tmp_path / 'input.nc'
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                'general': {'input_model': {'format': 'd3d4_netcdf'}},
+                'inputs': {'data': str(input_file.name)},
+            }
+        ),
+        encoding='utf-8',
+    )
+    input_file.write_text('', encoding='utf-8')
+
+    dataset = xr.Dataset(
+        {
+            'XZ': (('m', 'n'), np.array([[0.0, 1.0], [2.0, 3.0]])),
+            'YZ': (('m', 'n'), np.array([[10.0, 11.0], [12.0, 13.0]])),
+            'DPS0': (('m', 'n'), np.array([[5.0, 6.0], [7.0, 8.0]])),
+        }
+    )
+    monkeypatch.setattr(
+        'sedtrails.application_interfaces.seeding_gui._open_netcdf_dataset',
+        lambda _: dataset,
+    )
+
+    view_data = load_bathymetry_view_data(config_file)
+
+    np.testing.assert_allclose(view_data.x, np.array([0.0, 1.0, 2.0, 3.0]))
+    np.testing.assert_allclose(view_data.y, np.array([10.0, 11.0, 12.0, 13.0]))
+    np.testing.assert_allclose(view_data.values, np.array([-5.0, -6.0, -7.0, -8.0]))
+    assert view_data.variable == 'DPS0'
+
+
+def test_create_masked_triangulation_masks_origin_outlier_bridge():
+    """Triangulation helper masks long-edge bridge triangles from outlier points."""
+
+    import matplotlib.tri as mtri
+
+    # Dense local cluster plus an outlier at origin to mimic stretched-bridge artifacts.
+    gx, gy = np.meshgrid(np.arange(1000.0, 1500.0, 100.0), np.arange(1000.0, 1500.0, 100.0), indexing='xy')
+    x = np.concatenate([gx.reshape(-1), np.array([0.0])])
+    y = np.concatenate([gy.reshape(-1), np.array([0.0])])
+
+    triangulation = _create_masked_triangulation(x, y, mtri_module=mtri)
+
+    assert triangulation.mask is not None
+    assert np.any(triangulation.mask)
+
+
+def test_load_bathymetry_view_data_supports_sfincs(tmp_path, monkeypatch):
+    """Bathymetry loading extracts SFINCS face coordinates and first-time zb values."""
+
+    config_file = tmp_path / 'config.yaml'
+    input_file = tmp_path / 'input.nc'
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                'general': {'input_model': {'format': 'sfincs'}},
+                'inputs': {'data': str(input_file.name)},
+            }
+        ),
+        encoding='utf-8',
+    )
+    input_file.write_text('', encoding='utf-8')
+
+    dataset = xr.Dataset(
+        {
+            'mesh2d_face_x': (('mesh2d_nFaces',), np.array([100.0, 200.0, 300.0])),
+            'mesh2d_face_y': (('mesh2d_nFaces',), np.array([5.0, 15.0, 25.0])),
+            'zb': (('time', 'mesh2d_nFaces'), np.array([[-1.5, -2.0, -2.5], [-1.0, -1.5, -2.0]])),
+        }
+    )
+    monkeypatch.setattr(
+        'sedtrails.application_interfaces.seeding_gui._open_netcdf_dataset',
+        lambda _: dataset,
+    )
+
+    view_data = load_bathymetry_view_data(config_file)
+
+    np.testing.assert_allclose(view_data.x, np.array([100.0, 200.0, 300.0]))
+    np.testing.assert_allclose(view_data.y, np.array([5.0, 15.0, 25.0]))
+    np.testing.assert_allclose(view_data.values, np.array([-1.5, -2.0, -2.5]))
+    assert view_data.variable == 'zb'
+
+
+def test_load_bathymetry_view_data_prefers_sfincs_node_coordinates(tmp_path, monkeypatch):
+    """SFINCS loading prefers mesh2d node coordinates when both node and face coordinates exist."""
+
+    config_file = tmp_path / 'config.yaml'
+    input_file = tmp_path / 'input.nc'
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                'general': {'input_model': {'format': 'sfincs'}},
+                'inputs': {'data': str(input_file.name)},
+            }
+        ),
+        encoding='utf-8',
+    )
+    input_file.write_text('', encoding='utf-8')
+
+    dataset = xr.Dataset(
+        {
+            'mesh2d_node_x': (('mesh2d_nNodes',), np.array([1.0, 2.0, 3.0])),
+            'mesh2d_node_y': (('mesh2d_nNodes',), np.array([11.0, 12.0, 13.0])),
+            'mesh2d_face_x': (('mesh2d_nFaces',), np.array([100.0, 200.0, 300.0])),
+            'mesh2d_face_y': (('mesh2d_nFaces',), np.array([5.0, 15.0, 25.0])),
+            'zb': (('time', 'mesh2d_nNodes'), np.array([[-1.0, -2.0, -3.0], [-4.0, -5.0, -6.0]])),
+        }
+    )
+    monkeypatch.setattr(
+        'sedtrails.application_interfaces.seeding_gui._open_netcdf_dataset',
+        lambda _: dataset,
+    )
+
+    view_data = load_bathymetry_view_data(config_file)
+
+    np.testing.assert_allclose(view_data.x, np.array([1.0, 2.0, 3.0]))
+    np.testing.assert_allclose(view_data.y, np.array([11.0, 12.0, 13.0]))
+    np.testing.assert_allclose(view_data.values, np.array([-1.0, -2.0, -3.0]))
+    assert view_data.variable == 'zb'
+
+
+def test_load_bathymetry_view_data_sfincs_uses_face_coordinates_for_face_values(tmp_path, monkeypatch):
+    """SFINCS loading should switch to face coordinates when zb is face-based."""
+
+    config_file = tmp_path / 'config.yaml'
+    input_file = tmp_path / 'input.nc'
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                'general': {'input_model': {'format': 'sfincs'}},
+                'inputs': {'data': str(input_file.name)},
+            }
+        ),
+        encoding='utf-8',
+    )
+    input_file.write_text('', encoding='utf-8')
+
+    dataset = xr.Dataset(
+        {
+            'mesh2d_node_x': (('mesh2d_nNodes',), np.array([1.0, 2.0, 3.0, 4.0])),
+            'mesh2d_node_y': (('mesh2d_nNodes',), np.array([11.0, 12.0, 13.0, 14.0])),
+            'mesh2d_face_x': (('mesh2d_nFaces',), np.array([100.0, 200.0, 300.0])),
+            'mesh2d_face_y': (('mesh2d_nFaces',), np.array([5.0, 15.0, 25.0])),
+            'zb': (('time', 'mesh2d_nFaces'), np.array([[-1.5, -2.0, -2.5], [-1.0, -1.5, -2.0]])),
+        }
+    )
+    monkeypatch.setattr(
+        'sedtrails.application_interfaces.seeding_gui._open_netcdf_dataset',
+        lambda _: dataset,
+    )
+
+    view_data = load_bathymetry_view_data(config_file)
+
+    np.testing.assert_allclose(view_data.x, np.array([100.0, 200.0, 300.0]))
+    np.testing.assert_allclose(view_data.y, np.array([5.0, 15.0, 25.0]))
+    np.testing.assert_allclose(view_data.values, np.array([-1.5, -2.0, -2.5]))
+    assert view_data.variable == 'zb'
+
+
+def test_load_bathymetry_view_data_sfincs_derives_face_centroids_from_nodes(tmp_path, monkeypatch):
+    """SFINCS loading should derive face centroids when only node coords plus face connectivity are provided."""
+
+    config_file = tmp_path / 'config.yaml'
+    input_file = tmp_path / 'input.nc'
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                'general': {'input_model': {'format': 'sfincs'}},
+                'inputs': {'data': str(input_file.name)},
+            }
+        ),
+        encoding='utf-8',
+    )
+    input_file.write_text('', encoding='utf-8')
+
+    dataset = xr.Dataset(
+        {
+            'mesh2d_node_x': (('mesh2d_nNodes',), np.array([0.0, 1.0, 1.0, 0.0])),
+            'mesh2d_node_y': (('mesh2d_nNodes',), np.array([0.0, 0.0, 1.0, 1.0])),
+            'mesh2d_face_nodes': (
+                ('mesh2d_nFaces', 'max_face_nodes'),
+                np.array(
+                    [
+                        [1, 2, 3],
+                        [1, 3, 4],
+                    ],
+                    dtype=int,
+                ),
+            ),
+            'zb': (('time', 'mesh2d_nFaces'), np.array([[-2.0, -3.0]])),
+        }
+    )
+    dataset['mesh2d_face_nodes'].attrs['start_index'] = 1
+    monkeypatch.setattr(
+        'sedtrails.application_interfaces.seeding_gui._open_netcdf_dataset',
+        lambda _: dataset,
+    )
+
+    view_data = load_bathymetry_view_data(config_file)
+
+    np.testing.assert_allclose(view_data.x, np.array([2.0 / 3.0, 1.0 / 3.0]))
+    np.testing.assert_allclose(view_data.y, np.array([1.0 / 3.0, 2.0 / 3.0]))
+    np.testing.assert_allclose(view_data.values, np.array([-2.0, -3.0]))
+    assert view_data.variable == 'zb'
+
+
+def test_load_bathymetry_view_data_deduplicates_repeated_coordinates(tmp_path, monkeypatch):
+    """Repeated x/y coordinates collapse to unique points with averaged values."""
+
+    config_file = tmp_path / 'config.yaml'
+    input_file = tmp_path / 'input.nc'
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                'general': {'input_model': {'format': 'fm_netcdf'}},
+                'inputs': {'data': str(input_file.name)},
+            }
+        ),
+        encoding='utf-8',
+    )
+    input_file.write_text('', encoding='utf-8')
+
+    dataset = xr.Dataset(
+        {
+            'net_xcc': (('mesh2d_nFaces',), np.array([0.0, 0.0, 1.0, 2.0])),
+            'net_ycc': (('mesh2d_nFaces',), np.array([0.0, 0.0, 1.0, 2.0])),
+            'bedlevel': (('time', 'mesh2d_nFaces'), np.array([[10.0, 20.0, 30.0, 40.0]])),
+        }
+    )
+    monkeypatch.setattr(
+        'sedtrails.application_interfaces.seeding_gui._open_netcdf_dataset',
+        lambda _: dataset,
+    )
+
+    view_data = load_bathymetry_view_data(config_file)
+
+    assert len(view_data.x) == 3
+    assert len(view_data.y) == 3
+    assert len(view_data.values) == 3
+
+    value_by_xy = {
+        (float(x), float(y)): float(value)
+        for x, y, value in zip(view_data.x, view_data.y, view_data.values, strict=True)
+    }
+    assert value_by_xy[(0.0, 0.0)] == pytest.approx(15.0)
+    assert value_by_xy[(1.0, 1.0)] == pytest.approx(30.0)
+    assert value_by_xy[(2.0, 2.0)] == pytest.approx(40.0)
+
+
+def test_filter_finite_map_points_large_grid_collapses_only_origin_duplicates(monkeypatch):
+    """Large grids avoid global duplicate detection but collapse repeated origins."""
+    monkeypatch.setattr(seeding_gui, '_MAX_GLOBAL_DEDUPLICATION_POINTS', 4)
+
+    def _unexpected_unique(*args, **kwargs):
+        raise AssertionError('large-grid filtering must not call np.unique')
+
+    monkeypatch.setattr(seeding_gui.np, 'unique', _unexpected_unique)
+    x, y, values = seeding_gui._filter_finite_map_points(
+        np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0]),
+        np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0]),
+        np.array([1.0, 2.0, 3.0, 10.0, 20.0, 30.0]),
+        'bedlevel',
+    )
+
+    np.testing.assert_array_equal(x, np.array([0.0, 1.0, 1.0, 1.0]))
+    np.testing.assert_array_equal(y, np.array([0.0, 1.0, 1.0, 1.0]))
+    np.testing.assert_array_equal(values, np.array([2.0, 10.0, 20.0, 30.0]))
 
 
 def test_load_bathymetry_view_data_filters_xbeach_cutout_points(tmp_path, monkeypatch):

@@ -33,6 +33,16 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
     """
 
     def __init__(self, config, tracer_config):
+        """Initialize the Soulsby physics plugin.
+
+        Parameters
+        ----------
+        config : PhysicsConfig
+            Physics configuration supplied by the converter.
+        tracer_config : dict
+            Method-specific tracer configuration retained for interface
+            compatibility.
+        """
         super().__init__()
         self.config = config
 

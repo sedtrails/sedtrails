@@ -15,10 +15,7 @@
                     "default": 0.0,
                     "description": "random walk diffusion coefficient (horizontal diffusivity K_h) for passive particles"
                 }
-            },
-            "required": [
-                "diffusion_coefficient"
-            ]
+            }
         },
         "sand_characteristics": {
             "type": "object",
@@ -181,6 +178,29 @@
             "type": "object",
             "description": "characteristics specific to the particle type"
         },
+        "diffusion": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "method": {
+                    "type": "string",
+                    "enum": ["none", "brownian"],
+                    "default": "brownian",
+                    "description": "Optional horizontal diffusion method."
+                },
+                "coefficient": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "default": 0.0,
+                    "description": "Horizontal diffusivity kh in m^2/s."
+                },
+                "seed": {
+                    "type": "integer",
+                    "description": "Optional per-population random seed."
+                }
+            },
+            "default": {"method": "brownian", "coefficient": 0.0}
+        },
         "tracer_methods": {
             "type": "object",
             "additionalProperties": false,
@@ -216,6 +236,15 @@
             "default": "no_probability",
             "description": "Method for applying transport probability: 'no_probability' (passive/always transport), 'stochastic_transport' (probabilistic transport per timestep), 'reduced_velocity' (velocity field reduced by probability)"
         },
+        "sediment_fraction_index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based sediment fraction index used for this population when input transport contains multiple fractions (e.g. Delft3D4 LSED/LSEDTOT)."
+        },
+        "sediment_fraction_name": {
+            "type": "string",
+            "description": "Sediment fraction label used for this population when labels are available (takes precedence over sediment_fraction_index)."
+        },
         "seeding": {
             "type": "object",
             "additionalProperties": false,
@@ -223,19 +252,14 @@
                 "burial_depth": {
                     "type": "object",
                     "additionalProperties": false,
-                    "description": "burial depth configuration for particles. If not used, then burial depth compuations are not considered.",
-                    "default": {
-                        "constant": 0
-                    },
+                    "description": "burial depth configuration for particles. If not used, then burial depth computations are not considered.",
                     "properties": {
                         "random": {
                             "type": "number",
-                            "default": 1.0,
                             "description": "maximum depth from bed level (surface) for random burial depth in meters."
                         },
                         "constant": {
                             "type": "number",
-                            "default": 1.0,
                             "description": "constant burial depth in meters."
                         }
                     },

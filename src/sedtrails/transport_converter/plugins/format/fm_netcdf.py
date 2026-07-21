@@ -1,6 +1,7 @@
 """A plugin for converting Delft3D Flexible Mesh NetCDF to SedTRAILS format."""
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
@@ -8,6 +9,15 @@ import xarray as xr
 import xugrid as xu
 
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
+from sedtrails.transport_converter.domain_mask import (
+    ConnectivityMaskResult,
+    classify_boundary_edges_from_config,
+    delaunay_connectivity,
+    filter_connectivity_by_inner_polygons,
+    inner_boundary_files_from_config,
+    load_inner_boundary_polygons,
+    triangulate_face_connectivity,
+)
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 from sedtrails.transport_converter.time_utils import decompress_time_info
@@ -40,6 +50,12 @@ class FormatPlugin(BaseFormatPlugin):
         self.morfac = morfac
         self.input_data = None  # holds Dataset after reading
         self._input_variables: List[str] = []
+        self.domain_config: Dict[str, Any] = {}
+        self._inner_boundary_polygons: list[np.ndarray] | None = None
+        self._inner_boundary_polygons_signature: str | None = None
+        self._last_inner_boundary_mask: ConnectivityMaskResult | None = None
+        self._active_triangular_connectivity_cache: dict[str, Any] | None = None
+        self._boundary_edge_classification_cache: dict[str, Any] | None = None
 
     def __post_init__(self):
         # Check if the input file exists
@@ -202,10 +218,59 @@ class FormatPlugin(BaseFormatPlugin):
             max_bed_shear_stress=mapped_data['max_bed_shear_stress'],
             sediment_concentration=mapped_data['sediment_concentration'],
             nonlinear_wave_velocity=nonlinear_wave_velocity,
+            node_x=mapped_data['x'],
+            node_y=mapped_data['y'],
+            face_node_connectivity=mapped_data.get('face_node_connectivity'),
+            face_node_fill_value=-1,
             metadata=metadata,
         )
 
+        self._add_inner_boundary_metadata(sedtrails_data.metadata)
+        self._add_boundary_edge_metadata(
+            sedtrails_data.metadata,
+            sedtrails_data.x,
+            sedtrails_data.y,
+            sedtrails_data.face_node_connectivity,
+        )
+
         return sedtrails_data
+
+    def get_seeding_field_data(self):
+        """Return active geometry required for particle seeding.
+
+        Returns
+        -------
+        types.SimpleNamespace
+            Object with ``x`` and ``y`` node coordinates, active triangular
+            ``face_node_connectivity``, optional
+            ``boundary_edge_classification`` metadata, and
+            ``face_node_fill_value``.
+
+        Raises
+        ------
+        KeyError
+            If the required ``net_xcc`` or ``net_ycc`` variables are missing.
+        FileNotFoundError
+            If configured inner-boundary or boundary-class polygon files do
+            not exist.
+        ValueError
+            If configured Tekal polygon blocks are malformed.
+        """
+        self.load()
+        if 'net_xcc' not in self.input_data or 'net_ycc' not in self.input_data:
+            raise KeyError("Required variables 'net_xcc' and/or 'net_ycc' not found in dataset")
+
+        x = self.input_data['net_xcc'].values
+        y = self.input_data['net_ycc'].values
+        connectivity = self._active_triangular_connectivity(x, y)
+        boundary_edge_classification = self._boundary_edge_classification(x, y, connectivity)
+        return SimpleNamespace(
+            x=x,
+            y=y,
+            face_node_connectivity=connectivity,
+            boundary_edge_classification=boundary_edge_classification,
+            face_node_fill_value=-1,
+        )
 
     def get_seeding_coordinates(self):
         """
@@ -471,6 +536,8 @@ class FormatPlugin(BaseFormatPlugin):
             else:
                 raise KeyError(f"Required variable '{var_name}' not found in dataset")
 
+        data['face_node_connectivity'] = self._active_triangular_connectivity(data['x'], data['y'])
+
         # Determine the spatial grid dimensions
         grid_shape = data['x'].shape
 
@@ -512,6 +579,200 @@ class FormatPlugin(BaseFormatPlugin):
                 print(f"Warning: Variable '{var_name}' not found, using zeros")
 
         return data
+
+    def _active_triangular_connectivity(self, node_x: np.ndarray, node_y: np.ndarray) -> np.ndarray:
+        cache = self._active_triangular_connectivity_cache
+        if self._geometry_cache_matches(cache, node_x, node_y):
+            self._last_inner_boundary_mask = cache['mask_result']
+            return cache['triangles']
+
+        source_connectivity = self._source_face_node_connectivity(node_count=np.asarray(node_x).size)
+        if source_connectivity is None:
+            candidate_connectivity = delaunay_connectivity(node_x, node_y)
+        else:
+            candidate_connectivity = source_connectivity
+
+        mask_result = filter_connectivity_by_inner_polygons(
+            node_x,
+            node_y,
+            candidate_connectivity,
+            self._get_inner_boundary_polygons(),
+        )
+        self._last_inner_boundary_mask = mask_result
+        triangles = triangulate_face_connectivity(mask_result.connectivity)
+        self._active_triangular_connectivity_cache = {
+            'node_x': np.asarray(node_x),
+            'node_y': np.asarray(node_y),
+            'domain_signature': self._domain_config_signature(),
+            'mask_result': mask_result,
+            'triangles': triangles,
+        }
+        return triangles
+
+    def _get_inner_boundary_polygons(self) -> list[np.ndarray]:
+        domain_signature = self._domain_config_signature()
+        if self._inner_boundary_polygons is None or self._inner_boundary_polygons_signature != domain_signature:
+            self._inner_boundary_polygons = load_inner_boundary_polygons(getattr(self, 'domain_config', {}))
+            self._inner_boundary_polygons_signature = domain_signature
+        return self._inner_boundary_polygons
+
+    def _add_inner_boundary_metadata(self, metadata: SedtrailsMetadata) -> None:
+        inner_files = inner_boundary_files_from_config(getattr(self, 'domain_config', {}))
+        if not inner_files and not self._get_inner_boundary_polygons():
+            return
+
+        metadata.add('inner_boundary_pol_files', inner_files)
+        metadata.add('inner_boundary_polygon_count', len(self._get_inner_boundary_polygons()))
+        if self._last_inner_boundary_mask is not None:
+            metadata.add('inner_boundary_masked_face_count', self._last_inner_boundary_mask.removed_count)
+            metadata.add('inner_boundary_active_face_count', int(self._last_inner_boundary_mask.connectivity.shape[0]))
+
+    def _add_boundary_edge_metadata(
+        self,
+        metadata: SedtrailsMetadata,
+        node_x: np.ndarray,
+        node_y: np.ndarray,
+        connectivity: np.ndarray | None,
+    ) -> None:
+        if connectivity is None:
+            return
+
+        classification_metadata = self._boundary_edge_classification(node_x, node_y, connectivity)
+        if classification_metadata is not None:
+            metadata.add('boundary_edge_classification', classification_metadata)
+
+    def _boundary_edge_classification(
+        self,
+        node_x: np.ndarray,
+        node_y: np.ndarray,
+        connectivity: np.ndarray | None,
+    ) -> dict | None:
+        if connectivity is None:
+            return None
+
+        cache = self._boundary_edge_classification_cache
+        if self._geometry_cache_matches(cache, node_x, node_y, connectivity):
+            return cache['metadata']
+
+        classification = classify_boundary_edges_from_config(
+            node_x,
+            node_y,
+            connectivity,
+            getattr(self, 'domain_config', {}),
+        )
+        classification_metadata = None if classification is None else classification.to_metadata()
+        self._boundary_edge_classification_cache = {
+            'node_x': np.asarray(node_x),
+            'node_y': np.asarray(node_y),
+            'connectivity': np.asarray(connectivity),
+            'domain_signature': self._domain_config_signature(),
+            'metadata': classification_metadata,
+        }
+        return classification_metadata
+
+    def _domain_config_signature(self) -> str:
+        return repr(getattr(self, 'domain_config', {}) or {})
+
+    def _geometry_cache_matches(
+        self,
+        cache: dict[str, Any] | None,
+        node_x: np.ndarray,
+        node_y: np.ndarray,
+        connectivity: np.ndarray | None = None,
+    ) -> bool:
+        if cache is None or cache.get('domain_signature') != self._domain_config_signature():
+            return False
+        if not self._arrays_equal(cache.get('node_x'), node_x) or not self._arrays_equal(cache.get('node_y'), node_y):
+            return False
+        if connectivity is None:
+            return True
+        return self._arrays_equal(cache.get('connectivity'), connectivity)
+
+    @staticmethod
+    def _arrays_equal(left: np.ndarray | None, right: np.ndarray) -> bool:
+        if left is None:
+            return False
+        right_array = np.asarray(right)
+        return left.shape == right_array.shape and np.array_equal(left, right_array)
+
+    def _source_face_node_connectivity(self, node_count: int) -> np.ndarray | None:
+        for variable_name in _FACE_NODE_CONNECTIVITY_CANDIDATES:
+            if variable_name in self.input_data:
+                connectivity = self._normalize_face_node_connectivity(
+                    self.input_data[variable_name],
+                    node_count=node_count,
+                    variable_name=variable_name,
+                )
+                if self._connectivity_compatible_with_points(connectivity, node_count):
+                    return connectivity
+        return None
+
+    @staticmethod
+    def _connectivity_compatible_with_points(connectivity: np.ndarray, node_count: int) -> bool:
+        if connectivity.size == 0:
+            return False
+
+        valid = connectivity >= 0
+        if not np.any(valid):
+            return False
+        if int(np.max(connectivity[valid])) >= node_count:
+            return False
+        return bool(np.all(np.count_nonzero(valid, axis=1) >= 3))
+
+    @staticmethod
+    def _normalize_face_node_connectivity(face_nodes_var, node_count: int, variable_name: str | None = None) -> np.ndarray:
+        faces = np.asarray(face_nodes_var.values if hasattr(face_nodes_var, 'values') else face_nodes_var)
+        if faces.ndim != 2:
+            raise ValueError(f'Face-node connectivity must be 2-D, got shape {faces.shape}')
+
+        if faces.shape[0] <= 8 and faces.shape[1] > 8:
+            faces = faces.T
+
+        fill_value = _variable_fill_value(face_nodes_var)
+        valid_raw = faces.astype(np.float64)
+        valid_mask = np.isfinite(valid_raw)
+        if fill_value is not None:
+            valid_mask &= valid_raw != float(fill_value)
+
+        start_index = _variable_start_index(face_nodes_var)
+        if start_index is None:
+            if variable_name in {'NetElemNode', 'net_elem_node', 'net_element_node'}:
+                start_index = 1
+            else:
+                valid_values = valid_raw[valid_mask]
+                if valid_values.size and np.nanmin(valid_values) >= 1 and np.nanmax(valid_values) <= node_count:
+                    start_index = 1
+                else:
+                    start_index = 0
+
+        normalized = faces.astype(np.int64) - int(start_index)
+        invalid = normalized < 0
+        if fill_value is not None:
+            invalid |= faces == fill_value
+        normalized[invalid] = -1
+        return normalized
+
+
+_FACE_NODE_CONNECTIVITY_CANDIDATES = (
+    'mesh2d_face_nodes',
+    'Mesh2_face_nodes',
+    'NetElemNode',
+    'net_elem_node',
+    'net_element_node',
+)
+
+
+def _variable_start_index(variable) -> int | None:
+    attrs = getattr(variable, 'attrs', {}) or {}
+    if 'start_index' in attrs:
+        return int(attrs['start_index'])
+    return None
+
+
+def _variable_fill_value(variable):
+    attrs = getattr(variable, 'attrs', {}) or {}
+    encoding = getattr(variable, 'encoding', {}) or {}
+    return encoding.get('_FillValue', attrs.get('_FillValue'))
 
 
 if __name__ == '__main__':

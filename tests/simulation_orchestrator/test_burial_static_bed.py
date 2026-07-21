@@ -83,7 +83,12 @@ def _write_forcing(path: Path) -> None:
         _steady_3d('suspended_sed_conc', np.full(n_nodes, 0.05))
 
 
-def _write_config(path: Path, forcing: Path, output_dir: Path) -> None:
+def _write_config(
+  path: Path,
+  forcing: Path,
+  output_dir: Path,
+  transport_probability: str = 'reduced_velocity',
+) -> None:
     path.write_text(
         f"""general:
   input_model:
@@ -111,7 +116,7 @@ particles:
             - bed_load_velocity
             - suspended_velocity
           suspended_velocity_method: soulsby_2011
-      transport_probability: reduced_velocity
+      transport_probability: {transport_probability}
       seeding:
         burial_depth:
           constant: 0
@@ -181,4 +186,47 @@ def test_burial_depth_stays_zero_on_static_bed(tmp_path, _preserve_logging_state
     # burial bookkeeping (regression of bdf7a99, see module docstring).
     assert np.nanmax(burial) <= 1e-12, (
         f'burial_depth reached {np.nanmax(burial):.6f} m on a static bed'
+    )
+
+
+@pytest.mark.integration
+def test_no_probability_keeps_status_unburied_and_z_on_bed_level(tmp_path, _preserve_logging_state):
+    forcing = tmp_path / 'static_bed_forcing.nc'
+    config = tmp_path / 'static_bed_no_probability.yaml'
+    output_dir = tmp_path / 'output_no_probability'
+    _write_forcing(forcing)
+    _write_config(config, forcing, output_dir, transport_probability='no_probability')
+
+    Simulation(str(config), enable_dashboard=False).run()
+
+    results = output_dir / 'sedtrails_results.nc'
+    assert results.exists(), 'simulation did not produce sedtrails_results.nc'
+
+    with nc.Dataset(results) as ds:
+        x = np.asarray(ds.variables['x'][:], dtype=float)
+        z = np.asarray(ds.variables['z'][:], dtype=float)
+        burial = np.asarray(ds.variables['burial_depth'][:], dtype=float)
+        status_buried = np.asarray(ds.variables['status_buried'][:], dtype=float)
+
+    # Sanity: particles must move so the z-vs-bed check is meaningful.
+    assert np.nanmax(np.abs(x[-1, :] - x[0, :])) > 1.0, (
+        'particles did not move; no_probability invariants were not meaningfully exercised'
+    )
+
+    # no_probability disables burial updates; burial and buried status stay zero.
+    assert np.nanmax(burial) <= 1e-12, (
+        f'burial_depth reached {np.nanmax(burial):.6f} m with no_probability'
+    )
+    assert np.nanmax(status_buried) <= 0.0, (
+        f'status_buried contains non-zero entries (max={np.nanmax(status_buried):.0f}) with no_probability'
+    )
+
+    # On a static bed bedlevel(x) = -10 + 1e-3*x, so z should match that bed
+    # level after the first runtime update.
+    expected_bed_level = -10.0 + 1.0e-3 * x
+    z_runtime = z[1:, :]
+    expected_runtime = expected_bed_level[1:, :]
+    assert np.nanmax(np.abs(z_runtime - expected_runtime)) <= 1e-6, (
+      'z does not match static bed level under no_probability during runtime '
+      f"(max abs error={np.nanmax(np.abs(z_runtime - expected_runtime)):.3e} m)"
     )

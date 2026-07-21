@@ -1,10 +1,19 @@
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import xarray as xr
 import xugrid as xu
 
+from sedtrails.transport_converter.domain_mask import (
+    classify_boundary_edges_from_config,
+    delaunay_connectivity,
+    filter_connectivity_by_inner_polygons,
+    inner_boundary_files_from_config,
+    load_inner_boundary_polygons,
+    points_inside_any_polygon,
+)
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData, SedtrailsMetadata
 from sedtrails.transport_converter.time_utils import decompress_time_info
@@ -34,6 +43,13 @@ class FormatPlugin(BaseFormatPlugin):
         self.morfac = morfac
         self.input_data = None  # holds Dataset after reading
         self._input_variables: List[str] = []
+        self.domain_config: Dict[str, Any] = {}
+        self._inner_boundary_polygons: list[np.ndarray] | None = None
+        self._inner_boundary_polygons_signature: str | None = None
+        self._last_inner_boundary_mask: SimpleNamespace | None = None
+        self._active_face_mask_cache: dict[str, Any] | None = None
+        self._active_face_center_triangles_cache: dict[str, Any] | None = None
+        self._boundary_edge_classification_cache: dict[str, Any] | None = None
 
     @property
     def variables(self) -> List[str]:
@@ -158,10 +174,56 @@ class FormatPlugin(BaseFormatPlugin):
             node_x=mapped_data.get('node_x'),
             node_y=mapped_data.get('node_y'),
             face_node_connectivity=mapped_data.get('face_node_connectivity'),
+            particle_face_connectivity=mapped_data.get('particle_face_connectivity'),
             face_node_fill_value=-1,
         )
 
+        self._add_inner_boundary_metadata(sedtrails_data.metadata)
+        self._add_boundary_edge_metadata(
+            sedtrails_data.metadata,
+            sedtrails_data.x,
+            sedtrails_data.y,
+            sedtrails_data.particle_face_connectivity,
+        )
+
         return sedtrails_data
+
+    def get_seeding_field_data(self):
+        """Return active SFINCS geometry required for particle seeding.
+
+        Returns
+        -------
+        types.SimpleNamespace
+            Object with active face-centre ``x`` and ``y`` coordinates,
+            triangular particle connectivity, optional
+            ``boundary_edge_classification`` metadata, and
+            ``face_node_fill_value``.
+
+        Raises
+        ------
+        TypeError
+            If a loaded UGRID dataset does not contain a ``Ugrid2d`` grid.
+        KeyError
+            If required mesh variables are missing in the xarray fallback path.
+        FileNotFoundError
+            If configured inner-boundary or boundary-class polygon files do
+            not exist.
+        ValueError
+            If configured Tekal polygon blocks are malformed, or all SFINCS
+            faces are masked by inner-boundary polygons.
+        """
+        self.load()
+        x, y = self._active_face_coordinates()
+        particle_triangles = self._active_face_center_triangles(x, y)
+        boundary_edge_classification = self._boundary_edge_classification(x, y, particle_triangles)
+        return SimpleNamespace(
+            x=x,
+            y=y,
+            face_node_connectivity=particle_triangles,
+            particle_face_connectivity=particle_triangles,
+            boundary_edge_classification=boundary_edge_classification,
+            face_node_fill_value=-1,
+        )
 
     def get_seeding_coordinates(self):
         """
@@ -173,13 +235,17 @@ class FormatPlugin(BaseFormatPlugin):
             X and Y coordinates used for particle seeding.
         """
         self.load()
+        return self._active_face_coordinates()
+
+    def _face_coordinates(self):
+        """Return SFINCS face centroid coordinates."""
 
         # Fast path: xugrid already provides face centroids.
         if isinstance(self.input_data, xu.UgridDataset):
             grid = self.input_data.grid
             if not isinstance(grid, xu.Ugrid2d):
                 raise TypeError(f'Expected Ugrid2d, got {type(grid).__name__}')
-            return grid.face_x, grid.face_y
+            return np.asarray(grid.face_x), np.asarray(grid.face_y)
 
         node_x_var, node_y_var, face_nodes_var, start_index, fill_value = self._get_face_node_mesh_variables()
 
@@ -190,6 +256,12 @@ class FormatPlugin(BaseFormatPlugin):
             start_index=start_index,
             fill_value=fill_value,
         )
+
+    def _active_face_coordinates(self):
+        """Return SFINCS face centroids after applying configured island masks."""
+        face_x, face_y = self._face_coordinates()
+        active_mask = self._active_face_mask(face_x, face_y)
+        return np.asarray(face_x)[active_mask], np.asarray(face_y)[active_mask]
 
     def get_time_bounds(self, reference_date: Optional[np.datetime64] = None) -> tuple[float, float]:
         """
@@ -437,6 +509,12 @@ class FormatPlugin(BaseFormatPlugin):
             start_index=start_index,
             fill_value=fill_value,
         )
+        face_node_connectivity = normalize_face_node_connectivity(
+            face_nodes_var,
+            start_index=start_index,
+            fill_value=fill_value,
+        )
+        active_face_mask = self._active_face_mask(face_x, face_y)
 
         # Variable mapping for SFINCS files
         variable_map = {
@@ -450,15 +528,12 @@ class FormatPlugin(BaseFormatPlugin):
         data = {}
 
         # First, get spatial coordinates (typically not time-dependent)
-        data['x'] = face_x
-        data['y'] = face_y
+        data['x'] = np.asarray(face_x)[active_face_mask]
+        data['y'] = np.asarray(face_y)[active_face_mask]
         data['node_x'] = np.asarray(node_x_var)
         data['node_y'] = np.asarray(node_y_var)
-        data['face_node_connectivity'] = normalize_face_node_connectivity(
-            face_nodes_var,
-            start_index=start_index,
-            fill_value=fill_value,
-        )
+        data['face_node_connectivity'] = face_node_connectivity[active_face_mask]
+        data['particle_face_connectivity'] = self._active_face_center_triangles(data['x'], data['y'])
 
         # Determine the spatial grid dimensions
         grid_shape = data['x'].shape
@@ -494,7 +569,161 @@ class FormatPlugin(BaseFormatPlugin):
                 # For variables without time dimension, broadcast to all time steps
                 data[key] = np.broadcast_to(var.values, (num_times, *var.shape))
 
+            data[key] = self._filter_face_field(data[key], active_face_mask)
+
         return data
+
+    def _active_face_mask(self, face_x: np.ndarray, face_y: np.ndarray) -> np.ndarray:
+        """Return faces whose centroids are outside configured inner-boundary polygons."""
+        x = np.asarray(face_x, dtype=float).ravel()
+        y = np.asarray(face_y, dtype=float).ravel()
+        if x.shape != y.shape:
+            raise ValueError(f'face_x and face_y must have the same shape, got {x.shape} and {y.shape}')
+
+        cache = self._active_face_mask_cache
+        if self._geometry_cache_matches(cache, x, y):
+            self._last_inner_boundary_mask = cache['mask_result']
+            return cache['active_mask']
+
+        polygons = self._get_inner_boundary_polygons()
+        if not polygons:
+            active_mask = np.ones(x.shape[0], dtype=bool)
+            removed_count = 0
+        else:
+            inside = points_inside_any_polygon(np.column_stack((x, y)), polygons)
+            active_mask = ~inside
+            removed_count = int(np.count_nonzero(inside))
+
+        active_count = int(np.count_nonzero(active_mask))
+        self._last_inner_boundary_mask = SimpleNamespace(
+            active_mask=active_mask,
+            removed_count=removed_count,
+            active_count=active_count,
+        )
+        if x.size and active_count == 0:
+            raise ValueError('All SFINCS faces were masked by domain.inner_boundary_pol_files')
+        self._active_face_mask_cache = {
+            'node_x': x,
+            'node_y': y,
+            'domain_signature': self._domain_config_signature(),
+            'active_mask': active_mask,
+            'mask_result': self._last_inner_boundary_mask,
+        }
+        return active_mask
+
+    def _active_face_center_triangles(self, face_x: np.ndarray, face_y: np.ndarray) -> np.ndarray:
+        """Build active particle-location triangles over SFINCS face-centre coordinates."""
+        cache = self._active_face_center_triangles_cache
+        if self._geometry_cache_matches(cache, face_x, face_y):
+            return cache['triangles']
+
+        candidate_connectivity = delaunay_connectivity(face_x, face_y)
+        triangles = filter_connectivity_by_inner_polygons(
+            face_x,
+            face_y,
+            candidate_connectivity,
+            self._get_inner_boundary_polygons(),
+        ).connectivity
+        self._active_face_center_triangles_cache = {
+            'node_x': np.asarray(face_x),
+            'node_y': np.asarray(face_y),
+            'domain_signature': self._domain_config_signature(),
+            'triangles': triangles,
+        }
+        return triangles
+
+    def _filter_face_field(self, field_value: np.ndarray, active_face_mask: np.ndarray) -> np.ndarray:
+        """Filter arrays with a trailing face dimension by the active-face mask."""
+        values = np.asarray(field_value)
+        if values.shape and values.shape[-1] == active_face_mask.size:
+            return values[..., active_face_mask]
+        return values
+
+    def _get_inner_boundary_polygons(self) -> list[np.ndarray]:
+        domain_signature = self._domain_config_signature()
+        if self._inner_boundary_polygons is None or self._inner_boundary_polygons_signature != domain_signature:
+            self._inner_boundary_polygons = load_inner_boundary_polygons(getattr(self, 'domain_config', {}))
+            self._inner_boundary_polygons_signature = domain_signature
+        return self._inner_boundary_polygons
+
+    def _add_inner_boundary_metadata(self, metadata: SedtrailsMetadata) -> None:
+        inner_files = inner_boundary_files_from_config(getattr(self, 'domain_config', {}))
+        if not inner_files and not self._get_inner_boundary_polygons():
+            return
+
+        metadata.add('inner_boundary_pol_files', inner_files)
+        metadata.add('inner_boundary_polygon_count', len(self._get_inner_boundary_polygons()))
+        if self._last_inner_boundary_mask is not None:
+            metadata.add('inner_boundary_masked_face_count', self._last_inner_boundary_mask.removed_count)
+            metadata.add('inner_boundary_active_face_count', self._last_inner_boundary_mask.active_count)
+
+    def _add_boundary_edge_metadata(
+        self,
+        metadata: SedtrailsMetadata,
+        node_x: np.ndarray,
+        node_y: np.ndarray,
+        connectivity: np.ndarray | None,
+    ) -> None:
+        if connectivity is None:
+            return
+
+        classification_metadata = self._boundary_edge_classification(node_x, node_y, connectivity)
+        if classification_metadata is not None:
+            metadata.add('boundary_edge_classification', classification_metadata)
+
+    def _boundary_edge_classification(
+        self,
+        node_x: np.ndarray,
+        node_y: np.ndarray,
+        connectivity: np.ndarray | None,
+    ) -> dict | None:
+        if connectivity is None:
+            return None
+
+        cache = self._boundary_edge_classification_cache
+        if self._geometry_cache_matches(cache, node_x, node_y, connectivity):
+            return cache['metadata']
+
+        classification = classify_boundary_edges_from_config(
+            node_x,
+            node_y,
+            connectivity,
+            getattr(self, 'domain_config', {}),
+        )
+        classification_metadata = None if classification is None else classification.to_metadata()
+        self._boundary_edge_classification_cache = {
+            'node_x': np.asarray(node_x),
+            'node_y': np.asarray(node_y),
+            'connectivity': np.asarray(connectivity),
+            'domain_signature': self._domain_config_signature(),
+            'metadata': classification_metadata,
+        }
+        return classification_metadata
+
+    def _domain_config_signature(self) -> str:
+        return repr(getattr(self, 'domain_config', {}) or {})
+
+    def _geometry_cache_matches(
+        self,
+        cache: dict[str, Any] | None,
+        node_x: np.ndarray,
+        node_y: np.ndarray,
+        connectivity: np.ndarray | None = None,
+    ) -> bool:
+        if cache is None or cache.get('domain_signature') != self._domain_config_signature():
+            return False
+        if not self._arrays_equal(cache.get('node_x'), node_x) or not self._arrays_equal(cache.get('node_y'), node_y):
+            return False
+        if connectivity is None:
+            return True
+        return self._arrays_equal(cache.get('connectivity'), connectivity)
+
+    @staticmethod
+    def _arrays_equal(left: np.ndarray | None, right: np.ndarray) -> bool:
+        if left is None:
+            return False
+        right_array = np.asarray(right)
+        return left.shape == right_array.shape and np.array_equal(left, right_array)
 
     def _get_face_node_mesh_variables(self):
         """Return UGRID node coordinates and face-node connectivity with indexing metadata."""

@@ -94,6 +94,7 @@ class SedtrailsData:
     node_x: np.ndarray | None = None
     node_y: np.ndarray | None = None
     face_node_connectivity: np.ndarray | None = None
+    particle_face_connectivity: np.ndarray | None = None
     face_node_fill_value: int = -1
 
     def __post_init__(self):
@@ -115,6 +116,8 @@ class SedtrailsData:
             self.node_y = np.asarray(self.node_y)
         if self.face_node_connectivity is not None:
             self.face_node_connectivity = np.asarray(self.face_node_connectivity, dtype=np.int64)
+        if self.particle_face_connectivity is not None:
+            self.particle_face_connectivity = np.asarray(self.particle_face_connectivity, dtype=np.int64)
 
     def mesh_geometry(self) -> Dict[str, Any] | None:
         """

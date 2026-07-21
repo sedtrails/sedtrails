@@ -15,6 +15,7 @@ class PhysicsPlugin(BasePhysicsPlugin):
     def __init__(
         self,
     ):  # this is the minimum required for the plugin to work. Additional parameters can be added as needed.
+        """Initialize the Bertin physics plugin."""
         super().__init__()
 
     def add_physics(

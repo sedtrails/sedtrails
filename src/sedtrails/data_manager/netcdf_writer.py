@@ -40,6 +40,8 @@ _STATUS_DEFAULTS = {
     'status_transported': 0,
     'status_released': 1,
     'status_mobile': 0,
+    'status_beached': 0,
+    'status_left_domain': 0,
 }
 
 
@@ -59,6 +61,14 @@ class NetCDFWriter:
     """
 
     def __init__(self, output_dir):
+        """Initialize a streaming NetCDF output writer.
+
+        Parameters
+        ----------
+        output_dir : str or pathlib.Path
+            Directory in which the writer creates NetCDF output files. The
+            directory is created when it does not already exist.
+        """
         output_dir = Path(output_dir)
         # If the output directory already exists, we add a timestamp to avoid overwriting
         # if output_dir.exists():
@@ -112,8 +122,33 @@ class NetCDFWriter:
         )
 
     @staticmethod
-    def _write_name(var, index: int, value: str, name_strlen: int) -> None:
-        var[index, :] = np.array(list(value[:name_strlen].ljust(name_strlen)), dtype='S1')
+    def _write_name(var, index: int, value: str) -> None:
+        """Write one NetCDF-4 variable-length string metadata value."""
+        var[index] = str(value)
+
+    @staticmethod
+    def _resolve_population_particle_type(population, pop_idx: int) -> str:
+        """Resolve particle type from population metadata for NetCDF output."""
+        particle_type = getattr(population, 'particle_type', None)
+        if particle_type is None or str(particle_type).strip() == '':
+            population_config = getattr(population, 'population_config', None)
+            if population_config is not None:
+                particle_type = getattr(population_config, 'particle_type', None)
+                if (particle_type is None or str(particle_type).strip() == '') and isinstance(population_config, dict):
+                    particle_type = population_config.get('particle_type')
+                if particle_type is None or str(particle_type).strip() == '':
+                    nested_config = getattr(population_config, 'population_config', None)
+                    if isinstance(nested_config, dict):
+                        particle_type = nested_config.get('particle_type')
+
+        if particle_type is None or str(particle_type).strip() == '':
+            logger.warning(
+                "Population %d has no configured particle_type; storing 'unknown' in output metadata.",
+                pop_idx,
+            )
+            return 'unknown'
+
+        return str(particle_type)
 
     @classmethod
     def _create_static_metadata(
@@ -124,25 +159,25 @@ class NetCDFWriter:
         n_flowfields: int,
         populations: list,
         flow_field_names: list,
-        name_strlen: int,
     ) -> None:
         """Create and write metadata that does not vary with output time."""
-        ds.createVariable('population_name', 'S1', ('n_populations', 'name_strlen'))
-        ds.createVariable('population_particle_type', 'i4', ('n_populations',))
+        ds.createVariable('population_name', str, ('n_populations',))
+        ds.createVariable('population_particle_type', str, ('n_populations',))
         ds.createVariable('population_start_idx', 'i8', ('n_populations',))
         ds.createVariable('population_count', 'i8', ('n_populations',))
         ds.createVariable('population_repr_volume', 'f8', ('n_populations',))
         ds.createVariable('trajectory_id', 'i8', ('n_particles',))
         ds.createVariable('population_id', 'i4', ('n_particles',))
-        ds.createVariable('flowfield_name', 'S1', ('n_flowfields', 'name_strlen'))
+        ds.createVariable('flowfield_name', str, ('n_flowfields',))
 
         ds['trajectory_id'][:] = np.arange(n_particles, dtype=np.int64)
 
         particle_offset = 0
         for pop_idx, population in enumerate(populations):
             pop_name = getattr(population, 'name', f'population_{pop_idx}')
-            cls._write_name(ds['population_name'], pop_idx, str(pop_name), name_strlen)
-            ds['population_particle_type'][pop_idx] = int(getattr(population, 'particle_type', 0))
+            cls._write_name(ds['population_name'], pop_idx, str(pop_name))
+            particle_type = cls._resolve_population_particle_type(population, pop_idx)
+            cls._write_name(ds['population_particle_type'], pop_idx, particle_type)
             ds['population_start_idx'][pop_idx] = particle_offset
             n_part = len(population.particles['x'])
             ds['population_count'][pop_idx] = n_part
@@ -153,7 +188,7 @@ class NetCDFWriter:
 
         for ff_idx in range(n_flowfields):
             ff_name = flow_field_names[ff_idx] if flow_field_names and ff_idx < len(flow_field_names) else ''
-            cls._write_name(ds['flowfield_name'], ff_idx, str(ff_name), name_strlen)
+            cls._write_name(ds['flowfield_name'], ff_idx, str(ff_name))
 
     @staticmethod
     def _particle_field(particles: dict, name: str, default):
@@ -170,7 +205,6 @@ class NetCDFWriter:
         N_flowfields: int,
         populations: list,
         flow_field_names: list,
-        name_strlen: int = 24,
         coordinate_dtype: str = 'float32',
         status_dtype: str = 'uint8',
         compression: bool = True,
@@ -206,8 +240,6 @@ class NetCDFWriter:
             Population objects; used to write static metadata (name, type, count).
         flow_field_names : list
             Names of the flow fields; written as static metadata.
-        name_strlen : int, optional
-            Maximum character length for string variables (default 24).
         coordinate_dtype : {'float32', 'float64'}, optional
             Floating point dtype for large trajectory variables. Defaults to
             ``float32`` to reduce output volume.
@@ -251,13 +283,12 @@ class NetCDFWriter:
         ds.createDimension('n_populations', N_populations)
         ds.createDimension('n_timesteps', n_slots)
         ds.createDimension('n_flowfields', N_flowfields)
-        ds.createDimension('name_strlen', name_strlen)
 
         # Global attributes
         ds.title = 'SedTRAILS Particle Simulation Results'
         ds.institution = 'SedTRAILS Particle Tracer System'
         ds.created_on = datetime.now().isoformat()
-        ds.sedtrails_output_schema = 'trajectory_v2'
+        ds.sedtrails_output_schema = 'trajectory_v3'
         ds.trajectory_layout = 'time_particle'
         ds.coordinate_dtype = coordinate_dtype
         ds.status_dtype = status_dtype
@@ -273,7 +304,6 @@ class NetCDFWriter:
             N_flowfields,
             populations,
             flow_field_names,
-            name_strlen,
         )
 
         # Time-varying trajectory variables. ``time`` is one value per saved
@@ -419,7 +449,6 @@ class NetCDFWriter:
         layout: str,
         reference_date: str | None = None,
         time_units: str | None = None,
-        name_strlen: int = 24,
         coordinate_dtype: str = 'float32',
         status_dtype: str = 'uint8',
         compression: bool = True,
@@ -447,7 +476,6 @@ class NetCDFWriter:
             ds.createDimension('n_particles', n_particles)
             ds.createDimension('n_populations', n_populations)
             ds.createDimension('n_flowfields', 1)
-            ds.createDimension('name_strlen', name_strlen)
 
             ds.title = title
             ds.institution = 'SedTRAILS Particle Tracer System'
@@ -467,7 +495,6 @@ class NetCDFWriter:
                 1,
                 populations,
                 [],
-                name_strlen,
             )
 
             ds.createVariable('time', 'f8', (), fill_value=np.nan)
@@ -521,7 +548,6 @@ class NetCDFWriter:
         *,
         reference_date: str | None = None,
         time_units: str | None = None,
-        name_strlen: int = 24,
         coordinate_dtype: str = 'float32',
         status_dtype: str = 'uint8',
         compression: bool = True,
@@ -544,8 +570,6 @@ class NetCDFWriter:
             Reference date for converting model times.
         time_units : str | None
             NetCDF time units string.
-        name_strlen : int
-            Maximum stored population-name length.
         coordinate_dtype : str
             NumPy dtype used for coordinate variables.
         status_dtype : str
@@ -570,11 +594,10 @@ class NetCDFWriter:
             current_time,
             title='SedTRAILS Particle Simulation Checkpoint',
             file_kind='checkpoint',
-            output_schema='checkpoint_v1',
+            output_schema='checkpoint_v2',
             layout='checkpoint',
             reference_date=reference_date,
             time_units=time_units,
-            name_strlen=name_strlen,
             coordinate_dtype=coordinate_dtype,
             status_dtype=status_dtype,
             compression=compression,
@@ -591,7 +614,6 @@ class NetCDFWriter:
         *,
         reference_date: str | None = None,
         time_units: str | None = None,
-        name_strlen: int = 24,
         coordinate_dtype: str = 'float32',
         status_dtype: str = 'uint8',
         compression: bool = True,
@@ -614,8 +636,6 @@ class NetCDFWriter:
             Reference date for converting model times.
         time_units : str | None
             NetCDF time units string.
-        name_strlen : int
-            Maximum stored population-name length.
         coordinate_dtype : str
             NumPy dtype used for coordinate variables.
         status_dtype : str
@@ -640,11 +660,10 @@ class NetCDFWriter:
             current_time,
             title='SedTRAILS Particle Simulation End Positions',
             file_kind='end_positions',
-            output_schema='end_positions_v1',
+            output_schema='end_positions_v2',
             layout='end_positions',
             reference_date=reference_date,
             time_units=time_units,
-            name_strlen=name_strlen,
             coordinate_dtype=coordinate_dtype,
             status_dtype=status_dtype,
             compression=compression,

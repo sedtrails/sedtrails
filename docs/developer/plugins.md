@@ -8,9 +8,9 @@ This document provides an overview of how to create and integrate plugins into S
 
 ## Creating a Plugin
 
-We assume you have set up a development environment for SedTRAILS. If you haven't done this yet, please refer to the [Developer Guide](dev-environment.md).
+We assume you have set up a development environment for SedTRAILS. If you haven't done this yet, please refer to the [Developer Guide](./dev-environment.md).
 In essence, a plugin for the  Physics Converter must implement a class that inherits from `BasePhysicsPlugin` and implements the `add_physics` method.
-The `add_physics` method takes as input a `SedtrailsData` object, which contains data to perform the physics calculations, and add the results (physics conversiont) to the `SedtrailsData` object itself.
+The `add_physics` method takes as input a `SedtrailsData` object, which contains data to perform the physics calculations, and add the results (physics conversion) to the `SedtrailsData` object itself.
 To **create a physics plugin for SedTRAILS**, follow these steps:
 
 1. Create a new Python file for your plugin in `src/sedtrails/transport_converter/plugins/physics/`. For example, `myplugin.py`.
@@ -164,3 +164,22 @@ sim.validate_config()  # this should pass without errors
 Validation of the configuration file will fail if the plugin is not correctly registered in the JSON schema, but not if the plugin itself has errors. Make sure to test your plugin thoroughly.
 If you need help, please reach out the [SedTRAILS Team in GitHub](https://github.com/sedtrails/sedtrails/issues).
 :::
+
+## Delft3D4 NetCDF Notes
+
+The Delft3D4 NetCDF format stores U/xi and V/eta vector components on staggered
+grids while scalars live on cell centers. The converter centers each vector pair
+with the time-varying `KFU`/`KFV` masks, falling back to static `KCU`/`KCV`
+masks, and rotates it with static face-centered `ALFAS` geometry into SedTRAILS
+global x/y. The trigonometric ALFAS factors and wet masks are read once per
+conversion time window and reused for flow velocity, bottom shear stress,
+bed-load transport, and suspended-load transport. Incomplete pairs fail fast.
+
+`DPS0` stores face bottom depth positive down. `DP0` is used only when it is
+face-aligned, has no non-face location metadata, and aligns with selected map
+coordinates; node-located or edge-located `DP0` without `DPS0` is rejected.
+The converter negates accepted depth to SedTRAILS bed elevation and derives missing water depth as
+`S1 - bed_level`.
+
+Faces with `KCS=0` are filtered from coordinates, fields, and seeding points
+before structured grids are flattened to the 1D SedTRAILS spatial representation.

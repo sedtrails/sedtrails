@@ -28,12 +28,12 @@ class FieldDataRetriever:
         """
         Initialize the FieldDataRetriever.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         sedtrails_data : SedtrailsData
-            The SedtrailsData object containing the fields
+            SedtrailsData object containing the fields.
         fraction_index : int, optional
-            Which sediment fraction to use for multi-fraction data (default: 0)
+            Sediment fraction to use for multi-fraction data. The default is 0.
         """
         self.sedtrails_data = sedtrails_data
         self.fraction_index = fraction_index

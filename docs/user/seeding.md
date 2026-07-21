@@ -96,8 +96,12 @@ Useful keywords:
 - `--output` or `-o`: copied YAML file to write. If omitted, the GUI writes next to the source YAML using `*-seeded.yaml`.
 - `--points-output`: text file for generated x/y release locations.
 - `--population` or `-p`: initial population to edit. If omitted, the first configured population is selected.
-- `--format`: input format override. Supported values are `fm_netcdf` and `xbeach`.
-- `--variable`: bathymetry variable to display. Defaults to `bedlevel`/`bed_level` for `fm_netcdf` and `zb_mean`/`zb` for `xbeach`.
+- `--format`: input format override. Supported values are `fm_netcdf`, `d3d4_netcdf`, `xbeach`, and `sfincs`.
+- `--variable`: bathymetry variable to display. Format defaults are:
+  `bedlevel`/`bed_level` for `fm_netcdf`,
+  `DPS0`/`DP0` for `d3d4_netcdf`,
+  `zb_mean`/`zb` for `xbeach`,
+  and `zb` for `sfincs`.
 
 ### GUI workflow
 

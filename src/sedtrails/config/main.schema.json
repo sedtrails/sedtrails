@@ -99,11 +99,12 @@
           "type": "string",
           "enum": [
             "fm_netcdf",
+            "d3d4_netcdf",
             "xbeach",
             "sfincs"
           ],
           "default": "fm_netcdf",
-          "description": "'fm_netcdf' = D-Flow FM, 'xbeach' = XBeach, 'sfincs' = SFINCS"
+          "description": "'fm_netcdf' = D-Flow FM, 'd3d4_netcdf' = Delft3D-4 NetCDF, 'xbeach' = XBeach, 'sfincs' = SFINCS"
         },
         "reference_date": {
           "type": "string",
@@ -114,6 +115,16 @@
           "type": "number",
           "default": 1,
           "description": "morphological acceleration factor for time decompression (default: 1 = no decompression)"
+        },
+        "sediment_fraction_index": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Delft3D4 only: zero-based sediment fraction index to select when multiple fractions are present (e.g. LSED/LSEDTOT dimensions)."
+        },
+        "sediment_fraction_name": {
+          "type": "string",
+          "description": "Delft3D4 only: sediment fraction name to select when available in fraction coordinates (takes precedence over sediment_fraction_index)."
         }
       }
     },
@@ -141,7 +152,7 @@
         },
         "input_model": {
           "$ref": "#/$defs/input_model_type",
-          "description": "input model for the simulations (supported formats: fm_netcdf, xbeach, sfincs)"
+          "description": "input model for the simulations (supported formats: fm_netcdf, d3d4_netcdf, xbeach, sfincs)"
         },
         "n_runs": {
           "type": "integer",
@@ -151,6 +162,11 @@
           "type": "boolean",
           "default": false,
           "description": "display all metadata"
+        },
+        "report_domain_exit_updates": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, log per-timestep messages when particles newly leave the domain or beach on land. Final domain-exit and beaching summaries are controlled by the CLI report-domain-exits option."
         },
         "numerical_scheme": {
           "$ref": "#/$defs/numerical_scheme_type",
@@ -205,6 +221,38 @@
         "pol_file": {
           "type": "string",
           "description": "path to Detares a '.pol' file contatining geometries definitions for the domain of interest."
+        },
+        "inner_boundary_pol_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "paths to Deltares/Tekal '.pol' files containing island or cutout polygons to exclude from the active particle-tracking mesh."
+        },
+        "boundary_class_pol_files": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "open": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "description": "paths to Deltares/Tekal '.pol' files containing polygons that select active boundary edges to classify as open/offshore boundaries."
+            },
+            "land": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "description": "paths to Deltares/Tekal '.pol' files containing polygons that select active boundary edges to classify as land/cutout boundaries."
+            }
+          },
+          "default": {},
+          "description": "User override polygons for active boundary edge classes. Edge midpoints inside these polygons are classified by boundary class."
         },
         "flow_field_data": {
           "type": "object",
@@ -412,6 +460,10 @@
           "type": "string",
           "default": "1H",
           "description": "save interval for output files, e.g., '1H' for 1 hour."
+        },
+        "sync_interval": {
+          "type": "string",
+          "description": "optional cadence for flushing streaming NetCDF output to disk. Defaults to outputs.save_interval. Use a longer interval to reduce filesystem sync overhead."
         },
         "store_tracks": {
           "type": "boolean",

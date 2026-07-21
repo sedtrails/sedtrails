@@ -34,6 +34,7 @@ class SeederFieldData:
     reference_date: np.datetime64
     face_node_connectivity: np.ndarray | None = None
     particle_face_connectivity: np.ndarray | None = None
+    boundary_edge_classification: dict | None = None
     face_node_fill_value: int = -1
 
 
@@ -50,12 +51,13 @@ class FormatConverter:
         """
         Initialize the FormatConverter.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         config : dict
-            Configuration dictionary containing settings for the converter.
-            Must include 'input_file', 'input_format', optionally 'reference_date' (default
-            "1970-01-01" (Unix epoch)) and 'morfac' (default 1.0)
+            Configuration dictionary containing converter settings. It must
+            include ``input_file`` and ``input_format``. Optional
+            ``reference_date`` defaults to ``"1970-01-01"`` and ``morfac``
+            defaults to 1.0.
         """
         self.config = config
         self._reference_date: Union[str, None] = None
@@ -155,6 +157,7 @@ class FormatConverter:
                 plugin_module = importlib.import_module(plugin_module_name)
                 # Initialize the format plugin with the input file and morfac
                 self._format_plugin = plugin_module.FormatPlugin(self.input_file, morfac=self.morfac)
+                self._configure_format_plugin(self._format_plugin)
             except ImportError as e:
                 raise ImportError(
                     f'Failed to import format plugin module: {plugin_module_name} '
@@ -162,6 +165,27 @@ class FormatConverter:
                 ) from e
 
         return self._format_plugin
+
+    def _configure_format_plugin(self, plugin):
+        """Apply converter-level options supported by format plugins."""
+        if 'domain_config' not in self.config:
+            domain_config = None
+        else:
+            domain_config = self.config.get('domain_config') or {}
+
+        if domain_config is not None:
+            try:
+                plugin.domain_config = domain_config
+            except AttributeError:
+                pass
+
+        for option_name in ('sediment_fraction_index', 'sediment_fraction_name'):
+            if option_name not in self.config:
+                continue
+            try:
+                setattr(plugin, option_name, self.config.get(option_name))
+            except AttributeError:
+                continue
 
     def convert_to_sedtrails(self, current_time=None, reading_interval=None) -> SedtrailsData:
         """
@@ -235,26 +259,45 @@ class FormatConverter:
 
         if callable(seeding_field_data_reader):
             field_data = seeding_field_data_reader()
-            return SeederFieldData(
-                x=np.asarray(field_data.x),
-                y=np.asarray(field_data.y),
-                reference_date=self.reference_date,
-                face_node_connectivity=self._optional_connectivity_array(
-                    getattr(field_data, 'face_node_connectivity', None)
-                ),
-                particle_face_connectivity=self._optional_connectivity_array(
-                    getattr(field_data, 'particle_face_connectivity', None)
-                ),
-                face_node_fill_value=getattr(field_data, 'face_node_fill_value', -1),
-            )
-        if callable(seeding_coordinate_reader):
+        elif callable(seeding_coordinate_reader):
             x, y = plugin.get_seeding_coordinates()
+            field_data = SeederFieldData(x=np.asarray(x), y=np.asarray(y), reference_date=self.reference_date)
         else:
             # Backward-compatible fallback for plugins that only expose full conversion.
-            sedtrails_data = plugin.convert(None, None, self.reference_date)
-            x, y = sedtrails_data.x, sedtrails_data.y
+            field_data = plugin.convert(None, None, self.reference_date)
 
-        return SeederFieldData(x=np.asarray(x), y=np.asarray(y), reference_date=self.reference_date)
+        return self._coerce_seeding_field_data(field_data)
+
+    def _coerce_seeding_field_data(self, field_data) -> SeederFieldData:
+        """
+        Normalize plugin-specific seeding containers into the public dataclass.
+
+        Plugins may return ``SeederFieldData``, a ``SedtrailsData`` instance, or a
+        lightweight object such as ``SimpleNamespace``. This keeps the converter
+        boundary stable while allowing plugins to expose richer fast paths.
+        """
+        metadata = getattr(field_data, 'metadata', None)
+        boundary_edge_classification = getattr(field_data, 'boundary_edge_classification', None)
+        if boundary_edge_classification is None and metadata is not None:
+            boundary_edge_classification = getattr(metadata, 'boundary_edge_classification', None)
+
+        reference_date = getattr(field_data, 'reference_date', None)
+        if reference_date is None:
+            reference_date = self.reference_date
+
+        return SeederFieldData(
+            x=np.asarray(field_data.x),
+            y=np.asarray(field_data.y),
+            reference_date=np.datetime64(reference_date),
+            face_node_connectivity=self._optional_connectivity_array(
+                getattr(field_data, 'face_node_connectivity', None)
+            ),
+            particle_face_connectivity=self._optional_connectivity_array(
+                getattr(field_data, 'particle_face_connectivity', None)
+            ),
+            boundary_edge_classification=boundary_edge_classification,
+            face_node_fill_value=getattr(field_data, 'face_node_fill_value', -1),
+        )
 
     @staticmethod
     def _optional_connectivity_array(connectivity):

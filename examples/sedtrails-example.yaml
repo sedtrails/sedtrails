@@ -7,6 +7,17 @@ inputs:
   data: ../sample-data/inlet_sedtrails.nc
   read_interval: 10D  # Time chunk size for reading input data
   repeat_eulerian_fields: true  # Repeat forcing after a valid start inside the input time range
+# Optional domain controls for islands/cutouts and boundary actions.
+# Tekal .pol paths are resolved relative to this configuration file.
+# domain:
+#   pol_file: ./outer_domain.pol
+#   inner_boundary_pol_files:
+#     - ./islands.pol
+#   boundary_class_pol_files:
+#     open:
+#       - ./offshore_boundary_edges.pol
+#     land:
+#       - ./coastline_boundary_edges.pol
 time:
   start:  2016-09-21 19:20:00
   timestep: 60S

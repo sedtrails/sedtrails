@@ -8,6 +8,7 @@ import numpy as np
 import xarray as xr
 from scipy.spatial import Delaunay
 
+from sedtrails.transport_converter.domain_mask import classify_boundary_edges_from_config
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
@@ -68,7 +69,9 @@ class FormatPlugin(BaseFormatPlugin):
         self.morfac = morfac
         self.input_data: xr.Dataset | None = None
         self._input_variables: List[str] = []
+        self.domain_config: Dict[str, Any] = {}
         self._particle_connectivity_cache: dict[str, Any] | None = None
+        self._boundary_edge_classification_cache: dict[str, Any] | None = None
 
     @property
     def variables(self) -> List[str]:
@@ -207,6 +210,13 @@ class FormatPlugin(BaseFormatPlugin):
             }
         )
         particle_connectivity = self._particle_face_connectivity(mapped_data['x'], mapped_data['y'])
+        boundary_edge_classification = self._boundary_edge_classification(
+            mapped_data['x'],
+            mapped_data['y'],
+            particle_connectivity,
+        )
+        if boundary_edge_classification is not None:
+            metadata.add('boundary_edge_classification', boundary_edge_classification)
 
         return SedtrailsData(
             times=seconds_since_ref,
@@ -228,6 +238,7 @@ class FormatPlugin(BaseFormatPlugin):
             node_x=mapped_data['x'],
             node_y=mapped_data['y'],
             face_node_connectivity=particle_connectivity,
+            particle_face_connectivity=particle_connectivity,
             face_node_fill_value=-1,
             metadata=metadata,
         )
@@ -247,11 +258,13 @@ class FormatPlugin(BaseFormatPlugin):
         self.load()
         x, y = self._get_grid_coordinates()
         particle_connectivity = self._particle_face_connectivity(x, y)
+        boundary_edge_classification = self._boundary_edge_classification(x, y, particle_connectivity)
         return SimpleNamespace(
             x=x,
             y=y,
             face_node_connectivity=particle_connectivity,
             particle_face_connectivity=particle_connectivity,
+            boundary_edge_classification=boundary_edge_classification,
             face_node_fill_value=-1,
         )
 
@@ -644,32 +657,71 @@ class FormatPlugin(BaseFormatPlugin):
         index_map = np.full(active_mask.size, -1, dtype=np.int64)
         index_map[active_mask] = np.arange(np.count_nonzero(active_mask), dtype=np.int64)
 
-        triangles: list[tuple[int, int, int]] = []
-        for iy in range(ny - 1):
-            row = iy * nx
-            next_row = (iy + 1) * nx
-            for ix in range(nx - 1):
-                lower_left = row + ix
-                lower_right = lower_left + 1
-                upper_left = next_row + ix
-                upper_right = upper_left + 1
-                for triangle in (
-                    (lower_left, lower_right, upper_right),
-                    (lower_left, upper_right, upper_left),
-                ):
-                    mapped_triangle = index_map[np.asarray(triangle, dtype=np.int64)]
-                    if np.all(mapped_triangle >= 0):
-                        triangles.append(tuple(int(index) for index in mapped_triangle))
+        mapped = index_map.reshape(ny, nx)
+        lower_left = mapped[:-1, :-1].ravel()
+        lower_right = mapped[:-1, 1:].ravel()
+        upper_left = mapped[1:, :-1].ravel()
+        upper_right = mapped[1:, 1:].ravel()
 
-        if not triangles:
+        n_cells = lower_left.size
+        candidate_triangles = np.empty((2 * n_cells, 3), dtype=np.int64)
+        candidate_triangles[0::2, 0] = lower_left
+        candidate_triangles[0::2, 1] = lower_right
+        candidate_triangles[0::2, 2] = upper_right
+        candidate_triangles[1::2, 0] = lower_left
+        candidate_triangles[1::2, 1] = upper_right
+        candidate_triangles[1::2, 2] = upper_left
+
+        active_triangles = np.all(candidate_triangles >= 0, axis=1)
+        if not np.any(active_triangles):
             return np.empty((0, 3), dtype=np.int64)
-        return np.asarray(triangles, dtype=np.int64)
+        return candidate_triangles[active_triangles]
 
     def _geometry_cache_matches(self, cache: dict[str, Any] | None, x: np.ndarray, y: np.ndarray) -> bool:
         """Return whether cached particle connectivity matches the active grid."""
         if cache is None:
             return False
         return self._arrays_equal(cache.get('x'), x) and self._arrays_equal(cache.get('y'), y)
+
+    def _boundary_edge_classification(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        connectivity: np.ndarray | None,
+    ) -> dict | None:
+        """Return optional boundary-edge class metadata for active triangles."""
+        if connectivity is None:
+            return None
+
+        cache = self._boundary_edge_classification_cache
+        if (
+            cache is not None
+            and cache.get('domain_signature') == self._domain_config_signature()
+            and self._arrays_equal(cache.get('x'), x)
+            and self._arrays_equal(cache.get('y'), y)
+            and self._arrays_equal(cache.get('connectivity'), connectivity)
+        ):
+            return cache['metadata']
+
+        classification = classify_boundary_edges_from_config(
+            x,
+            y,
+            connectivity,
+            getattr(self, 'domain_config', {}),
+        )
+        metadata = None if classification is None else classification.to_metadata()
+        self._boundary_edge_classification_cache = {
+            'x': np.asarray(x),
+            'y': np.asarray(y),
+            'connectivity': np.asarray(connectivity),
+            'domain_signature': self._domain_config_signature(),
+            'metadata': metadata,
+        }
+        return metadata
+
+    def _domain_config_signature(self) -> str:
+        """Return a cache signature for configured domain polygons."""
+        return repr(getattr(self, 'domain_config', {}) or {})
 
     @staticmethod
     def _arrays_equal(left: np.ndarray | None, right: np.ndarray) -> bool:

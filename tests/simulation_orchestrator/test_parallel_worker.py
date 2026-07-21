@@ -39,7 +39,7 @@ class _Population:
 
 
 def _write_track_shard(base: Path, task_id: int, populations: list[_Population], times=(0.0, 10.0)) -> None:
-    """Write one trajectory_v2 worker result shard."""
+    """Write one trajectory worker result shard via the real NetCDFWriter."""
     output_dir = base / f'task_{task_id:04d}'
     writer = NetCDFWriter(output_dir)
     total_particles = sum(len(pop.particles['x']) for pop in populations)
@@ -76,7 +76,7 @@ def _write_end_position_shard(base: Path, task_id: int, populations: list[_Popul
 
 
 def _write_checkpoint_shard(base: Path, task_id: int, populations: list[_Population]) -> None:
-    """Write one checkpoint_v1 worker shard."""
+    """Write one checkpoint worker shard via the real NetCDFWriter."""
     output_dir = base / f'task_{task_id:04d}'
     writer = NetCDFWriter(output_dir)
     writer.write_checkpoint(
@@ -157,7 +157,7 @@ def test_merge_outputs_preserves_time_major_numeric_ids(tmp_path):
 
     with nc4.Dataset(tmp_path / 'sedtrails_results.nc') as ds:
         assert ds.trajectory_layout == 'time_particle'
-        assert ds.sedtrails_output_schema == 'trajectory_v2'
+        assert ds.sedtrails_output_schema == 'trajectory_v3'
         assert ds.dimensions['n_particles'].size == 6
         assert ds['x'].dimensions == ('n_timesteps', 'n_particles')
         assert ds['trajectory_id'].dimensions == ('n_particles',)
@@ -183,7 +183,7 @@ def test_merge_outputs_merges_checkpoint_shards(tmp_path):
 
     with nc4.Dataset(tmp_path / 'sedtrails_checkpoint.nc') as ds:
         assert ds.sedtrails_file_kind == 'checkpoint'
-        assert ds.sedtrails_output_schema == 'checkpoint_v1'
+        assert ds.sedtrails_output_schema == 'checkpoint_v2'
         assert ds.trajectory_layout == 'checkpoint'
         assert ds.dimensions['n_particles'].size == 6
         assert ds['x'].dimensions == ('n_particles',)
@@ -376,6 +376,10 @@ def test_worker_fn_forces_dashboard_off(monkeypatch):
     monkeypatch.setattr(simulation_manager, 'Simulation', DummySimulation)
     monkeypatch.setattr(_worker_module, '_set_worker_memory_limit', lambda n_tasks: None)
     monkeypatch.setattr(_worker_module, '_PRELOADED_INPUT_DATA', None)
+    # _worker_fn writes the task identity into os.environ (meant for a forked
+    # child process); register the keys so monkeypatch restores them afterwards.
+    monkeypatch.setenv('SEDTRAILS_TASK_ID', '0')
+    monkeypatch.setenv('SEDTRAILS_N_TASKS', '1')
 
     _worker_fn('config.yml', task_id=1, n_tasks=3)
 

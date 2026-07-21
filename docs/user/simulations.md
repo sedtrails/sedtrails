@@ -14,6 +14,23 @@ For a detailed reference of all available parameters, please refer to the [Simul
 `seeding.release_start` is interpreted relative to `general.input_model.reference_date`.
 For example, if `reference_date` is `2016-09-21 19:20:00` and `release_start` is `2016-09-21 19:30:00`, particles are released 600 seconds after simulation start.
 
+The `domain` section is optional. If you do not need a custom extent, island/cutout masking, or open/land boundary overrides, omit `domain` entirely and SedTRAILS uses the active grid from the input model. If a `domain` section is present, it must define the active extent with exactly one method: either `domain.pol_file` or both `domain.subset_x` and `domain.subset_y`.
+
+For FM and SFINCS models, the optional `domain.inner_boundary_pol_files` setting can use Tekal polygons to mask islands/cutouts. For FM, SFINCS, and XBeach models, `domain.boundary_class_pol_files` can classify boundary crossings as `open` or `land`. These settings modify the active extent; they do not define an extent by themselves. Boundary-class polygons select active boundary edges by edge midpoint. Drawing rule: boundary-class polygons may be wider than a thin line as long as they only contain the intended edge midpoints, and do not include neighboring or unrelated boundary-edge midpoints. See the domain section of the parameter reference for the full behavior.
+
+![Domain polygon definition schematic](../_static/img/domain-polygon-definitions.png)
+
+This conceptual schematic shows the roles of the different polygon settings. The outer polygon or rectangular subset defines the active extent, inner-boundary polygons remove cutouts, and boundary-class polygons classify active boundary edges by midpoint.
+
+The "regular closed boundary" is defined by the edge of the "active domain", and comes from:
+-	the input model grid, if domain is omitted
+-	the clipped/masked domain from `domain.pol_file`, if supplied
+-	the rectangular clipped domain from `subset_x` + `subset_y`, if supplied
+plus any holes/cutouts created by `inner_boundary_pol_files`
+
+After that is settled, the `boundary_class_pol_files.open` and `.land` only override parts of that active boundary by testing boundary-edge midpoints, and set the particle behaviour according to that.
+
+
 
 ### Example Configuration File
 
@@ -27,6 +44,21 @@ general:
 inputs:
   data: ./sample-data/inlet_sedtrails.nc
   read_interval: 10D  # Time chunk size for reading input data
+# Optional domain controls for islands/cutouts and boundary actions.
+# Tekal .pol paths are resolved relative to this configuration file.
+# Omit domain entirely if no custom extent, cutouts, or boundary overrides are needed.
+# If domain is present, use either pol_file or subset_x/subset_y to define the extent.
+# Boundary-class polygons classify edge midpoints; they need not be thin lines,
+# but should not include unintended neighboring edge midpoints.
+# domain:
+#   pol_file: ./outer_domain.pol
+#   inner_boundary_pol_files:
+#     - ./islands.pol
+#   boundary_class_pol_files:
+#     open:
+#       - ./offshore_boundary_edges.pol
+#     land:
+#       - ./coastline_boundary_edges.pol
 time:
   start:  2016-09-21 19:20:00
   timestep: 60S
@@ -84,6 +116,81 @@ visualization:
   dashboard:
     enable: true
     update_interval: 1H
+```
+
+### Choosing a Tracer Mode
+
+Each population must define exactly one tracer method under `particles.populations[].tracer_methods`.
+
+- There is **no default tracer method**. You must explicitly choose one of: `vanwesten`, `soulsby`, or `passive_tracer`.
+- For `passive_tracer`, `flow_field_name` is optional and defaults to `depth_avg_flow_velocity`.
+- For `vanwesten` and `soulsby`, you should provide `flow_field_name` explicitly.
+- If you use `passive_tracer`, set `particle_type: passive`.
+- If you use `passive_tracer`, `transport_probability` must be `no_probability` (the default). Using `stochastic_transport` or `reduced_velocity` raises a configuration error.
+- If you use `passive_tracer`, omit `seeding.burial_depth`. Passive tracer does not support burial depth and will raise a configuration error if it is set.
+
+Use the following minimal keyword blocks inside each population:
+
+```yaml
+tracer_methods:
+  vanwesten:
+    flow_field_name:
+      - bed_load_velocity
+      - suspended_velocity
+```
+
+```yaml
+tracer_methods:
+  soulsby:
+    flow_field_name:
+      - grain_velocity
+```
+
+```yaml
+tracer_methods:
+  passive_tracer: {}
+```
+
+Minimal passive population example:
+
+```yaml
+- name: passive_population
+  particle_type: passive
+  characteristics:
+    diffusion_coefficient: 0.0
+  tracer_methods:
+    passive_tracer: {}
+  seeding:
+    release_start: 2016-09-21 19:30:00
+    quantity: 1
+    strategy:
+      random:
+        bbox: "39400,16800 40600,17800"
+        seed: 42
+        nlocations: 10
+```
+
+You can also set an explicit passive flow field:
+
+```yaml
+tracer_methods:
+  passive_tracer:
+    flow_field_name:
+      - depth_avg_flow_velocity
+```
+
+Repository examples by mode:
+
+- Van Westen: `examples/sedtrails-example.yaml`
+- Soulsby: `examples/config.example_soulsby.yaml`
+- Passive tracer: `examples/sedtrails-example-passive.yaml` (FM) and `examples/config.example_sfincs.yaml` (SFINCS)
+
+Run any mode the same way by selecting the config file:
+
+```bash
+sedtrails run -c ./examples/sedtrails-example.yaml
+sedtrails run -c ./examples/config.example_soulsby.yaml
+sedtrails run -c ./examples/config.example_sfincs.yaml
 ```
 
 ## Running a Simulation

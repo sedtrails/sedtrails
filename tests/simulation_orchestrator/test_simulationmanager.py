@@ -2,14 +2,20 @@
 Unit tests for the Simulation class.
 """
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import yaml
 
+from sedtrails.application_interfaces.configuration_controller import ConfigurationController
+from sedtrails.application_interfaces.validator import YAMLConfigValidator
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer.timer import Duration, Time
 from sedtrails.simulation_orchestrator import parallel_worker as _pw
+from sedtrails.simulation_orchestrator import simulation_manager
+from sedtrails.simulation_orchestrator.runtime_plan import validate_population_runtime_configurations
 from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
 
@@ -59,6 +65,50 @@ def _simulation_with_plugin(plugin):
     manager = object.__new__(Simulation)
     manager._profile_enabled = False
     manager.format_converter = SimpleNamespace(format_plugin=plugin)
+    return manager
+
+
+def _minimal_config():
+    """Build a minimal valid configuration for controller-backed simulation tests."""
+    return {
+        'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '1970-01-01'}},
+        'inputs': {'data': 'dummy.nc'},
+        'particles': {
+            'populations': [
+                {
+                    'name': 'sand',
+                    'particle_type': 'sand',
+                    'characteristics': {
+                        'density': 2650.0,
+                        'grain_size': 0.00025,
+                    },
+                    'tracer_methods': {
+                        'vanwesten': {
+                            'flow_field_name': ['bed_load_velocity'],
+                        },
+                    },
+                    'seeding': {
+                        'burial_depth': {'constant': 0.0},
+                        'release_start': '2016-09-21 19:30:00',
+                        'quantity': 1,
+                        'strategy': {
+                            'point': {
+                                'locations': ['0.0,0.0'],
+                            },
+                        },
+                    },
+                }
+            ]
+        },
+    }
+
+
+def _simulation_with_config_file(tmp_path, config):
+    """Create an uninitialized Simulation using the real configuration controller."""
+    config_file = tmp_path / 'sedtrails.yml'
+    config_file.write_text(yaml.dump(config), encoding='utf-8')
+    manager = object.__new__(Simulation)
+    manager._controller = ConfigurationController(str(config_file))
     return manager
 
 
@@ -243,6 +293,96 @@ class TestSimulationManagerParallelConfig:
 
         assert manager._create_dashboard() is None
         assert warning_calls
+
+
+class TestSimulationManagerPreflight:
+    """Tests for configuration validation before seeding work starts."""
+
+    def test_run_impl_rejects_passive_burial_depth_before_seeding(self):
+        """Invalid passive burial depth should fail before time or seeding dependencies are accessed."""
+        manager = object.__new__(Simulation)
+        manager._config_is_read = True
+        manager._controller = _Controller(
+            {
+                'particles.populations': [
+                    {
+                        'particle_type': 'passive',
+                        'tracer_methods': {'passive_tracer': {}},
+                        'seeding': {'burial_depth': {'constant': 0.0}},
+                    }
+                ]
+            }
+        )
+
+        with pytest.raises(ConfigurationError, match='seeding.burial_depth'):
+            manager._run_impl()
+
+    @pytest.mark.parametrize('example_name', ['config.example_sfincs.yaml', 'sedtrails-example-passive.yaml'])
+    def test_passive_examples_pass_runtime_preflight(self, example_name):
+        """Committed passive examples must satisfy their runtime-only constraints."""
+        example_file = Path(__file__).parents[2] / 'examples' / example_name
+        config = YAMLConfigValidator().validate_yaml(str(example_file))
+
+        validate_population_runtime_configurations(config['particles']['populations'])
+
+    def test_plan_retrievers_pass_population_and_global_fraction_selection(self, monkeypatch):
+        """Each plan build should receive its population config and shared input-model defaults."""
+        calls = []
+
+        def fake_build_plan_sedtrails_data(
+            sedtrails_data,
+            tracer_plan,
+            population_config=None,
+            default_fraction_index=0,
+            default_fraction_name=None,
+        ):
+            calls.append(
+                {
+                    'sedtrails_data': sedtrails_data,
+                    'tracer_plan': tracer_plan,
+                    'population_config': population_config,
+                    'default_fraction_index': default_fraction_index,
+                    'default_fraction_name': default_fraction_name,
+                }
+            )
+            return object()
+
+        monkeypatch.setattr(simulation_manager, 'build_plan_sedtrails_data', fake_build_plan_sedtrails_data)
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller(
+            {
+                'general.input_model': {
+                    'sediment_fraction_index': 2,
+                    'sediment_fraction_name': 'global_silt',
+                }
+            }
+        )
+        sedtrails_data = object()
+        runtime_plans = (
+            SimpleNamespace(
+                population_index=3,
+                population_config={'sediment_fraction_index': 1},
+                tracer=object(),
+            ),
+            SimpleNamespace(
+                population_index=7,
+                population_config={'sediment_fraction_name': 'local_sand'},
+                tracer=object(),
+            ),
+            SimpleNamespace(population_index=9, population_config={}, tracer=object()),
+        )
+
+        retrievers = manager._build_plan_retrievers(sedtrails_data, runtime_plans)
+
+        assert set(retrievers) == {3, 7, 9}
+        assert [call['population_config'] for call in calls] == [
+            {'sediment_fraction_index': 1},
+            {'sediment_fraction_name': 'local_sand'},
+            {},
+        ]
+        assert all(call['sedtrails_data'] is sedtrails_data for call in calls)
+        assert [call['default_fraction_index'] for call in calls] == [2, 2, 2]
+        assert [call['default_fraction_name'] for call in calls] == ['global_silt'] * 3
 
 
 class TestSimulationManagerTimeConfig:
@@ -465,6 +605,36 @@ class TestSimulationManagerTimeConfig:
         with pytest.raises(ConfigurationError, match='outputs.save_interval'):
             manager._output_save_interval_seconds()
 
+    def test_output_sync_interval_defaults_to_save_interval(self):
+        """NetCDF flush cadence should default to the trajectory save cadence."""
+        manager = object.__new__(Simulation)
+        manager._controller = type('Controller', (), {'get': lambda self, key, default=None: default})()
+
+        assert manager._output_sync_interval_seconds(save_interval_seconds=1800) == 1800
+
+    def test_output_sync_interval_uses_outputs_config(self):
+        """Configured sync interval should be converted to seconds."""
+
+        class Controller:
+            def get(self, key, default=None):
+                if key == 'outputs.sync_interval':
+                    return '2H'
+                return default
+
+        manager = object.__new__(Simulation)
+        manager._controller = Controller()
+
+        assert manager._output_sync_interval_seconds(save_interval_seconds=1800) == 7200
+        assert Simulation._sync_every_n_writes(save_interval_seconds=1800, sync_interval_seconds=7200) == 4
+
+    def test_output_sync_interval_rejects_zero_duration(self):
+        """A zero sync interval would make streaming flush cadence ambiguous."""
+        manager = object.__new__(Simulation)
+        manager._controller = type('Controller', (), {'get': lambda self, key, default=None: '0S'})()
+
+        with pytest.raises(ConfigurationError, match='outputs.sync_interval'):
+            manager._output_sync_interval_seconds(save_interval_seconds=1800)
+
     @pytest.mark.parametrize(
         'duration,save_interval,expected_count',
         [
@@ -526,6 +696,32 @@ class TestSimulationManagerTimeConfig:
     def test_output_sample_due_on_interval_or_final_time(self, sample_time, next_output_time, end_time, expected):
         """Samples should be saved only on configured boundaries or at final time."""
         assert Simulation._is_output_sample_due(sample_time, next_output_time, end_time) is expected
+
+    @pytest.mark.parametrize(
+        'method_name,transport_probability_method,expected',
+        [
+            ('vanwesten', 'stochastic_transport', True),
+            ('vanwesten', 'reduced_velocity', True),
+            ('vanwesten', 'no_probability', True),
+            ('soulsby', 'no_probability', True),
+            ('passive_tracer', 'no_probability', True),
+            ('soulsby', 'reduced_velocity', False),
+            ('passive_tracer', 'stochastic_transport', False),
+        ],
+    )
+    def test_should_update_bed_level_after_movement_policy(
+        self,
+        method_name,
+        transport_probability_method,
+        expected,
+    ):
+        """Post-move bed-level updates should follow tracer and transport policy rules."""
+        tracer_plan = SimpleNamespace(
+            method_name=method_name,
+            transport_probability_method=transport_probability_method,
+        )
+
+        assert Simulation._should_update_bed_level_after_movement(tracer_plan) is expected
 
     def test_initialize_population_output_status_supplies_required_fields(self):
         """The seeded initial sample should have status fields before the first physics update."""
@@ -598,6 +794,32 @@ class TestSimulationManagerNetCDFOutputOptions:
 
         assert manager._output_netcdf_options() == netcdf_config
 
+    def test_output_netcdf_options_use_legacy_sync_after_defaults(self, tmp_path):
+        """A defaulted nested sync interval should not mask legacy duration config."""
+        config = _minimal_config()
+        config['outputs'] = {
+            'save_interval': '30M',
+            'sync_interval': '2H',
+            'store_tracks': True,
+            'netcdf': {},
+        }
+        manager = _simulation_with_config_file(tmp_path, config)
+
+        assert manager._output_netcdf_options()['sync_interval'] == 4
+
+    def test_output_netcdf_options_nested_sync_overrides_legacy_sync(self, tmp_path):
+        """Explicit nested NetCDF sync configuration should take precedence."""
+        config = _minimal_config()
+        config['outputs'] = {
+            'save_interval': '30M',
+            'sync_interval': '2H',
+            'store_tracks': True,
+            'netcdf': {'sync_interval': 3},
+        }
+        manager = _simulation_with_config_file(tmp_path, config)
+
+        assert manager._output_netcdf_options()['sync_interval'] == 3
+
     def test_estimate_netcdf_payload_bytes_uses_particle_slots_and_dtypes(self):
         """Payload estimates should track the particle-slot fields written by NetCDFWriter."""
         estimated = Simulation._estimate_netcdf_payload_bytes(
@@ -607,7 +829,7 @@ class TestSimulationManagerNetCDFOutputOptions:
             status_dtype='uint8',
         )
 
-        assert estimated == 100 * 10 * ((5 * 4) + (6 * 1))
+        assert estimated == 100 * 10 * ((5 * 4) + (Simulation._OUTPUT_STATUS_FIELD_COUNT * 1))
 
     @pytest.mark.parametrize(
         ('n_particles', 'n_slots', 'threshold_mb', 'expected'),
@@ -990,6 +1212,21 @@ class TestSimulationDashboardThrottle:
         np.testing.assert_array_equal(particle_data['burial_depth'], np.array([0.1, 0.2]))
         np.testing.assert_array_equal(particle_data['mixing_depth'], np.array([np.nan, np.nan]))
 
+    def test_dashboard_particle_data_includes_boundary_statuses(self):
+        """Dashboard particle payload should include boundary status arrays for plotting."""
+        class Population:
+            particles = {
+                'x': np.array([1.0, 2.0]),
+                'y': np.array([3.0, 4.0]),
+                'status_left_domain': np.array([False, True]),
+                'status_beached': np.array([True, False]),
+            }
+
+        particle_data = Simulation._dashboard_particle_data(Population())
+
+        np.testing.assert_array_equal(particle_data['status_left_domain'], np.array([False, True]))
+        np.testing.assert_array_equal(particle_data['status_beached'], np.array([True, False]))
+
     def test_large_grid_dashboard_updates_are_throttled(self):
         """Large grids should throttle dashboard refreshes to periodic steps."""
         manager = object.__new__(Simulation)
@@ -1018,3 +1255,188 @@ class TestSimulationDashboardThrottle:
         timer = type('Timer', (), {'step_count': 1})()
 
         assert manager._should_update_dashboard(sedtrails_data, timer)
+
+
+class TestSimulationDomainExitReporting:
+    """Tests CLI/log reporting for particles that leave the domain."""
+
+    def test_reports_newly_left_domain_particles(self):
+        """Report only particles that newly transition to left-domain status."""
+        manager = object.__new__(Simulation)
+        manager._report_domain_exits = True
+        manager._report_domain_exit_updates = True
+        manager.logger = _ListLogger()
+        population = SimpleNamespace(
+            population_config=SimpleNamespace(population_config={'name': 'sand'}),
+            particles={
+                'x': np.zeros(3),
+                'status_left_domain': np.array([False, True, True]),
+            },
+        )
+        reported_left_domain = np.array([False, False, True])
+
+        newly_left = manager._report_new_domain_exits(
+            population,
+            population_index=0,
+            flow_field_name='bed_load_velocity',
+            reported_left_domain=reported_left_domain,
+            current_time=10.0,
+            current_timestep=2.0,
+        )
+
+        assert newly_left == 1
+        np.testing.assert_array_equal(reported_left_domain, np.array([False, True, True]))
+        assert 'Particles left domain: +1 in sand via bed_load_velocity' in manager.logger.messages[0]
+        assert 'population total=2/3' in manager.logger.messages[0]
+
+    def test_new_left_domain_updates_can_be_quiet(self):
+        """Intermediate left-domain reporting can be disabled while masks still update."""
+        manager = object.__new__(Simulation)
+        manager._report_domain_exits = True
+        manager._report_domain_exit_updates = False
+        manager.logger = _ListLogger()
+        population = SimpleNamespace(
+            population_config=SimpleNamespace(population_config={'name': 'sand'}),
+            particles={
+                'x': np.zeros(3),
+                'status_left_domain': np.array([False, True, True]),
+            },
+        )
+        reported_left_domain = np.array([False, False, True])
+
+        newly_left = manager._report_new_domain_exits(
+            population,
+            population_index=0,
+            flow_field_name='bed_load_velocity',
+            reported_left_domain=reported_left_domain,
+            current_time=10.0,
+            current_timestep=2.0,
+        )
+
+        assert newly_left == 1
+        np.testing.assert_array_equal(reported_left_domain, np.array([False, True, True]))
+        assert manager.logger.messages == []
+
+    def test_final_summary_reports_total_left_domain_particles(self):
+        """Final summary should report aggregate and per-population left-domain totals."""
+        manager = object.__new__(Simulation)
+        manager._report_domain_exits = True
+        manager.logger = _ListLogger()
+        populations = [
+            SimpleNamespace(
+                population_config={'name': 'fine'},
+                particles={'x': np.zeros(2), 'status_left_domain': np.array([True, False])},
+            ),
+            SimpleNamespace(
+                population_config={'name': 'medium'},
+                particles={'x': np.zeros(3), 'status_left_domain': np.array([False, True, True])},
+            ),
+        ]
+
+        manager._report_domain_exit_summary(populations)
+
+        assert manager.logger.messages == ['Particles left domain during run: 3/5 (fine=1/2, medium=2/3)']
+
+    def test_reports_newly_beached_particles(self):
+        """Report only particles that newly transition to beached status."""
+        manager = object.__new__(Simulation)
+        manager._report_domain_exits = True
+        manager._report_domain_exit_updates = True
+        manager.logger = _ListLogger()
+        population = SimpleNamespace(
+            population_config=SimpleNamespace(population_config={'name': 'sand'}),
+            particles={
+                'x': np.zeros(3),
+                'status_beached': np.array([False, True, True]),
+            },
+        )
+        reported_beached = np.array([False, False, True])
+
+        newly_beached = manager._report_new_beached_particles(
+            population,
+            population_index=0,
+            flow_field_name='bed_load_velocity',
+            reported_beached=reported_beached,
+            current_time=10.0,
+            current_timestep=2.0,
+        )
+
+        assert newly_beached == 1
+        np.testing.assert_array_equal(reported_beached, np.array([False, True, True]))
+        assert 'Particles beached on land: +1 in sand via bed_load_velocity' in manager.logger.messages[0]
+        assert 'population total=2/3' in manager.logger.messages[0]
+
+    def test_new_beached_updates_can_be_quiet(self):
+        """Intermediate beaching reporting can be disabled while history still updates."""
+        manager = object.__new__(Simulation)
+        manager._report_domain_exits = True
+        manager._report_domain_exit_updates = False
+        manager.logger = _ListLogger()
+        population = SimpleNamespace(
+            population_config=SimpleNamespace(population_config={'name': 'sand'}),
+            particles={
+                'x': np.zeros(3),
+                'status_beached': np.array([False, True, True]),
+            },
+        )
+        reported_beached = np.array([False, False, True])
+
+        newly_beached = manager._report_new_beached_particles(
+            population,
+            population_index=0,
+            flow_field_name='bed_load_velocity',
+            reported_beached=reported_beached,
+            current_time=10.0,
+            current_timestep=2.0,
+        )
+
+        assert newly_beached == 1
+        np.testing.assert_array_equal(reported_beached, np.array([False, True, True]))
+        assert manager.logger.messages == []
+
+    def test_final_summary_reports_total_beached_particles(self):
+        """Final summary should report aggregate and per-population beached totals."""
+        manager = object.__new__(Simulation)
+        manager._report_domain_exits = True
+        manager.logger = _ListLogger()
+        populations = [
+            SimpleNamespace(
+                population_config={'name': 'fine'},
+                particles={'x': np.zeros(2), 'status_beached': np.array([True, False])},
+            ),
+            SimpleNamespace(
+                population_config={'name': 'medium'},
+                particles={'x': np.zeros(3), 'status_beached': np.array([False, True, True])},
+            ),
+        ]
+
+        manager._report_beached_summary(populations)
+
+        assert manager.logger.messages == ['Particles beached on land during run: 3/5 (fine=1/2, medium=2/3)']
+
+    def test_final_summary_can_use_beached_history(self):
+        """Final beached summary should support particles that remobilized later."""
+        manager = object.__new__(Simulation)
+        manager._report_domain_exits = True
+        manager.logger = _ListLogger()
+        populations = [
+            SimpleNamespace(
+                population_config={'name': 'fine'},
+                particles={'x': np.zeros(2), 'status_beached': np.array([False, False])},
+            ),
+        ]
+        beached_history = [np.array([True, False])]
+
+        manager._report_beached_summary(populations, beached_history)
+
+        assert manager.logger.messages == ['Particles beached on land during run: 1/2 (fine=1/2)']
+
+
+class _ListLogger:
+    """Minimal logger that stores formatted info messages for assertions."""
+
+    def __init__(self):
+        self.messages = []
+
+    def info(self, message, *args):
+        self.messages.append(message % args if args else message)

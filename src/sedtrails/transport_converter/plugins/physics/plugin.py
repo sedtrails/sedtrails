@@ -13,6 +13,7 @@ class BasePhysicsPlugin(ABC):
     """
 
     def __init__(self):
+        """Initialize the base physics plugin."""
         return None
 
     @abstractmethod
