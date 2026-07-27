@@ -95,7 +95,7 @@
                     "items": {
                         "type": "string"
                     },
-                    "description": "flow field name for van Westen method used in particle computation"
+                    "description": "flow field name for MacDonald method used in particle computation"
                 },
                 "computationType": {
                     "type": "string",
