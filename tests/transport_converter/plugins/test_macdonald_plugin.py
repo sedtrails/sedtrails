@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from sedtrails.transport_converter.physics_converter import PhysicsConfig
 from sedtrails.transport_converter.plugins.physics.macdonald import PhysicsPlugin
 
 
@@ -120,3 +121,143 @@ def test_lookup_table_asymptote_matches_eq27_high_rouse_limit():
     # the cutoff: tanh(1.2*ln(19.9) - 0.4) hasn't fully saturated to 1 yet, so
     # this is a loose bound, not an exact match.
     assert _macdonald_eq27_z_over_h(19.9) == pytest.approx(asym_reference, rel=1e-2)
+
+
+class _MacdonaldSedtrailsDataStub:
+    """Minimal data object exposing fields consumed by the MacDonald plugin."""
+
+    def __init__(self):
+        """Create deterministic one-timestep, two-node transport fields."""
+        self.depth_avg_flow_velocity = {
+            'x': np.array([[1.0, 1.5]]),
+            'y': np.array([[0.0, 0.0]]),
+            'magnitude': np.array([[1.0, 1.5]]),
+        }
+        self.mean_bed_shear_stress = np.array([[1.0, 1.2]])
+        self.max_bed_shear_stress = np.array([[2.0, 3.0]])
+        self.bed_load_transport = {'magnitude': np.array([[0.2, 0.3]])}
+        self.suspended_transport = {'magnitude': np.array([[0.4, 0.5]])}
+        self.water_depth = np.array([[2.0, 3.0]])
+        self._physics_fields = {}
+
+    def add_physics_field(self, name, data):
+        """Mirror SedtrailsData.add_physics_field: store and expose as attribute."""
+        self._physics_fields[name] = data
+        setattr(self, name, data)
+
+    def has_physics_field(self, name):
+        return name in self._physics_fields
+
+
+def _macdonald_config(**overrides):
+    """Build a MacDonald physics config with the fields add_physics() needs."""
+    config = PhysicsConfig.from_dict(config={'tracer_method': 'macdonald'})
+    config.use_transport_fields = 'model-native'
+    config.shear_velocity_source = 'mean'
+    config.computationType = '2D'
+    config.max_suspended_velocity_factor = None
+    config.export_diagnostic_fields = False
+    for key, value in overrides.items():
+        setattr(config, key, value)
+    return config
+
+
+def _run_macdonald_add_physics(export_diagnostic_fields):
+    config = _macdonald_config(export_diagnostic_fields=export_diagnostic_fields)
+    sedtrails_data = _MacdonaldSedtrailsDataStub()
+    plugin = PhysicsPlugin(config, tracer_methods={})
+    grain_properties = {
+        'critical_shields': 0.05,
+        'settling_velocity': 0.02,
+        'dimensionless_grain_size': 6.0,
+    }
+    plugin.add_physics(sedtrails_data, grain_properties, transport_probability_method='no_probability')
+    return sedtrails_data
+
+
+# Fields that add_physics() must always compute and store, regardless of
+# export_diagnostic_fields, because something downstream of add_physics()
+# (simulation_manager.py's 2D sampling, or update_q3d_particle_position's
+# required_fields check) reads them back by name.
+_REQUIRED_MACDONALD_FIELDS = (
+    'max_shields_number',
+    'mixing_layer_thickness',
+    'suspended_velocity',
+    'suspended_transport_centroid_elevation',
+    'total_transport_centroid_elevation',
+    'rouse_number',
+    'skin_roughness_height',
+    'profile_roughness_height',
+    'max_shear_velocity',
+    'selected_shear_velocity',
+    'centroid_particle_velocity',
+)
+
+# Fields that exist only for offline QC/diagnostics: nothing in the transport,
+# entrainment, or deposition pipeline reads them back by name.
+_DIAGNOSTIC_ONLY_MACDONALD_FIELDS = (
+    'bed_load_probability',
+    'suspended_probability',
+    'mean_particle_probability',
+    'bedload_velocity',
+    'suspended_transport_centroid_elevation_over_depth',
+    'total_transport_centroid_elevation_over_depth',
+    'particle_advection_velocity',
+    'bedform_roughness_height',
+    'macdonald_total_roughness_height',
+    'effective_chezy_coefficient',
+    'chezy_current_shear_velocity',
+    'chezy_equivalent_roughness_height',
+    'shear_velocity_ratio',
+    'suspended_transport_ratio',
+    'bed_load_transport_ratio',
+    'suspended_velocity_over_da_velocity',
+    '30z_s_over_k_s_total',
+    'mean_shear_velocity',
+    'selected_bed_shear_stress',
+    'suspended_load_velocity_lnpart',
+    'particle_velocity_over_da_velocity',
+    'mean_particle_velocity',
+)
+
+
+def test_add_physics_default_omits_diagnostic_only_fields():
+    """export_diagnostic_fields defaults to False: only required fields exist."""
+    sedtrails_data = _run_macdonald_add_physics(export_diagnostic_fields=False)
+
+    for field in _REQUIRED_MACDONALD_FIELDS:
+        assert sedtrails_data.has_physics_field(field), f'{field} should always be present'
+
+    for field in _DIAGNOSTIC_ONLY_MACDONALD_FIELDS:
+        assert not sedtrails_data.has_physics_field(field), f'{field} should be gated off by default'
+
+
+def test_add_physics_export_diagnostics_true_includes_all_fields():
+    """export_diagnostic_fields=True restores every field the old code always wrote."""
+    sedtrails_data = _run_macdonald_add_physics(export_diagnostic_fields=True)
+
+    for field in _REQUIRED_MACDONALD_FIELDS + _DIAGNOSTIC_ONLY_MACDONALD_FIELDS:
+        assert sedtrails_data.has_physics_field(field), f'{field} should be present when the flag is on'
+
+
+def test_add_physics_required_field_values_unaffected_by_export_diagnostics_flag():
+    """The gating flag must only add/remove field registrations, never change values.
+
+    This is the safety check for the refactor: several diagnostic-only fields
+    (e.g. bedload_velocity, suspended_transport_ratio) alias local variables
+    that are also required intermediates for centroid_particle_velocity and
+    profile_roughness_height. Skipping their *registration* must not skip or
+    otherwise disturb their *computation*, so every required field's value
+    must be bit-for-bit identical whether or not the flag is set.
+    """
+    data_off = _run_macdonald_add_physics(export_diagnostic_fields=False)
+    data_on = _run_macdonald_add_physics(export_diagnostic_fields=True)
+
+    for field in _REQUIRED_MACDONALD_FIELDS:
+        value_off = getattr(data_off, field)
+        value_on = getattr(data_on, field)
+        if isinstance(value_off, dict):
+            for key in value_off:
+                np.testing.assert_array_equal(value_off[key], value_on[key], err_msg=f'{field}[{key}] differs')
+        else:
+            np.testing.assert_array_equal(value_off, value_on, err_msg=f'{field} differs')

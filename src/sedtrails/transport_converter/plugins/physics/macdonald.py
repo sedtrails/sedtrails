@@ -218,10 +218,6 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         # bed load velocity (MacDonald et al., 2006, equation 30) - Engelund & Fredsoe (1976), same as Soulsby et al (2011)
         bed_load_velocity = physics_lib.compute_bed_load_velocity(max_shields_number, critical_shields, max_shear_velocity)
 
-        # MacDonald currently uses deterministic transport in the gridded 2D workflow.
-        bed_load_probability = np.ones_like(bed_load_velocity, dtype=float)
-        suspended_probability = np.ones_like(suspended_velocity, dtype=float)
-
         # sediment advection velocity (MacDonald et al., 2006, equation 32)
         u_zc = qs_qt * suspended_velocity + (1 - qs_qt) * bed_load_velocity
         # total transport centroid elevation (MacDonald et al., 2006, equation 34)
@@ -243,53 +239,28 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
 
         computation_type = str(getattr(self.config, 'computationType', '2D')).upper()
         if computation_type in {'2D', 'Q3D'}:
+            # export_diagnostic_fields gates fields that nothing in the transport,
+            # entrainment, or deposition pipeline reads back (verified by searching
+            # for consumers of every field name added below). Default False keeps
+            # memory use down on larger simulations. Everything registered outside
+            # the "if export_diagnostics:" block below is a required input to the
+            # 2D sampling logic (simulation_manager.py) or to
+            # update_q3d_particle_position(), and is always computed and stored
+            # regardless of this flag.
+            export_diagnostics = bool(getattr(self.config, 'export_diagnostic_fields', False))
+
             mixing_layer_thickness = np.zeros_like(centroid_particle_velocity)
-            mean_particle_probability = np.ones_like(centroid_particle_velocity, dtype=float)
-            suspended_centroid_over_depth = PhysicsPlugin.safe_divide(z_s, water_depth)
-            total_centroid_over_depth = PhysicsPlugin.safe_divide(z_c, water_depth)
-            shear_velocity_ratio = PhysicsPlugin.safe_divide(max_shear_velocity, mean_shear_velocity)
-            suspended_velocity_over_flow = PhysicsPlugin.safe_divide(suspended_velocity, flow_velocity_magnitude)
-            particle_velocity_over_flow = PhysicsPlugin.safe_divide(centroid_particle_velocity, flow_velocity_magnitude)
-            log_law_argument = PhysicsPlugin.safe_divide(30 * z_s, profile_roughness_height)
-            with np.errstate(divide='ignore', invalid='ignore'):
-                suspended_load_velocity_lnpart = np.where(
-                    log_law_argument > 0,
-                    np.log(log_law_argument),
-                    np.nan,
-                )
 
             sedtrails_data.add_physics_field('max_shields_number', max_shields_number)
             sedtrails_data.add_physics_field('mixing_layer_thickness', mixing_layer_thickness)
-            sedtrails_data.add_physics_field('bed_load_probability', bed_load_probability)
-            sedtrails_data.add_physics_field('suspended_probability', suspended_probability)
-            sedtrails_data.add_physics_field('mean_particle_probability', mean_particle_probability)
             sedtrails_data.add_physics_field('suspended_velocity', suspended_velocity)
-            sedtrails_data.add_physics_field('bedload_velocity', bed_load_velocity)
             sedtrails_data.add_physics_field('suspended_transport_centroid_elevation', z_s)
-            sedtrails_data.add_physics_field('suspended_transport_centroid_elevation_over_depth', suspended_centroid_over_depth)
             sedtrails_data.add_physics_field('total_transport_centroid_elevation', z_c)
-            sedtrails_data.add_physics_field('total_transport_centroid_elevation_over_depth', total_centroid_over_depth)
-            sedtrails_data.add_physics_field('particle_advection_velocity', centroid_particle_velocity)
             sedtrails_data.add_physics_field('rouse_number', rouse_number)
             sedtrails_data.add_physics_field('skin_roughness_height', k_s_skin_field)
-            sedtrails_data.add_physics_field('bedform_roughness_height', k_s_form)
-            sedtrails_data.add_physics_field('macdonald_total_roughness_height', k_s_total)
-            sedtrails_data.add_physics_field('effective_chezy_coefficient', effective_chezy)
-            sedtrails_data.add_physics_field('chezy_current_shear_velocity', chezy_current_shear_velocity)
-            sedtrails_data.add_physics_field('chezy_equivalent_roughness_height', k_s_chezy_equivalent)
             sedtrails_data.add_physics_field('profile_roughness_height', profile_roughness_height)
-            sedtrails_data.add_physics_field('shear_velocity_ratio', shear_velocity_ratio)
-            sedtrails_data.add_physics_field('suspended_transport_ratio', qs_qt)
-            sedtrails_data.add_physics_field('bed_load_transport_ratio', 1 - qs_qt)
-            sedtrails_data.add_physics_field('suspended_velocity_over_da_velocity', suspended_velocity_over_flow)
-            sedtrails_data.add_physics_field('30z_s_over_k_s_total', log_law_argument)
             sedtrails_data.add_physics_field('max_shear_velocity', max_shear_velocity)
-            sedtrails_data.add_physics_field('mean_shear_velocity', mean_shear_velocity)
             sedtrails_data.add_physics_field('selected_shear_velocity', selected_shear_velocity)
-            sedtrails_data.add_physics_field('selected_bed_shear_stress', selected_bed_shear_stress)
-            sedtrails_data.add_physics_field('suspended_load_velocity_lnpart', suspended_load_velocity_lnpart)
-            sedtrails_data.add_physics_field('particle_velocity_over_da_velocity', particle_velocity_over_flow)
-
             sedtrails_data.add_physics_field(
                 'centroid_particle_velocity',
                 {
@@ -298,14 +269,62 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
                     'magnitude': centroid_particle_velocity,
                 },
             )
-            sedtrails_data.add_physics_field(
-                'mean_particle_velocity',
-                {
-                    'x': centroid_particle_velocity_x,
-                    'y': centroid_particle_velocity_y,
-                    'magnitude': centroid_particle_velocity,
-                },
-            )
+
+            if export_diagnostics:
+                # MacDonald currently uses deterministic transport in the gridded
+                # 2D workflow, so these probabilities are always 1.0.
+                bed_load_probability = np.ones_like(bed_load_velocity, dtype=float)
+                suspended_probability = np.ones_like(suspended_velocity, dtype=float)
+                mean_particle_probability = np.ones_like(centroid_particle_velocity, dtype=float)
+                suspended_centroid_over_depth = PhysicsPlugin.safe_divide(z_s, water_depth)
+                total_centroid_over_depth = PhysicsPlugin.safe_divide(z_c, water_depth)
+                shear_velocity_ratio = PhysicsPlugin.safe_divide(max_shear_velocity, mean_shear_velocity)
+                suspended_velocity_over_flow = PhysicsPlugin.safe_divide(suspended_velocity, flow_velocity_magnitude)
+                particle_velocity_over_flow = PhysicsPlugin.safe_divide(centroid_particle_velocity, flow_velocity_magnitude)
+                log_law_argument = PhysicsPlugin.safe_divide(30 * z_s, profile_roughness_height)
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    suspended_load_velocity_lnpart = np.where(
+                        log_law_argument > 0,
+                        np.log(log_law_argument),
+                        np.nan,
+                    )
+
+                sedtrails_data.add_physics_field('bed_load_probability', bed_load_probability)
+                sedtrails_data.add_physics_field('suspended_probability', suspended_probability)
+                sedtrails_data.add_physics_field('mean_particle_probability', mean_particle_probability)
+                # bed_load_velocity, k_s_form, k_s_total, effective_chezy,
+                # k_s_chezy_equivalent, qs_qt, mean_shear_velocity, and
+                # selected_bed_shear_stress are already computed above regardless
+                # of this flag (they are required intermediates for
+                # centroid_particle_velocity / profile_roughness_height /
+                # selected_shear_velocity); only their extra, otherwise-unread
+                # field registrations are gated here.
+                sedtrails_data.add_physics_field('bedload_velocity', bed_load_velocity)
+                sedtrails_data.add_physics_field('suspended_transport_centroid_elevation_over_depth', suspended_centroid_over_depth)
+                sedtrails_data.add_physics_field('total_transport_centroid_elevation_over_depth', total_centroid_over_depth)
+                sedtrails_data.add_physics_field('particle_advection_velocity', centroid_particle_velocity)
+                sedtrails_data.add_physics_field('bedform_roughness_height', k_s_form)
+                sedtrails_data.add_physics_field('macdonald_total_roughness_height', k_s_total)
+                sedtrails_data.add_physics_field('effective_chezy_coefficient', effective_chezy)
+                sedtrails_data.add_physics_field('chezy_current_shear_velocity', chezy_current_shear_velocity)
+                sedtrails_data.add_physics_field('chezy_equivalent_roughness_height', k_s_chezy_equivalent)
+                sedtrails_data.add_physics_field('shear_velocity_ratio', shear_velocity_ratio)
+                sedtrails_data.add_physics_field('suspended_transport_ratio', qs_qt)
+                sedtrails_data.add_physics_field('bed_load_transport_ratio', 1 - qs_qt)
+                sedtrails_data.add_physics_field('suspended_velocity_over_da_velocity', suspended_velocity_over_flow)
+                sedtrails_data.add_physics_field('30z_s_over_k_s_total', log_law_argument)
+                sedtrails_data.add_physics_field('mean_shear_velocity', mean_shear_velocity)
+                sedtrails_data.add_physics_field('selected_bed_shear_stress', selected_bed_shear_stress)
+                sedtrails_data.add_physics_field('suspended_load_velocity_lnpart', suspended_load_velocity_lnpart)
+                sedtrails_data.add_physics_field('particle_velocity_over_da_velocity', particle_velocity_over_flow)
+                sedtrails_data.add_physics_field(
+                    'mean_particle_velocity',
+                    {
+                        'x': centroid_particle_velocity_x,
+                        'y': centroid_particle_velocity_y,
+                        'magnitude': centroid_particle_velocity,
+                    },
+                )
             return
 
         raise ValueError(f"Unsupported MacDonald computationType: {getattr(self.config, 'computationType', None)!r}")
@@ -510,8 +529,9 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         # The live particle-height-dependent values are recomputed later at each
         # particle's actual z_p in update_q3d_particle_position. Horizontal/vertical
         # diffusivity follow Eqs. 45 and 49; random-walk velocities depend on dt
-        # in Eqs. 51-52.
-        export_q3d_grid_diagnostics = bool(getattr(self.config, 'q3d_export_grid_diagnostics', False))
+        # in Eqs. 51-52. Shares the export_diagnostic_fields flag with add_physics()
+        # (formerly a separate q3d_export_grid_diagnostics flag).
+        export_q3d_grid_diagnostics = bool(getattr(self.config, 'export_diagnostic_fields', False))
         if export_q3d_grid_diagnostics:
             horizontal_diffusion_enabled = bool(
                 getattr(self.config, 'q3d_horizontal_diffusion_enabled', True)

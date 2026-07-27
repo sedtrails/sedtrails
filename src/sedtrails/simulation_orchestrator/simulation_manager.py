@@ -1377,19 +1377,8 @@ class Simulation:
             store_tracks,
         )
         physics_config = getattr(self.physics_converter, 'config', None)
-        q3d_save_first_substep_diagnostics = getattr(
-            physics_config,
-            'q3d_save_first_substep_diagnostics',
-            None,
-        )
-        q3d_diagnostics_legacy = getattr(physics_config, 'q3d_diagnostics', 'minimal')
-        legacy_requests_first_substep_diagnostics = (
-            str(q3d_diagnostics_legacy or 'minimal').strip().lower().replace('-', '_') == 'full'
-        )
-        q3d_save_first_substep_diagnostics = (
-            legacy_requests_first_substep_diagnostics
-            if q3d_save_first_substep_diagnostics is None
-            else bool(q3d_save_first_substep_diagnostics) or legacy_requests_first_substep_diagnostics
+        q3d_save_first_substep_diagnostics = bool(
+            getattr(physics_config, 'q3d_save_first_substep_diagnostics', False)
         )
         q3d_diagnostics = 'full' if q3d_save_first_substep_diagnostics else 'minimal'
         netcdf_options['q3d_diagnostics'] = q3d_diagnostics

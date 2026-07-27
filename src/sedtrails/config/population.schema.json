@@ -200,16 +200,10 @@
 				  "default": false,
 				  "description": "If true, store Q3D hydraulic and diffusion fields sampled at the first motion substep."
 				},
-				"q3d_diagnostics": {
-				  "type": "string",
-				  "enum": ["minimal", "full"],
-				  "default": "minimal",
-				  "description": "Legacy Q3D particle output level. Prefer q3d_save_first_substep_diagnostics; full is equivalent to true and minimal is equivalent to false."
-				},
-				"q3d_export_grid_diagnostics": {
+				"export_diagnostic_fields": {
 				  "type": "boolean",
 				  "default": false,
-				  "description": "If true, MacDonald Q3D also exports grid-level diffusion and vertical velocity diagnostic fields that are redundant with the particle-level Q3D calculation."
+				  "description": "If true, also compute and export MacDonald diagnostic-only fields that are not read by any part of the transport/entrainment/deposition pipeline: grid-level fields shared by 2D and Q3D (e.g. shear_velocity_ratio, suspended_transport_ratio, bedload_velocity, chezy diagnostics) and, for Q3D, the grid-level diffusion and vertical-velocity fields that are redundant with the particle-level Q3D calculation. Leave false to reduce memory use on larger simulations."
 				}
             },
             "description": "Macdonald method for particle tracking"
