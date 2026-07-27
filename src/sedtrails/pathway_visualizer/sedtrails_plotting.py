@@ -334,7 +334,7 @@ def plot_trajectories_by_baseline(
     -----
     Mirrors the rotated-axis idea used in the MATLAB pathway plots. The color
     is computed from the *initial* rotated-X coordinate per particle and then
-    broadcast to all timesteps. :contentReference[oaicite:2]{index=2}
+    broadcast to all timesteps.
     """
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -710,7 +710,7 @@ class ParticleStats:
 
 def compute_particle_stats(tr: TrajectoryArrays, first_stable_index: int = 0) -> List[ParticleStats]:
     """
-    Compute per-particle trajectory statistics similar to analyze_pathways.m. :contentReference[oaicite:3]{index=3}
+    Compute per-particle trajectory statistics similar to analyze_pathways.m.
 
     Parameters
     ----------
