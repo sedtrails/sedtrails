@@ -255,3 +255,71 @@ def _base_config():
             ]
         }
     }
+
+
+def test_population_schema_accepts_macdonald_2d_deposition_options(tmp_path):
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'computationType': '2D',
+            'entrainment': {
+                'method': 'entrainment_frequency',
+                'probability_law': 'linear',
+            },
+            'deposition': {
+                'method': 'markov_settling',
+                'settling_height_field': 'water_depth',
+                'minimum_settling_height': 0.002,
+            },
+        }
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    macdonald = validated['particles']['populations'][0]['tracer_methods']['macdonald']
+    assert macdonald['entrainment'] == {
+        'method': 'entrainment_frequency',
+        'probability_law': 'linear',
+    }
+    deposition = macdonald['deposition']
+    assert deposition == {
+        'method': 'markov_settling',
+        'settling_height_field': 'water_depth',
+        'minimum_settling_height': pytest.approx(0.002),
+    }
+
+
+@pytest.mark.parametrize(
+    'entrainment',
+    [
+        {'method': 'threshold'},
+        {'method': 'entrainment_frequency', 'probability_law': 'unsupported'},
+        {'method': 'shields_threshold', 'probability_law': 'poisson'},
+        {'method': 'non_zero_particle_velocity', 'probability_law': 'linear'},
+    ],
+)
+def test_population_schema_rejects_invalid_macdonald_2d_entrainment(tmp_path, entrainment):
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {'computationType': '2D', 'entrainment': entrainment}
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+@pytest.mark.parametrize(
+    'deposition',
+    [
+        {'method': 'threshold'},
+        {'method': 'markov_settling', 'settling_height_field': 'total_transport_centroid_elevation'},
+        {'method': 'markov_settling', 'minimum_settling_height': 0.0},
+    ],
+)
+def test_population_schema_rejects_invalid_macdonald_2d_deposition(tmp_path, deposition):
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {'computationType': '2D', 'deposition': deposition}
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)

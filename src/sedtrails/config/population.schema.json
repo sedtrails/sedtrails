@@ -117,6 +117,65 @@
                   "default": "mean",
                   "description": "Select whether MacDonald formulas use the max or mean bed shear stress/shear velocity fields for Rouse number, Shields-dependent transport, and Q3D turbulence."
                 },
+                "entrainment": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "method": {
+                      "type": "string",
+                      "enum": ["shields_threshold", "non_zero_particle_velocity", "entrainment_frequency"],
+                      "default": "shields_threshold",
+                      "description": "MacDonald 2D and Q3D bed-to-suspension transition rule. shields_threshold applies the critical Shields criterion; non_zero_particle_velocity makes every eligible deposited particle available and lets its calculated transport velocity determine motion; entrainment_frequency uses the configured probability law."
+                    },
+                    "probability_law": {
+                      "type": "string",
+                      "enum": ["poisson", "linear"],
+                      "description": "Optional probability conversion used only with method entrainment_frequency. If omitted, poisson is used. poisson uses 1-exp(-f_e*dt); linear uses min(f_e*dt, 1)."
+                    }
+                  },
+                  "dependentSchemas": {
+                    "probability_law": {
+                      "properties": {
+                        "method": {"const": "entrainment_frequency"}
+                      },
+                      "required": ["method"]
+                    }
+                  },
+                  "default": {
+                    "method": "shields_threshold"
+                  },
+                  "description": "Shared entrainment configuration used by MacDonald 2D and Q3D."
+                },
+                "deposition": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "method": {
+                      "type": "string",
+                      "enum": ["shields_threshold", "markov_settling"],
+                      "default": "shields_threshold",
+                      "description": "MacDonald 2D deposition rule. shields_threshold deposits when local Shields mobility is at or below critical or particle velocity is zero. markov_settling uses the memoryless settling transition probability 1-exp(-nu*dt)."
+                    },
+                    "settling_height_field": {
+                      "type": "string",
+                      "enum": ["suspended_transport_centroid_elevation", "water_depth"],
+                      "default": "suspended_transport_centroid_elevation",
+                      "description": "Settling distance h used by markov_settling: the suspended-load centroid elevation or the full local water depth."
+                    },
+                    "minimum_settling_height": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 0.001,
+                      "description": "Positive lower bound [m] applied to the selected settling height in the Markov transition-rate calculation."
+                    }
+                  },
+                  "default": {
+                    "method": "shields_threshold",
+                    "settling_height_field": "suspended_transport_centroid_elevation",
+                    "minimum_settling_height": 0.001
+                  },
+                  "description": "Deposition configuration used by MacDonald 2D."
+                },
 				"max_suspended_velocity_factor": {
 				  "type": ["number", "null"],
 				  "default": 1.0,
@@ -126,18 +185,6 @@
 				  "type": "boolean",
 				  "default": true,
 				  "description": "If false, disable Q3D horizontal turbulent diffusion and its random-walk velocity components without changing geometric-scheme vertical diffusion."
-				},
-				"q3d_entrainment_mode": {
-				  "type": "string",
-				  "enum": ["shields_threshold", "non_zero_particle_velocity", "entrainment_frequency"],
-				  "default": "shields_threshold",
-				  "description": "Rule used in Q3D to decide which available bed particles enter suspension. shields_threshold uses turbulent Shields > critical Shields; non_zero_particle_velocity sends every available particle into the Q3D motion calculation and lets the computed particle velocities decide whether it moves; entrainment_frequency uses the q3d_entrainment_frequency field computed by MacDonald."
-				},
-				"q3d_entrainment_probability_law": {
-				  "type": "string",
-				  "enum": ["poisson", "linear"],
-				  "default": "poisson",
-				  "description": "Probability law used only when q3d_entrainment_mode is entrainment_frequency. poisson uses P = 1 - exp(-f_e dt); linear uses the MacDonald Eq. 68 small-timestep approximation P = min(f_e dt, 1)."
 				},
 				"q3d_vertical_update_scheme": {
 				  "type": "string",

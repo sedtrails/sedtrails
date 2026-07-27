@@ -310,6 +310,106 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
 
         raise ValueError(f"Unsupported MacDonald computationType: {getattr(self.config, 'computationType', None)!r}")
     
+    def _calculate_entrainment_frequency(
+        self,
+        max_bed_shear_stress,
+        critical_shields,
+        timestep,
+    ):
+        """Calculate shared MacDonald turbulent entrainment fields.
+
+        Returns turbulent shear stress, turbulent Shields number, active-layer
+        thickness, and entrainment frequency. Both 2D and Q3D call this method
+        so they use the same random shear realization and Eqs. 53-64.
+        """
+        max_bed_shear_stress = np.asarray(max_bed_shear_stress, dtype=float)
+        s = physics_lib.calculate_relative_density_ratio(
+            self.config.particle_density,
+            self.config.water_density,
+        )
+        gamma = getattr(
+            self.config,
+            'entrainment_turbulence_gamma',
+            getattr(self.config, 'q3d_turbulence_gamma', 0.005 * float(timestep)),
+        )
+        sigma_tau = gamma * max_bed_shear_stress
+        turbulent_shear = np.random.normal(max_bed_shear_stress, sigma_tau)
+        turbulent_shear = np.clip(turbulent_shear, a_min=0.0, a_max=None)
+        turbulent_shields = PhysicsPlugin.safe_divide(
+            turbulent_shear,
+            self.config.water_density
+            * self.config.gravity
+            * self.config.grain_diameter
+            * (s - 1),
+        )
+
+        q_pickup = np.zeros_like(turbulent_shields, dtype=float)
+        valid_pickup = (
+            np.isfinite(turbulent_shields)
+            & np.isfinite(critical_shields)
+            & (critical_shields > 0)
+            & (turbulent_shields > critical_shields)
+        )
+        theta_excess = PhysicsPlugin.safe_divide(
+            turbulent_shields[valid_pickup] - critical_shields,
+            critical_shields,
+        )
+        q_pickup[valid_pickup] = (
+            0.00033
+            * theta_excess**1.5
+            * (
+                ((s - 1) * self.config.gravity * self.config.grain_diameter**3)
+                / self.config.kinematic_viscosity**2
+            ) ** 0.1
+            * np.sqrt((s - 1) * self.config.gravity * self.config.grain_diameter)
+        )
+        pickup_frequency = q_pickup / self.config.grain_diameter
+
+        active_layer_thickness = np.zeros_like(turbulent_shields, dtype=float)
+        active_layer_thickness[valid_pickup] = (
+            5
+            * (turbulent_shields[valid_pickup] - critical_shields)
+            * self.config.grain_diameter
+        )
+        mixing_factor = np.where(
+            active_layer_thickness > self.config.grain_diameter,
+            PhysicsPlugin.safe_divide(
+                self.config.grain_diameter,
+                active_layer_thickness,
+                fill=1.0,
+            ),
+            1.0,
+        )
+        # Burial depth is handled by particle status eligibility. The grid-level
+        # MacDonald burial factor remains one wherever an active layer exists.
+        burial_factor = np.where(active_layer_thickness > 0.0, 1.0, 0.0)
+        entrainment_frequency = burial_factor * mixing_factor * pickup_frequency
+        return (
+            turbulent_shear,
+            turbulent_shields,
+            active_layer_thickness,
+            entrainment_frequency,
+        )
+
+    def _add_2d_entrainment_frequency(
+        self,
+        sedtrails_data: SedtrailsData,
+        grain_properties: dict[str, float],
+        timestep: float,
+    ) -> None:
+        critical_shields = grain_properties.get('critical_shields')
+        if critical_shields is None:
+            raise ValueError("Missing required 'critical_shields' value in grain_properties.")
+        _, _, _, entrainment_frequency = self._calculate_entrainment_frequency(
+            sedtrails_data.max_bed_shear_stress,
+            critical_shields,
+            timestep,
+        )
+        sedtrails_data.add_physics_field(
+            'macdonald_entrainment_frequency',
+            entrainment_frequency,
+        )
+
     def add_timestep_physics(
         self,
         sedtrails_data: SedtrailsData,
@@ -326,10 +426,21 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         """
 
         computation_type = str(getattr(self.config, 'computationType', '2D')).upper()
-        if computation_type != 'Q3D':
-            return
         self.config.current_timestep = float(current_timestep)
-        self._add_q3d_timestep_physics(sedtrails_data, grain_properties)
+        if computation_type == 'Q3D':
+            self._add_q3d_timestep_physics(sedtrails_data, grain_properties)
+            return
+
+        entrainment_config = getattr(self.config, 'entrainment', {}) or {}
+        entrainment_method = str(
+            entrainment_config.get('method', 'shields_threshold')
+        ).lower().replace('-', '_')
+        if computation_type == '2D' and entrainment_method == 'entrainment_frequency':
+            self._add_2d_entrainment_frequency(
+                sedtrails_data,
+                grain_properties,
+                float(current_timestep),
+            )
 
     def _add_q3d_timestep_physics(self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float]) -> None:
         """Add MacDonald Q3D fields that depend on the current particle timestep.
@@ -360,83 +471,19 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         z_c = sedtrails_data.total_transport_centroid_elevation
         centroid_particle_velocity = sedtrails_data.centroid_particle_velocity['magnitude']
         max_bed_shear_stress = sedtrails_data.max_bed_shear_stress
-        s = physics_lib.calculate_relative_density_ratio(self.config.particle_density, self.config.water_density)
-
-        # Turbulent bed shear follows the Gaussian instantaneous shear model
-        # from MacDonald (2006), Eq. 53, with sigma_tau = gamma * mean_tau
-        # from Eq. 54. PTM scales gamma with dt; this implementation keeps
-        # that timestep dependence configurable via q3d_turbulence_gamma.
-        gamma = getattr(self.config, 'q3d_turbulence_gamma', 0.005 * timestep)
-        sigma_tau = gamma * max_bed_shear_stress
-        turbulent_shear = np.random.normal(max_bed_shear_stress, sigma_tau)
-        turbulent_shear = np.clip(turbulent_shear, a_min=0.0, a_max=None)
-
-        # Turbulent Shields number from MacDonald (2006), Eq. 59.
-        turbulent_shields = PhysicsPlugin.safe_divide(
+        # Use the same turbulent shear, Shields, active-layer, and entrainment-
+        # frequency calculation as MacDonald 2D. This produces one internally
+        # consistent random shear realization for all four Q3D fields.
+        (
             turbulent_shear,
-            self.config.water_density * self.config.gravity * self.config.grain_diameter * (s - 1),
-        )
-
-        # Note Vassia: here the hiding and exposure effects are not included in the turbulent shields number. 
-        # For future implementation look at the hiding and exposure correction factor ksi (MacDonald et al., 2006, Eq. 55) 
-
-        # Pickup rate q_p is van Rijn's pickup function as used by PTM
-        # (MacDonald 2006, Eq. 58).
-        q_pickup = np.zeros_like(turbulent_shields, dtype=float)
-        valid_pickup = (
-            np.isfinite(turbulent_shields)
-            & np.isfinite(critical_shields)
-            & (critical_shields > 0)
-            & (turbulent_shields > critical_shields)
-        )
-        theta_excess = PhysicsPlugin.safe_divide(
-            turbulent_shields[valid_pickup] - critical_shields,
+            turbulent_shields,
+            h_active,
+            freq_entrainment,
+        ) = self._calculate_entrainment_frequency(
+            max_bed_shear_stress,
             critical_shields,
+            timestep,
         )
-        q_pickup[valid_pickup] = (
-            0.00033
-            * theta_excess**1.5
-            * (
-                ((s - 1) * self.config.gravity * self.config.grain_diameter**3)
-                / self.config.kinematic_viscosity**2
-            ) ** 0.1
-            * np.sqrt((s - 1) * self.config.gravity * self.config.grain_diameter)
-        )
-        # Frequency that a particle will be picked up from the bed in any given time interval
-        # followed by f_p = q_p / D (Eq. 61)
-        freq_pickup = q_pickup / self.config.grain_diameter
-
-        # Active-layer thickness (the depth of the mobilised bed to resist 
-        # the excess of shear stress applied at the top of the bed) uses 
-        # MacDonald's practical Wilson-model approximation 
-        # h_active ~= 5 * (theta_t - theta_cr) * D (Eq. 63).
-        h_active = np.zeros_like(turbulent_shields, dtype=float)
-        h_active[valid_pickup] = (
-            5 * (turbulent_shields[valid_pickup] - critical_shields) * self.config.grain_diameter
-        )
-        # Entrainment frequency combines pickup, active-layer mixing, and
-        # burial factors: f_e = K_burial * K_mixing * f_p (Eq. 57).
-        # K_mixing follows Eq. 64. h_burial is a placeholder here, so
-        # K_burial (Eq. 66) is currently one wherever h_active > 0.
-        K_mixing = np.where(
-            h_active > self.config.grain_diameter,
-            PhysicsPlugin.safe_divide(self.config.grain_diameter, h_active, fill=1.0),
-            1.0,
-        )
-        h_burial = np.zeros_like(h_active)
-        K_burial = np.where(
-            h_active > 0,
-            1.0 - PhysicsPlugin.safe_divide(h_burial, h_active, fill=0.0),
-            0.0,
-        )
-        K_burial = np.clip(K_burial, 0, 1)
-        # frequency that a particle will be entrained from the bed based on the pickup frequency 
-        # a reduction factor (Kmixing) to account for the fact that the particle might lie anywhere 
-        # within the thickness of the active sediment transport layer at the particle location.
-        # K_burial is a reduction factor to account for the fact that the particle might be buried 
-        # by other particles in the active layer and therefore not available for entrainment.
-        freq_entrainment = K_burial * K_mixing * freq_pickup # MacDonald (Eq. 57).
-
         # Mean fall time from centroid elevation is t_f = z_c / w_s (Eq. 36).
         t_fall = PhysicsPlugin.safe_divide(z_c, settling_velocity, fill=0.0)
         # The proportion of time that a particle would be expected to be entrained
@@ -536,7 +583,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         sedtrails_data.add_physics_field('turbulent_shear_stress', turbulent_shear)
         sedtrails_data.add_physics_field('active_layer_thickness', h_active)        
         sedtrails_data.add_physics_field('q3d_entrainment_height_above_bed', z_entrainment)
-        sedtrails_data.add_physics_field('q3d_entrainment_frequency', freq_entrainment)
+        sedtrails_data.add_physics_field('macdonald_entrainment_frequency', freq_entrainment)
         sedtrails_data.add_physics_field('q3d_velocity_deficit_coefficient', velocity_deficit_coeff)
         sedtrails_data.add_physics_field('turbulent_shields_number', turbulent_shields)
         sedtrails_data.add_physics_field('q3d_vertical_velocity_gradient', q3d_vertical_velocity_gradient)
@@ -555,6 +602,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
             sedtrails_data.add_physics_field('vertical_particle_velocity', vertical_particle_velocity)
 
     @staticmethod
+
     def compute_dh_dt(water_depth, bed_level, dt):
         """
         Time derivative of water depth dh/dt using backward difference.
@@ -580,6 +628,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
 
 
     @staticmethod
+
     def divergence_scattered_knn_time(
         x, y,
         u, v,
@@ -642,6 +691,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         return divU, dudx, dvdy
 
     @staticmethod
+
     def divergence_scattered_knn(
         x, y, u, v,
         k=12,
@@ -725,6 +775,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
 
 
     @staticmethod
+
     def apply_q3d_velocity_deficit(
         u_zp: xr.DataArray,
         u_zc: xr.DataArray,
@@ -787,6 +838,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         return u_particle
 
     @staticmethod
+
     def compute_turbulent_diffusion_coefficients(
         water_depth,
         z_p,
@@ -870,6 +922,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
 
 
     @staticmethod
+
     def compute_random_walk_diffusion_velocities(
         E_turb_hor,
         E_turb_vert,
@@ -1013,6 +1066,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
     
 
     @staticmethod
+
     def calculate_macdonald_susp_load_height(rouse_number, water_depth):
         """
         Compute suspended-load centroid height z_s using a 1D lookup table of z_over_h = z_s/H vs Rouse.
@@ -1144,6 +1198,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
     
 
     @staticmethod
+
     def _get_effective_chezy_field(sedtrails_data: SedtrailsData, water_depth: np.ndarray, default: float = 65.0) -> np.ndarray:
         """Return effective Chezy coefficient C_eff, falling back to a constant field."""
         for name in ('effective_chezy', 'effective_chezy_coefficient', 'chezy_coefficient'):
@@ -1159,6 +1214,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         return np.broadcast_to(chezy, water_depth.shape).copy()
 
     @staticmethod
+
     def calculate_chezy_equivalent_roughness_height(
         water_depth: np.ndarray,
         chezy_coefficient: np.ndarray,
@@ -1183,6 +1239,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         return roughness
 
     @staticmethod
+
     def calculate_macdonald_loglaw_velocity_at_z(
         shear_velocity: np.ndarray,
         z: np.ndarray,
@@ -1232,6 +1289,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
 
 
     @staticmethod
+
     def cap_particle_velocity(
         velocity: xr.DataArray,
         flow_velocity_magnitude: xr.DataArray,
@@ -1262,6 +1320,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         return np.minimum(velocity, max_velocity_factor * flow_velocity_magnitude)
 
     @staticmethod
+
     def safe_divide(numerator, denominator, fill=np.nan):
         """Divide arrays while returning `fill` where the denominator is zero or invalid."""
 
@@ -1274,6 +1333,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         return result
     
     @staticmethod
+
     def calculate_2d_total_load_particle_advection_velocity(shear_velocity, reference_height, total_roughness):
         """
         Compute horizontal mean particle advection velocity u_a following

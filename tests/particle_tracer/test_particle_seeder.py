@@ -969,6 +969,22 @@ class TestParticleFactory:
         assert particles[0].vertical_position_mode == 'height_above_bed'
         assert particles[0].vertical_position_value == pytest.approx(0.4)
 
+    def test_burial_depth_mode_rejects_unused_vertical_position_value(self):
+        with pytest.raises(ValueError, match='vertical_position.value.*not used.*seeding.burial_depth'):
+            PopulationConfig(
+                {
+                    'name': 'Invalid burial-depth value config',
+                    'particle_type': 'sand',
+                    'seeding': {
+                        'strategy': {'point': {'locations': ['0,0']}},
+                        'quantity': 1,
+                        'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {'constant': 0.1},
+                        'vertical_position': {'mode': 'burial_depth', 'value': 0.1},
+                    },
+                }
+            )
+
     def test_scalar_burial_depth_is_normalized_to_constant_config(self):
         """Legacy scalar burial depths should remain valid population input."""
         config = PopulationConfig(
@@ -1197,6 +1213,7 @@ def population_config():
 
 
 class TestParticlePopulation:
+
     @staticmethod
     def _status_test_population(current_time=0.0):
         config = PopulationConfig(
@@ -1331,8 +1348,8 @@ class TestParticlePopulation:
 
         assert len(population.particles['x']) == 0
         assert len(population.particles['y']) == 0
-        assert population.particles['status_mobile'].dtype == bool
-        assert len(population.particles['status_mobile']) == 0
+        assert population.particles['status_eligible'].dtype == bool
+        assert len(population.particles['status_eligible']) == 0
 
     def test_update_information_accepts_scalar_transport_probability(self, point_config_simple):
         """Scalar fields should update particles without allocating full grid fields."""
@@ -1550,8 +1567,8 @@ class TestParticlePopulation:
         np.testing.assert_allclose(population.particles['transport_probability'], 1.0)
         np.testing.assert_allclose(population.particles['bed_level'], 30.0)
 
-    def test_update_status_uses_status_keys_and_mobile_mask_composition(self, monkeypatch):
-        """Only particles that satisfy every status flag should be mobile."""
+    def test_update_status_uses_status_keys_and_eligibility_composition(self, monkeypatch):
+        """Only particles satisfying every general status flag should be eligible."""
         population = self._status_test_population(current_time=0.0)
         monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.array([0.0, 0.0, 0.0, 1.0]))
 
@@ -1563,7 +1580,7 @@ class TestParticlePopulation:
             'status_domain',
             'status_released',
             'status_transported',
-            'status_mobile',
+            'status_eligible',
         }
         assert expected_keys.issubset(population.particles)
         assert not any(
@@ -1586,7 +1603,7 @@ class TestParticlePopulation:
         np.testing.assert_array_equal(population.particles['status_domain'], np.array([True, True, False, True]))
         np.testing.assert_array_equal(population.particles['status_released'], np.array([True, True, True, True]))
         np.testing.assert_array_equal(population.particles['status_transported'], np.array([True, True, True, False]))
-        np.testing.assert_array_equal(population.particles['status_mobile'], np.array([True, False, False, False]))
+        np.testing.assert_array_equal(population.particles['status_eligible'], np.array([True, False, False, False]))
 
     def test_update_status_uses_cached_simplex_ids_for_domain_mask(self, monkeypatch):
         """Domain status should use cached simplex ids instead of polygon scans."""
@@ -1625,7 +1642,7 @@ class TestParticlePopulation:
         assert population._particle_simplices[2] == -1
         assert np.all(population._particle_simplices[[0, 1, 3]] >= 0)
 
-    def test_update_status_requires_released_particles_for_mobile_mask(self, monkeypatch):
+    def test_update_status_requires_released_particles_for_eligibility(self, monkeypatch):
         """Particles that are otherwise mobile should not move before release."""
         population = self._status_test_population(current_time=-1.0)
         monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
@@ -1633,7 +1650,7 @@ class TestParticlePopulation:
         population.update_status()
 
         np.testing.assert_array_equal(population.particles['status_released'], np.array([False, False, False, False]))
-        np.testing.assert_array_equal(population.particles['status_mobile'], np.array([False, False, False, False]))
+        np.testing.assert_array_equal(population.particles['status_eligible'], np.array([False, False, False, False]))
 
     def test_update_status_no_probability_skips_random_draw(self, monkeypatch):
         """No-probability transport should mark particles transported without RNG allocation."""
@@ -1644,7 +1661,7 @@ class TestParticlePopulation:
         population.update_status()
 
         np.testing.assert_array_equal(population.particles['status_transported'], np.array([True]))
-        np.testing.assert_array_equal(population.particles['status_mobile'], np.array([True]))
+        np.testing.assert_array_equal(population.particles['status_eligible'], np.array([True]))
 
     def test_update_status_reuses_cached_particle_locations(self, monkeypatch):
         """Unchanged particles should not be relocated on every status update."""
@@ -1756,6 +1773,7 @@ class TestParticlePopulation:
         monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
 
         population.update_status()
+        population.particles['status_mobile'] = population.particles['status_eligible'].copy()
         population.update_position(
             flow_field={'u': np.zeros(3), 'v': -np.ones(3)},
             current_timestep=0.5,
@@ -1769,7 +1787,7 @@ class TestParticlePopulation:
         population.update_status()
 
         assert population.particles['status_alive'].tolist() == [False]
-        assert population.particles['status_mobile'].tolist() == [False]
+        assert population.particles['status_eligible'].tolist() == [False]
 
     def test_open_boundary_exit_keeps_original_update_mask_shape(self, monkeypatch):
         """Boundary exits should not shrink the mobile mask before position assignment."""
@@ -1781,6 +1799,7 @@ class TestParticlePopulation:
         monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
 
         population.update_status()
+        population.particles['status_mobile'] = population.particles['status_eligible'].copy()
         population.update_position(
             flow_field={'u': np.zeros(3), 'v': -np.ones(3)},
             current_timestep=0.5,
@@ -1797,6 +1816,7 @@ class TestParticlePopulation:
         monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
 
         population.update_status()
+        population.particles['status_mobile'] = population.particles['status_eligible'].copy()
         population.update_position(
             flow_field={'u': -np.ones(3), 'v': np.zeros(3)},
             current_timestep=0.5,
@@ -1814,7 +1834,7 @@ class TestParticlePopulation:
 
         assert population.particles['status_beached'].tolist() == [False]
         assert population.particles['status_alive'].tolist() == [True]
-        assert population.particles['status_mobile'].tolist() == [True]
+        assert population.particles['status_eligible'].tolist() == [True]
 
     def test_update_position_carries_cached_simplex_ids(self, point_config_simple):
         """Position updates should reuse and refresh particle simplex ids."""
@@ -2348,14 +2368,14 @@ class TestRemovePermanentlyBuriedParticles:
         population.update_status()
 
         assert population.particles['status_released'].tolist() == [False]
-        assert population.particles['status_mobile'].tolist() == [False]
+        assert population.particles['status_eligible'].tolist() == [False]
         np.testing.assert_array_equal(population.particles['release_time'], np.array([600.0]))
 
         population._current_time = 600.0
         population.update_status()
 
         assert population.particles['status_released'].tolist() == [True]
-        assert population.particles['status_mobile'].tolist() == [True]
+        assert population.particles['status_eligible'].tolist() == [True]
         np.testing.assert_array_equal(population.particles['release_time'], np.array([600.0]))
 
     def test_invalid_release_time_raises_date_format_error(self):
@@ -2465,3 +2485,280 @@ def _boundary_action_field_data():
             'edge_classes': ['open', 'land', 'unclassified'],
         },
     )
+
+
+def _macdonald_2d_test_population():
+    config = PopulationConfig(
+        {
+            'name': 'MacDonald 2D deposition test',
+            'particle_type': 'sand',
+            'transport_probability': 'no_probability',
+            'tracer_methods': {'macdonald': {'computationType': '2D'}},
+            'seeding': {
+                'strategy': {'point': {'locations': ['0.5,0.5']}},
+                'quantity': 1,
+                'release_start': '0',
+                'burial_depth': {'constant': 0.0},
+                'vertical_position': {'mode': 'height_above_bed', 'value': 0.1},
+            },
+        }
+    )
+    population = ParticlePopulation(
+        field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+        field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+        population_config=config,
+    )
+    population._current_time = 0.0
+    population.update_status()
+    population.initialize_macdonald_2d_release_state()
+    return population
+
+
+def _constant_flow_field(speed):
+    return {
+        'u': np.full(4, speed, dtype=float),
+        'v': np.zeros(4, dtype=float),
+        'magnitude': np.full(4, abs(speed), dtype=float),
+    }
+
+
+def test_macdonald_2d_release_state_maps_bed_and_burial_modes():
+    population = _macdonald_2d_test_population()
+
+    population.particles['vertical_position_initialized'][:] = False
+    population.particles['vertical_position_mode'][:] = 'bed'
+    population.particles['status_deposited'][:] = False
+    population.particles['status_suspended'][:] = True
+    population.initialize_macdonald_2d_release_state()
+
+    assert population.particles['status_deposited'].tolist() == [True]
+    assert population.particles['status_suspended'].tolist() == [False]
+    assert population.particles['status_buried'].tolist() == [False]
+
+    population.particles['vertical_position_initialized'][:] = False
+    population.particles['vertical_position_mode'][:] = 'burial_depth'
+    population.particles['burial_depth'][:] = 0.2
+    population.initialize_macdonald_2d_release_state()
+
+    assert population.particles['status_deposited'].tolist() == [True]
+    assert population.particles['status_suspended'].tolist() == [False]
+    # no_probability deliberately skips the burial-depth/mixing-depth comparison.
+    assert population.particles['status_buried'].tolist() == [False]
+    assert population.particles['status_eligible'].tolist() == [True]
+
+
+def test_burial_status_recalculation_uses_initialized_depth_immediately():
+    population = _macdonald_2d_test_population()
+    population.particles['mixing_depth'] = np.array([0.1])
+
+    population.population_config.population_config['transport_probability'] = 'stochastic_transport'
+    assert population.update_status_buried(np.array([0.2])).tolist() == [True]
+
+    population.population_config.population_config['transport_probability'] = 'no_probability'
+    assert population.update_status_buried(np.array([0.2])).tolist() == [False]
+
+def test_vanwesten_burial_status_regression_is_unchanged():
+    config = PopulationConfig(
+        {
+            'name': 'Van Westen burial regression',
+            'particle_type': 'sand',
+            'transport_probability': 'stochastic_transport',
+            'tracer_methods': {'vanwesten': {}},
+            'seeding': {
+                'strategy': {'point': {'locations': ['0.25,0.5', '0.75,0.5']}},
+                'quantity': 1,
+                'release_start': '0',
+                'burial_depth': {'constant': 0.2},
+            },
+        }
+    )
+    population = ParticlePopulation(
+        field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+        field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+        population_config=config,
+    )
+    population._current_time = 0.0
+    population.particles['mixing_depth'] = np.array([0.1, 0.3])
+    population.particles['transport_probability'] = np.ones(2)
+    population.update_status()
+
+    np.testing.assert_allclose(population.particles['burial_depth'], [0.2, 0.2])
+    assert population.particles['status_buried'].tolist() == [True, False]
+    assert population.particles['status_eligible'].tolist() == [False, True]
+    assert population.particles['status_deposited'].tolist() == [True, True]
+    assert population.particles['status_suspended'].tolist() == [False, False]
+    assert population.particles['vertical_position_initialized'].tolist() == [False, False]
+
+def test_macdonald_2d_shields_threshold_deposits_and_reentrains():
+    population = _macdonald_2d_test_population()
+
+    population.sample_macdonald_2d_transition_fields(
+        particle_velocity_field=_constant_flow_field(1.0),
+        shields_number_field=np.full(4, 0.04),
+    )
+    population.update_macdonald_2d_deposition(
+        method='shields_threshold',
+        critical_shields_number=0.05,
+        current_timestep=1.0,
+    )
+    assert population.particles['status_deposited'].tolist() == [True]
+    assert population.particles['status_mobile'].tolist() == [False]
+
+    # Shields-only entrainment must not depend on the particle velocity field.
+    population.sample_macdonald_2d_transition_fields(
+        shields_number_field=np.full(4, 0.06),
+    )
+    population.update_macdonald_2d_entrainment(
+        method='shields_threshold',
+        critical_shields_number=0.05,
+        current_timestep=1.0,
+    )
+    assert population.particles['status_deposited'].tolist() == [False]
+    assert population.particles['status_suspended'].tolist() == [True]
+    assert population.particles['status_mobile'].tolist() == [True]
+
+
+def test_macdonald_2d_frequency_entrainment_uses_poisson_probability():
+    population = _macdonald_2d_test_population()
+    population.particles['status_deposited'][:] = True
+    population.particles['status_suspended'][:] = False
+    population.sample_macdonald_2d_transition_fields(
+        entrainment_frequency_field=np.full(4, 1.0),
+    )
+
+    population.update_macdonald_2d_entrainment(
+        method='entrainment_frequency',
+        critical_shields_number=None,
+        current_timestep=100.0,
+        probability_law='poisson',
+        rng=np.random.default_rng(1),
+    )
+
+    assert population.particles['macdonald_2d_entrainment_probability'][0] == pytest.approx(1.0)
+    assert population.particles['status_entrained_now'].tolist() == [True]
+    assert population.particles['status_deposited'].tolist() == [False]
+    assert population.particles['status_suspended'].tolist() == [True]
+    assert population.particles['status_mobile'].tolist() == [True]
+
+@pytest.mark.parametrize(
+    'entrainment_method',
+    ['shields_threshold', 'non_zero_particle_velocity', 'entrainment_frequency'],
+)
+@pytest.mark.parametrize('deposition_method', ['shields_threshold', 'markov_settling'])
+def test_macdonald_2d_entrainment_deposition_combinations(
+    entrainment_method,
+    deposition_method,
+):
+    population = _macdonald_2d_test_population()
+    population.particles['status_deposited'][:] = True
+    population.particles['status_suspended'][:] = False
+    population.sample_macdonald_2d_transition_fields(
+        particle_velocity_field=_constant_flow_field(1.0),
+        shields_number_field=np.full(4, 0.06),
+        entrainment_frequency_field=np.full(4, 100.0),
+        settling_height_field=np.full(4, 1.0),
+        shear_velocity_field=np.full(4, 0.05),
+    )
+
+    population.update_macdonald_2d_entrainment(
+        method=entrainment_method,
+        critical_shields_number=0.05,
+        current_timestep=1.0,
+        rng=np.random.default_rng(1),
+    )
+    population.update_macdonald_2d_deposition(
+        method=deposition_method,
+        critical_shields_number=0.05,
+        current_timestep=1.0,
+        settling_velocity=0.0 if deposition_method == 'markov_settling' else None,
+        rng=np.random.default_rng(1),
+    )
+
+    assert population.particles['status_deposited'].tolist() == [False]
+    assert population.particles['status_suspended'].tolist() == [True]
+    assert population.particles['status_mobile'].tolist() == [True]
+
+def test_markov_settling_height_choice_changes_transition_rate():
+    shallow_rate, _ = ParticlePopulation._markov_settling_rate(0.01, 0.1, 0.05, 0.001)
+    full_depth_rate, _ = ParticlePopulation._markov_settling_rate(0.01, 1.0, 0.05, 0.001)
+
+    assert shallow_rate == pytest.approx(10.0 * full_depth_rate)
+
+
+def test_macdonald_2d_markov_settling_updates_probability_and_status():
+    population = _macdonald_2d_test_population()
+    rng = np.random.default_rng(1)
+
+    population.particles['status_mobile'] = population.particles['status_eligible'].copy()
+    population.sample_macdonald_2d_transition_fields(
+        settling_height_field=np.full(4, 0.001),
+        shear_velocity_field=np.zeros(4),
+    )
+    population.update_macdonald_2d_deposition(
+        method='markov_settling',
+        critical_shields_number=0.05,
+        current_timestep=1000.0,
+        settling_velocity=0.01,
+        minimum_settling_height=0.001,
+        rng=rng,
+    )
+
+    assert population.particles['macdonald_2d_settling_probability'][0] == pytest.approx(1.0)
+    assert population.particles['status_deposited'].tolist() == [True]
+    assert population.particles['status_deposited_now'].tolist() == [True]
+
+def test_macdonald_2d_shields_deposition_prevents_horizontal_movement():
+    population = _macdonald_2d_test_population()
+    population.particles['status_deposited'][:] = False
+    population.particles['status_mobile'] = np.ones(1, dtype=bool)
+    flow = _constant_flow_field(0.25)
+
+    population.sample_macdonald_2d_transition_fields(
+        particle_velocity_field=flow,
+        shields_number_field=np.full(4, 0.01),
+    )
+    population.update_macdonald_2d_deposition(
+        method='shields_threshold',
+        critical_shields_number=0.05,
+        current_timestep=1.0,
+    )
+    population.update_position(flow_field=flow, current_timestep=1.0)
+
+    assert population.particles['status_deposited'].tolist() == [True]
+    assert population.particles['status_mobile'].tolist() == [False]
+    assert population.particles['x'][0] == pytest.approx(0.5)
+
+def test_macdonald_2d_initializes_not_deposited_and_status_only_sets_eligibility():
+    population = _macdonald_2d_test_population()
+
+    assert population.particles['status_deposited'].tolist() == [False]
+    assert population.particles['status_suspended'].tolist() == [True]
+
+    population.update_status()
+
+    assert population.particles['status_eligible'].tolist() == [True]
+    assert 'status_deposition_initialized' not in population.particles
+
+def test_macdonald_2d_markov_deposits_after_completed_movement():
+    population = _macdonald_2d_test_population()
+    flow = _constant_flow_field(0.25)
+
+    population.particles['status_mobile'] = population.particles['status_eligible'].copy()
+    population.sample_macdonald_2d_transition_fields(
+        settling_height_field=np.full(4, 0.001),
+        shear_velocity_field=np.zeros(4),
+    )
+    population.update_position(flow_field=flow, current_timestep=1.0)
+    population.update_macdonald_2d_deposition(
+        method='markov_settling',
+        critical_shields_number=None,
+        current_timestep=1000.0,
+        settling_velocity=0.01,
+        minimum_settling_height=0.001,
+        rng=np.random.default_rng(1),
+    )
+
+    assert population.particles['x'][0] == pytest.approx(0.75)
+    assert population.particles['status_deposited'].tolist() == [True]
+    assert 'macdonald_2d_particle_velocity_magnitude' not in population.particles
+    assert 'macdonald_2d_shields_number' not in population.particles

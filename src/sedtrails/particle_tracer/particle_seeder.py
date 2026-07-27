@@ -85,6 +85,7 @@ def _read_polygon_file(path: str) -> np.ndarray:
 
     # --- Generic text / CSV ---
     # Detect header: first line is a header if its first token is not a float.
+
     def _is_numeric(token: str) -> bool:
         try:
             float(token)
@@ -444,6 +445,12 @@ class PopulationConfig:
             raise MissingConfigurationParameter(
                 f'"seeding.vertical_position.value" is required for mode {mode!r}.'
             )
+        if mode == 'burial_depth' and 'value' in vertical_position:
+            raise ValueError(
+                '"seeding.vertical_position.value" is not used for mode "burial_depth". '
+                'Set the depth with "seeding.burial_depth", for example '
+                '"burial_depth: {constant: 0.1}" or "burial_depth: {random: 0.2}".'
+            )
 
         self.vertical_position_mode = mode
         self.vertical_position_value = vertical_position.get('value')
@@ -455,6 +462,7 @@ class SeedingStrategy(ABC):
     """
 
     @abstractmethod
+
     def seed(self, config: PopulationConfig) -> List[Tuple[int, float, float]]:
         """
         Asociates quantity of particles to a seeding locations for a given strategy.
@@ -883,6 +891,7 @@ class ParticleFactory:
     """
 
     @staticmethod
+
     def create_particles(config: PopulationConfig) -> list[Particle]:
         """
         Create a list of particles of the specified type using a seeding strategy.
@@ -1041,6 +1050,7 @@ class ParticlePopulation:
             np.nan if getattr(p, 'vertical_position_value', None) is None else p.vertical_position_value
             for p in _particles
         ]
+
         self.particles = {
             'x': np.array([p.x for p in _particles]),
             'y': np.array([p.y for p in _particles]),
@@ -1247,6 +1257,7 @@ class ParticlePopulation:
             self.particles['bed_level_previous'] = self.particles['bed_level'].copy()
 
     @staticmethod
+
     def _can_batch_particle_field(field_value) -> bool:
         """Return whether a field can join one multi-field interpolation pass."""
         if field_value is None or np.isscalar(field_value) or _is_temporal_field(field_value):
@@ -1483,6 +1494,7 @@ class ParticlePopulation:
         self._assign_particle_field_values(f'{prefix}_magnitude', magnitude, indices=indices)
 
     @staticmethod
+
     def _loglaw_velocity_at_z(shear_velocity, z, roughness_height):
         shear_velocity = np.asarray(shear_velocity, dtype=float)
         z = np.asarray(z, dtype=float)
@@ -1500,6 +1512,7 @@ class ParticlePopulation:
         return velocity
 
     @staticmethod
+
     def _apply_q3d_velocity_deficit(u_zp, u_1p4zc, z_p, z_c, deficit_coefficient):
         """
         Apply the Q3-D horizontal velocity deficit formulation of
@@ -1549,6 +1562,7 @@ class ParticlePopulation:
         )
 
     @staticmethod
+
     def _turbulent_diffusion_coefficients(
         water_depth,
         z_p,
@@ -1626,6 +1640,78 @@ class ParticlePopulation:
             vertical = np.maximum(np.nan_to_num(vertical, nan=0.0), E_turb_vert_min)
         return horizontal, vertical
 
+    def initialize_macdonald_2d_release_state(self) -> None:
+        """Resolve the logical initial bed/water-column state for MacDonald 2D.
+
+        MacDonald 2D has no particle z coordinate, so `seeding.vertical_position`
+        is collapsed to deposited/suspended state. Burial eligibility remains controlled
+        by the transport-probability method. Only newly released
+        particles inside the domain are initialized; Van Westen never calls this
+        method and retains its existing burial-depth behavior.
+        """
+        n_particles = len(self.particles['x'])
+        if n_particles == 0:
+            return
+
+        initialized = np.asarray(
+            self.particles.get('vertical_position_initialized', np.zeros(n_particles)),
+            dtype=bool,
+        ).copy()
+        initializable = (
+            np.asarray(self.particles['status_released'], dtype=bool)
+            & np.asarray(self.particles['status_domain'], dtype=bool)
+            & np.asarray(self.particles['status_alive'], dtype=bool)
+        )
+        to_initialize = initializable & ~initialized
+        if not np.any(to_initialize):
+            return
+
+        modes = np.asarray(
+            self.particles.get('vertical_position_mode', np.full(n_particles, 'burial_depth')),
+            dtype='<U32',
+        )
+        values = np.asarray(
+            self.particles.get('vertical_position_value', np.full(n_particles, np.nan)),
+            dtype=float,
+        )
+        burial_depth = np.maximum(
+            np.nan_to_num(np.asarray(self.particles['burial_depth'], dtype=float), nan=0.0),
+            0.0,
+        )
+        bed_level = np.asarray(self.particles.get('bed_level', np.zeros(n_particles)), dtype=float)
+        suspended = np.asarray(self.particles['status_suspended'], dtype=bool).copy()
+        deposited = np.asarray(self.particles['status_deposited'], dtype=bool).copy()
+        buried = np.asarray(self.particles['status_buried'], dtype=bool).copy()
+
+        for mode in np.unique(modes[to_initialize]):
+            idx = to_initialize & (modes == mode)
+            if mode in {'height_above_bed', 'centroid_on_release'}:
+                height_above_bed = np.ones(np.count_nonzero(idx), dtype=float)
+            elif mode == 'absolute_z':
+                absolute_z = np.where(np.isfinite(values[idx]), values[idx], bed_level[idx])
+                height_above_bed = absolute_z - bed_level[idx]
+            elif mode == 'bed':
+                height_above_bed = np.zeros(np.count_nonzero(idx), dtype=float)
+            else:
+                height_above_bed = -burial_depth[idx]
+
+            suspended[idx] = height_above_bed > 0.0
+            deposited[idx] = ~suspended[idx]
+            initialized[idx] = True
+
+        buried = self.update_status_buried(burial_depth=burial_depth)
+        self.particles['status_suspended'] = suspended
+        self.particles['status_deposited'] = deposited
+        self.particles['status_buried'] = buried
+        self.particles['vertical_position_initialized'] = initialized
+        self.particles['status_eligible'] = (
+            np.asarray(self.particles['status_domain'], dtype=bool)
+            & np.asarray(self.particles['status_alive'], dtype=bool)
+            & np.asarray(self.particles['status_released'], dtype=bool)
+            & np.asarray(self.particles['status_transported'], dtype=bool)
+            & ~buried
+        )
+
     def _initialize_vertical_position(
         self,
         bed_level,
@@ -1633,7 +1719,7 @@ class ParticlePopulation:
         entrainment_height,
         z,
         burial_depth,
-        is_released,
+        initializable,
         is_suspended,
         is_deposited,
         is_buried,
@@ -1663,7 +1749,7 @@ class ParticlePopulation:
             dtype=float,
         )
 
-        to_initialize = is_released & ~initialized
+        to_initialize = initializable & ~initialized
         if not np.any(to_initialize):
             self.particles['vertical_position_initialized'] = initialized
             return z, burial_depth, is_suspended, is_deposited, is_buried
@@ -1690,11 +1776,9 @@ class ParticlePopulation:
 
             height_above_bed = z[idx] - bed_level[idx]
             is_suspended[idx] = height_above_bed > 0.0
-            is_buried[idx] = height_above_bed < 0.0
-            # Deposited is the bed-state complement of suspended. Buried
-            # particles are a bed-state subset, so is_buried implies deposited.
             is_deposited[idx] = ~is_suspended[idx]
-            burial_depth[idx] = np.where(is_buried[idx], -height_above_bed, 0.0)
+            below_bed = height_above_bed < 0.0
+            burial_depth[idx] = np.where(below_bed, -height_above_bed, 0.0)
             initialized[idx] = True
 
         self.particles['vertical_position_initialized'] = initialized
@@ -1766,6 +1850,7 @@ class ParticlePopulation:
         return left_domain_indices, beached_indices
 
     @staticmethod
+
     def _select_q3d_entrainment(
         available,
         turbulent_shields,
@@ -1801,7 +1886,7 @@ class ParticlePopulation:
               linear, P = min(f_e dt, 1), matching the Eq. 68 small-dt form.
         entrainment_frequency : array or None
             Entrainment frequency [1/s] for entrainment_frequency mode,
-            usually from the MacDonald q3d_entrainment_frequency field.
+            from the shared MacDonald entrainment-frequency field.
         probability_law : str
             Probability conversion used with entrainment_frequency mode:
             poisson uses P = 1 - exp(-f_e dt); linear uses P = min(f_e dt, 1).
@@ -1832,7 +1917,7 @@ class ParticlePopulation:
 
         if mode in {'entrainment_frequency', 'frequency'}:
             if entrainment_frequency is None:
-                raise ValueError('q3d_entrainment_frequency is required when q3d_entrainment_mode is frequency.')
+                raise ValueError('entrainment_frequency is required when entrainment.method is entrainment_frequency.')
             frequency = np.maximum(np.nan_to_num(entrainment_frequency, nan=0.0), 0.0)
             probability_law = str(probability_law or 'poisson').strip().lower().replace('-', '_')
             frequency_dt = frequency * dt
@@ -1842,7 +1927,7 @@ class ParticlePopulation:
                 probability = np.clip(frequency_dt, 0.0, 1.0)
             else:
                 raise ValueError(
-                    "Unsupported q3d_entrainment_probability_law "
+                    "Unsupported entrainment probability law "
                     f"{probability_law!r}. Expected poisson or linear."
                 )
             probability = np.broadcast_to(probability, available.shape).astype(float, copy=True)
@@ -1850,11 +1935,12 @@ class ParticlePopulation:
             return available & (random_source.random(len(available)) < probability), probability
 
         raise ValueError(
-            "Unsupported q3d_entrainment_mode "
+            "Unsupported MacDonald entrainment method "
             f"{mode!r}. Expected shields_threshold, non_zero_particle_velocity, or entrainment_frequency."
         )
 
     @staticmethod
+
     def _normalize_q3d_vertical_update_scheme(scheme):
         scheme = str(scheme or 'geometric').strip().lower().replace('-', '_')
         aliases = {
@@ -1876,6 +1962,7 @@ class ParticlePopulation:
         return scheme
 
     @staticmethod
+
     def _normalize_q3d_diagnostics_level(level):
         # Legacy minimal/full option kept for backward-compatible YAML files.
         level = str(level or 'minimal').strip().lower().replace('-', '_')
@@ -1892,6 +1979,7 @@ class ParticlePopulation:
         return level
 
     @staticmethod
+
     def _sample_rouse_profile_height(water_depth, rouse_number, rng=None):
         """
         Draw particle heights above bed from a fast Rouse-shaped beta distribution.
@@ -1972,9 +2060,9 @@ class ParticlePopulation:
         E_turb_hor_min: float = 0.02,
         E_turb_vert_min: float = 0.0,
         q3d_horizontal_diffusion_enabled: bool = True,
-        q3d_entrainment_mode: str = 'shields_threshold',
-        q3d_entrainment_frequency: Any = None,
-        q3d_entrainment_probability_law: str = 'poisson',
+        entrainment_method: str = 'shields_threshold',
+        entrainment_frequency: Any = None,
+        entrainment_probability_law: str = 'poisson',
         q3d_vertical_update_scheme: str = 'geometric',
         q3d_motion_substeps: int = 1,
         q3d_save_first_substep_diagnostics: bool | None = None,
@@ -2050,14 +2138,14 @@ class ParticlePopulation:
         q3d_horizontal_diffusion_enabled : bool
             If false, disable horizontal turbulent diffusion while leaving
             geometric-scheme vertical diffusion unchanged.
-        q3d_entrainment_mode : str
+        entrainment_method : str
             Rule used to decide which available bed particles enter suspension.
             Supported values are shields_threshold, non_zero_particle_velocity,
             and entrainment_frequency.
-        q3d_entrainment_frequency : float or array, optional
-            MacDonald q3d_entrainment_frequency field [1/s] used when
-            q3d_entrainment_mode is entrainment_frequency.
-        q3d_entrainment_probability_law : str
+        entrainment_frequency : float or array, optional
+            Shared MacDonald entrainment-frequency field [1/s] used when
+            entrainment_method is entrainment_frequency.
+        entrainment_probability_law : str
             Probability law for entrainment_frequency mode. poisson uses
             P = 1 - exp(-f_e dt); linear uses P = min(f_e dt, 1), the
             MacDonald Eq. 68 small-timestep approximation.
@@ -2163,8 +2251,8 @@ class ParticlePopulation:
         }
         if rouse_number is not None:
             initial_particle_fields['rouse_number'] = rouse_number
-        if q3d_entrainment_frequency is not None:
-            initial_particle_fields['q3d_entrainment_frequency'] = q3d_entrainment_frequency
+        if entrainment_frequency is not None:
+            initial_particle_fields['macdonald_entrainment_frequency'] = entrainment_frequency
         if M_b is not None:
             initial_particle_fields['q3d_wave_breaking_factor'] = M_b
         self._update_particle_fields(initial_particle_fields)
@@ -2203,6 +2291,7 @@ class ParticlePopulation:
             'status_suspended',
             'status_deposited',
             'status_buried',
+            'status_eligible',
         )
         missing_status = [name for name in required_status_fields if name not in self.particles]
         if missing_status:
@@ -2241,6 +2330,7 @@ class ParticlePopulation:
         is_suspended = np.asarray(self.particles['status_suspended'], dtype=bool)
         is_deposited = np.asarray(self.particles['status_deposited'], dtype=bool)
         is_buried = np.asarray(self.particles['status_buried'], dtype=bool)
+        eligible = np.asarray(self.particles['status_eligible'], dtype=bool)
 
         # ------------------------------------------------------------------
         # 3. Resolve initial vertical position for newly released particles.
@@ -2255,18 +2345,30 @@ class ParticlePopulation:
 
         # This applies seeding.vertical_position exactly once per particle.
         # Already initialized particles keep their current z, burial_depth, and
-        # suspension/deposition/burial status.
+        # suspension/deposition status and transport-controlled burial status.
         z, burial_depth, is_suspended, is_deposited, is_buried = self._initialize_vertical_position(
             bed_level,
             water_depth,
             entrainment_height,
             z,
             burial_depth,
-            is_released,
+            is_released & is_inside & is_alive,
             is_suspended,
             is_deposited,
             is_buried,
         )
+
+        # Vertical initialization can change burial_depth (for example absolute_z),
+        # so recalculate burial and eligibility immediately in the same timestep.
+        is_buried = self.update_status_buried(burial_depth=burial_depth)
+        eligible = (
+            is_inside
+            & is_alive
+            & is_released
+            & ~is_buried
+            & np.asarray(self.particles['status_transported'], dtype=bool)
+        )
+        self.particles['status_eligible'] = eligible
 
         # ------------------------------------------------------------------
         # 4. Decide which bed particles entrain this timestep.
@@ -2274,31 +2376,23 @@ class ParticlePopulation:
         #    f_e (Eqs. 57 and 61) as a timestep probability (Eq. 68). The
         #    threshold mode uses the turbulent Shields number from Eq. 59.
         # ------------------------------------------------------------------
-        eligible = is_inside & is_alive & is_released
-        available = eligible & ~is_buried & ~is_suspended
-        entrainment_frequency = self.particles.get('q3d_entrainment_frequency')
+        available = eligible & ~is_suspended
+        entrainment_frequency = self.particles.get('macdonald_entrainment_frequency')
         entrained_now, entrainment_probability = self._select_q3d_entrainment(
             available,
             turbulent_shields,
             critical_shields,
             dt,
-            mode=q3d_entrainment_mode,
+            mode=entrainment_method,
             entrainment_frequency=entrainment_frequency,
-            probability_law=q3d_entrainment_probability_law,
+            probability_law=entrainment_probability_law,
             rng=rng,
         )
         not_entrained = available & ~entrained_now
-        bed_waiting = eligible & ~available & ~is_suspended
 
         # Entrainment is sampled once for the outer particle timestep, so the
         # probability uses dt here. Q3D motion substeps below use dt_sub only for
         # advection, diffusion, and vertical position updates.
-
-        # Bed-state particles that are not available for entrainment remain
-        # deposited. Their burial depth is left unchanged because burial is
-        # updated elsewhere.
-        is_deposited[bed_waiting] = True
-        is_suspended[bed_waiting] = False
 
         # Entrained particles leave the bed/burial layer and enter the water column.
         z[entrained_now] = bed_level[entrained_now] + entrainment_height[entrained_now]
@@ -2715,9 +2809,11 @@ class ParticlePopulation:
         is_suspended = np.asarray(is_suspended, dtype=bool)
         is_deposited = np.asarray(is_deposited, dtype=bool)
         is_buried = np.asarray(is_buried, dtype=bool)
-        is_suspended[is_buried] = False
-        is_deposited[is_buried] = True
-        is_deposited[is_suspended] = False
+        eligible_buried = eligible & is_buried
+        eligible_suspended = eligible & is_suspended
+        is_suspended[eligible_buried] = False
+        is_deposited[eligible_buried] = True
+        is_deposited[eligible_suspended] = False
 
         bed_level = np.asarray(self.particles['bed_level'], dtype=float)
         height_above_bed = np.maximum(np.nan_to_num(z - bed_level, nan=0.0), 0.0)
@@ -2843,9 +2939,26 @@ class ParticlePopulation:
         self._update_particle_field('bed_level', bed_level)
         self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
         
+
+    def update_status_buried(self, burial_depth=None) -> np.ndarray:
+        """Calculate burial eligibility from the current transport-probability method."""
+        n_particles = len(self.particles['x'])
+        transport_probability_method = self.population_config.population_config['transport_probability']
+        if transport_probability_method == 'no_probability':
+            return np.zeros(n_particles, dtype=bool)
+
+        depth = np.asarray(
+            self.particles['burial_depth'] if burial_depth is None else burial_depth,
+            dtype=float,
+        )
+        mixing_depth = np.asarray(self.particles['mixing_depth'], dtype=float)
+        return depth >= mixing_depth
+
     def update_status(self) -> None:
-        """
-        updates status of particles in the population.
+        """Update general particle status and eligibility.
+
+        Tracer-specific movement methods assign ``status_mobile`` from
+        ``status_eligible`` and their own deposition or entrainment state.
         """
         n_particles = len(self.particles['x'])
         left_domain = self.particles.get('status_left_domain')
@@ -2863,7 +2976,7 @@ class ParticlePopulation:
                 'status_domain',
                 'status_released',
                 'status_transported',
-                'status_mobile',
+                'status_eligible',
             ):
                 self.particles[status_name] = np.zeros(0, dtype=bool)
             return
@@ -2882,19 +2995,8 @@ class ParticlePopulation:
         self._mark_particle_simplices_current()
         self.particles['status_domain'] = (self._particle_simplices >= 0) & ~left_domain
 
-        # New conditional logic based on transport_probability_method
-        if transport_probability_method == 'no_probability':
-            # For no_probability method, all particles are considered exposed (not buried)
-            self.particles['status_buried'] = np.zeros(n_particles, dtype=bool)
-        else:
-            # For stochastic_transport and reduced_velocity methods, use burial_depth vs mixing_depth
-
-            # if van westen method:
-            # a particle is considered buried if it is deeper than or equal to the mixing depth
-            self.particles['status_buried'] = self.particles['burial_depth'] >= self.particles['mixing_depth']
-
-            # if soulsby method:
-            # self.particles['status_buried'] = (this is where we implement Soulsby's F based on a and b)
+        # Burial eligibility is owned by the transport-probability method.
+        self.particles['status_buried'] = self.update_status_buried()
 
         # Compute whether particles are released (or retained)
         self.particles['status_released'] = self._current_time >= self.particles['release_time']
@@ -2902,14 +3004,320 @@ class ParticlePopulation:
         # Compute whether particles are alive (or dead) (still TODO)
         self.particles['status_alive'] = ~left_domain
 
-        # Compute whether particles are mobile (or static) - combination of all status flags
-        self.particles['status_mobile'] = (
+        # General eligibility is independent of tracer-specific mobility.
+        self.particles['status_eligible'] = (
             self.particles['status_domain']
             & self.particles['status_alive']
             & ~self.particles['status_buried']
             & self.particles['status_released']
             & self.particles['status_transported']
         )
+
+    @staticmethod
+
+    def _markov_settling_rate(
+        settling_velocity,
+        settling_height,
+        shear_velocity,
+        minimum_settling_height,
+    ):
+        """Return the two-state Markov settling rate and its turbulence correction."""
+        minimum_height = float(minimum_settling_height)
+        if not np.isfinite(minimum_height) or minimum_height <= 0.0:
+            raise ValueError('minimum_settling_height must be positive and finite.')
+
+        settling_velocity, settling_height, shear_velocity = np.broadcast_arrays(
+            np.asarray(settling_velocity, dtype=float),
+            np.asarray(settling_height, dtype=float),
+            np.asarray(shear_velocity, dtype=float),
+        )
+        ws = np.maximum(np.nan_to_num(settling_velocity, nan=0.0), 0.0)
+        height = np.maximum(
+            np.nan_to_num(settling_height, nan=minimum_height, posinf=minimum_height, neginf=minimum_height),
+            minimum_height,
+        )
+        u_star = np.maximum(np.nan_to_num(shear_velocity, nan=0.0), 0.0)
+        turbulence_correction = np.divide(
+            ws,
+            np.hypot(ws, u_star),
+            out=np.zeros_like(ws),
+            where=(ws > 0.0) | (u_star > 0.0),
+        )
+        transition_rate = (ws / height) * turbulence_correction
+        return transition_rate, turbulence_correction
+
+    def sample_macdonald_2d_transition_fields(
+        self,
+        *,
+        particle_velocity_field=None,
+        shields_number_field=None,
+        settling_height_field=None,
+        shear_velocity_field=None,
+        entrainment_frequency_field=None,
+    ) -> None:
+        """Sample entrainment and deposition inputs at the old particle positions."""
+        if len(self.particles['x']) == 0:
+            return
+
+        scalar_fields = {}
+        if shields_number_field is not None:
+            scalar_fields['macdonald_2d_shields_number'] = shields_number_field
+        if settling_height_field is not None:
+            scalar_fields['macdonald_2d_settling_height'] = settling_height_field
+        if shear_velocity_field is not None:
+            scalar_fields['macdonald_2d_shear_velocity'] = shear_velocity_field
+        if entrainment_frequency_field is not None:
+            scalar_fields['macdonald_2d_entrainment_frequency'] = entrainment_frequency_field
+        if scalar_fields:
+            self._update_particle_fields(scalar_fields)
+        if particle_velocity_field is not None:
+            self._update_particle_flow_field('macdonald_2d_particle_velocity', particle_velocity_field)
+
+    def update_macdonald_2d_entrainment(
+        self,
+        *,
+        method,
+        critical_shields_number,
+        current_timestep,
+        probability_law='poisson',
+        rng=None,
+    ) -> None:
+        """Update deposited MacDonald 2D particles that enter suspension."""
+        n_particles = len(self.particles['x'])
+        if n_particles == 0:
+            return
+        if not np.isfinite(current_timestep) or current_timestep <= 0.0:
+            raise ValueError('current_timestep must be positive and finite.')
+
+        method = str(method or 'shields_threshold').strip().lower().replace('-', '_')
+        if method not in {
+            'shields_threshold',
+            'non_zero_particle_velocity',
+            'entrainment_frequency',
+        }:
+            raise ValueError(
+                f'Unsupported MacDonald 2D entrainment method {method!r}. '
+                'Expected shields_threshold, non_zero_particle_velocity, '
+                'or entrainment_frequency.'
+            )
+
+        eligible = np.asarray(self.particles['status_eligible'], dtype=bool)
+        deposited = np.asarray(self.particles['status_deposited'], dtype=bool).copy()
+        suspended = np.asarray(self.particles['status_suspended'], dtype=bool).copy()
+        candidates = eligible & deposited
+        probability = np.zeros(n_particles, dtype=float)
+
+        if method == 'shields_threshold':
+            if 'macdonald_2d_shields_number' not in self.particles:
+                raise ValueError(
+                    "MacDonald 2D entrainment field 'macdonald_2d_shields_number' is missing."
+                )
+            if critical_shields_number is None:
+                raise ValueError('critical_shields_number is required for shields_threshold entrainment.')
+            local_shields = np.asarray(self.particles['macdonald_2d_shields_number'], dtype=float)
+            critical_shields = np.broadcast_to(
+                np.asarray(critical_shields_number, dtype=float),
+                local_shields.shape,
+            )
+            entrained_now = (
+                candidates
+                & np.isfinite(local_shields)
+                & np.isfinite(critical_shields)
+                & (local_shields > critical_shields)
+            )
+        elif method == 'non_zero_particle_velocity':
+            if 'macdonald_2d_particle_velocity_magnitude' not in self.particles:
+                raise ValueError(
+                    "MacDonald 2D entrainment field "
+                    "'macdonald_2d_particle_velocity_magnitude' is missing."
+                )
+            particle_velocity = np.asarray(
+                self.particles['macdonald_2d_particle_velocity_magnitude'],
+                dtype=float,
+            )
+            nonzero_velocity = np.isfinite(particle_velocity) & (particle_velocity > 0.0)
+            entrained_now = candidates & nonzero_velocity
+        else:
+            if 'macdonald_2d_entrainment_frequency' not in self.particles:
+                raise ValueError('macdonald_2d_entrainment_frequency must be sampled before entrainment.')
+            frequency = np.maximum(
+                np.nan_to_num(
+                    np.asarray(self.particles['macdonald_2d_entrainment_frequency'], dtype=float),
+                    nan=0.0,
+                ),
+                0.0,
+            )
+            law = str(probability_law or 'poisson').strip().lower().replace('-', '_')
+            if law == 'poisson':
+                probability = -np.expm1(-frequency * float(current_timestep))
+            elif law == 'linear':
+                probability = frequency * float(current_timestep)
+            else:
+                raise ValueError("probability_law must be 'poisson' or 'linear'.")
+            probability = np.clip(probability, 0.0, 1.0)
+            random_source = np.random if rng is None else rng
+            entrained_now = candidates & (random_source.random(n_particles) < probability)
+
+        deposited[entrained_now] = False
+        suspended[entrained_now] = True
+        self.particles['status_deposited'] = deposited
+        self.particles['status_suspended'] = suspended
+        self.particles['status_entrained_now'] = entrained_now
+        self.particles['macdonald_2d_entrainment_probability'] = probability
+        self.particles['status_mobile'] = eligible & suspended & ~deposited
+
+    def update_macdonald_2d_deposition(
+        self,
+        *,
+        method,
+        critical_shields_number,
+        current_timestep,
+        settling_velocity=None,
+        minimum_settling_height=0.001,
+        rng=None,
+    ) -> None:
+        """Evaluate MacDonald 2D suspension-to-bed transitions.
+
+        MacDonald 2D has no explicit particle vertical coordinate. Deposition is
+        therefore represented as a transition between the logical particle
+        states ``status_suspended`` and ``status_deposited``. This method also
+        updates ``status_mobile`` so deposited particles are excluded from the
+        next horizontal position update.
+
+        Two deposition rules are supported:
+
+        ``shields_threshold``
+            Deterministic mobility rule. An eligible suspended particle remains
+            suspended only when its sampled Shields number is greater than its
+            critical Shields number and its sampled transport velocity is
+            nonzero. Otherwise it deposits. The simulation manager calls this
+            rule before horizontal movement, so a particle deposited here does
+            not move during the current timestep.
+
+        ``markov_settling``
+            Stochastic, memoryless settling rule. For each eligible mobile
+            particle, the transition rate is calculated from settling velocity,
+            settling height, and shear velocity. The settling probability over
+            ``current_timestep`` is ``1 - exp(-rate * dt)``. The simulation
+            manager calls this rule after horizontal movement, so deposition
+            affects subsequent timesteps and does not undo movement already
+            completed in the current timestep.
+
+        All Eulerian inputs are sampled by
+        ``sample_macdonald_2d_transition_fields`` at the particle's old
+        horizontal position before movement. Only generally eligible particles
+        can change suspension/deposition state; ineligible particles retain
+        their previous physical state and are non-mobile.
+
+        Parameters
+        ----------
+        method : str
+            ``shields_threshold`` or ``markov_settling``.
+        critical_shields_number : float or array
+            Critical Shields number. Required only for ``shields_threshold``.
+        current_timestep : float
+            Positive particle timestep [s].
+        settling_velocity : float or array, optional
+            Particle settling velocity [m/s]. Required for ``markov_settling``.
+        minimum_settling_height : float
+            Positive lower bound applied to the settling height [m].
+        rng : random generator, optional
+            Random source used by ``markov_settling``; primarily useful for
+            reproducible tests.
+        """
+        n_particles = len(self.particles['x'])
+        if n_particles == 0:
+            return
+
+        method = str(method or 'shields_threshold').strip().lower().replace('-', '_')
+        if method not in {'shields_threshold', 'markov_settling'}:
+            raise ValueError(
+                f'Unsupported MacDonald 2D deposition method {method!r}. '
+                'Expected shields_threshold or markov_settling.'
+            )
+        if not np.isfinite(current_timestep) or current_timestep <= 0.0:
+            raise ValueError('current_timestep must be positive and finite.')
+        if method == 'shields_threshold':
+            if critical_shields_number is None:
+                raise ValueError('critical_shields_number is required for shields_threshold deposition.')
+            required_sampled_fields = {
+                'macdonald_2d_shields_number',
+                'macdonald_2d_particle_velocity_magnitude',
+            }
+        else:
+            if settling_velocity is None:
+                raise ValueError('markov_settling requires settling_velocity.')
+            required_sampled_fields = {
+                'macdonald_2d_settling_height',
+                'macdonald_2d_shear_velocity',
+            }
+        missing_fields = sorted(required_sampled_fields.difference(self.particles))
+        if missing_fields:
+            raise ValueError(
+                'MacDonald 2D deposition fields must be sampled before movement; '
+                f'missing {missing_fields}.'
+            )
+
+        # General eligibility protects unreleased, out-of-domain, dead,
+        # non-transported, and buried particles from state changes.
+        eligible = np.asarray(self.particles['status_eligible'], dtype=bool)
+
+        previous_deposited = np.asarray(self.particles['status_deposited'], dtype=bool)
+        settling_probability = np.zeros(n_particles, dtype=float)
+        transition_rate = np.zeros(n_particles, dtype=float)
+
+        if method == 'shields_threshold':
+            local_shields = np.asarray(self.particles['macdonald_2d_shields_number'], dtype=float)
+            particle_velocity = np.asarray(
+                self.particles['macdonald_2d_particle_velocity_magnitude'],
+                dtype=float,
+            )
+            critical_shields = np.broadcast_to(
+                np.asarray(critical_shields_number, dtype=float),
+                local_shields.shape,
+            )
+            above_threshold = (
+                np.isfinite(local_shields)
+                & np.isfinite(critical_shields)
+                & (local_shields > critical_shields)
+            )
+            nonzero_velocity = np.isfinite(particle_velocity) & (particle_velocity > 0.0)
+            # Entrainment is handled separately before this method. This branch
+            # only tests particles that are currently suspended.
+            deposited = previous_deposited.copy()
+            suspended_candidates = eligible & ~previous_deposited
+            deposited[suspended_candidates] = ~(
+                above_threshold & nonzero_velocity
+            )[suspended_candidates]
+        else:
+            transition_rate, _ = self._markov_settling_rate(
+                settling_velocity,
+                self.particles['macdonald_2d_settling_height'],
+                self.particles['macdonald_2d_shear_velocity'],
+                minimum_settling_height,
+            )
+            settling_probability = np.clip(
+                -np.expm1(-transition_rate * float(current_timestep)),
+                0.0,
+                1.0,
+            )
+            # Markov settling applies only to particles that actually moved (or
+            # were eligible to move) during this timestep.
+            moving = eligible & np.asarray(self.particles['status_mobile'], dtype=bool)
+            random_source = np.random if rng is None else rng
+            settles = moving & (random_source.random(n_particles) < settling_probability)
+            deposited = previous_deposited.copy()
+            deposited[moving] = settles[moving]
+
+        # Synchronize the mutually exclusive logical bed/water-column states.
+        suspended = np.asarray(self.particles['status_suspended'], dtype=bool).copy()
+        suspended[eligible] = ~deposited[eligible]
+        self.particles['status_deposited'] = deposited
+        self.particles['status_deposited_now'] = eligible & deposited & ~previous_deposited
+        self.particles['status_suspended'] = suspended
+        self.particles['status_mobile'] = eligible & suspended
+        self.particles['macdonald_2d_settling_transition_rate'] = transition_rate
+        self.particles['macdonald_2d_settling_probability'] = settling_probability
 
     def update_position(self, flow_field: Dict, current_timestep: float) -> None:
         """

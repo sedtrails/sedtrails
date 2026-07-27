@@ -279,13 +279,16 @@ def required_physics_fields(
             'chezy_current_shear_velocity',
             'chezy_equivalent_roughness_height',
         )
+        entrainment_config = method_config.get('entrainment', {}) or {}
+        entrainment_method = str(entrainment_config.get('method', 'shields_threshold')).lower().replace('-', '_')
+        if entrainment_method == 'entrainment_frequency':
+            fields = (*fields, 'macdonald_entrainment_frequency')
         if computation_type == 'Q3D':
             fields = (
                 *fields,
                 'q3d_velocity_deficit_coefficient',
                 'q3d_vertical_velocity_gradient',
                 'turbulent_shields_number',
-                'q3d_entrainment_frequency',
                 'q3d_entrainment_height_above_bed',
             )
         return tuple(_unique_preserving_order(fields))
