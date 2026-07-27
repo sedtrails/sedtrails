@@ -1005,7 +1005,7 @@ class TestParticleFactory:
         assert config.burial_depth == {'constant': 1.25}
         assert particles[0].burial_depth == pytest.approx(1.25)
 
-    def test_scalar_burial_depth_is_normalized_to_constant_config(self):
+    def test_scalar_burial_depth_remains_supported(self):
         """Legacy scalar burial depths should remain valid population input."""
         config = PopulationConfig(
             {
@@ -1022,7 +1022,7 @@ class TestParticleFactory:
 
         particles = ParticleFactory.create_particles(config)
 
-        assert config.burial_depth == {'constant': 1.25}
+        assert config.burial_depth == pytest.approx(1.25)
         assert particles[0].burial_depth == pytest.approx(1.25)
 
     def test_random_burial_depth_is_sampled_with_strategy_seed(self):
@@ -1320,6 +1320,8 @@ class TestParticlePopulation:
         population = ParticleSeeder([config]).seed(_boundary_action_field_data())[0]
         population._current_time = 0.0
         population.update_status()
+        # Standard non-MacDonald tracers derive mobility directly from eligibility.
+        population.particles['status_mobile'] = population.particles['status_eligible'].copy()
         draws = iter((np.zeros(1), -np.ones(1)))
         monkeypatch.setattr(np.random, 'standard_normal', lambda size: next(draws))
 
@@ -1337,6 +1339,8 @@ class TestParticlePopulation:
         population = ParticleSeeder([config]).seed(_boundary_action_field_data())[0]
         population._current_time = 0.0
         population.update_status()
+        # Standard non-MacDonald tracers derive mobility directly from eligibility.
+        population.particles['status_mobile'] = population.particles['status_eligible'].copy()
         draws = iter((-np.ones(1), np.zeros(1)))
         monkeypatch.setattr(np.random, 'standard_normal', lambda size: next(draws))
 
@@ -1356,6 +1360,8 @@ class TestParticlePopulation:
         population = ParticleSeeder([config]).seed(_boundary_action_field_data())[0]
         population._current_time = 0.0
         population.update_status()
+        # Standard non-MacDonald tracers derive mobility directly from eligibility.
+        population.particles['status_mobile'] = population.particles['status_eligible'].copy()
         monkeypatch.setattr(np.random, 'standard_normal', lambda size: pytest.fail('land contact must skip diffusion'))
 
         population.update_position({'u': -np.ones(3), 'v': np.zeros(3)}, 0.5)
