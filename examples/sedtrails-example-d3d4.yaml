@@ -1,0 +1,43 @@
+general:
+  input_model: 
+    format: d3d4_netcdf
+    reference_date: 1970-01-01  # Default reference date for the input model
+    morfac: 1  # Morphological acceleration factor for time decompression
+inputs:
+  data: ../sample-data/trim-inlet.nc
+  read_interval: 10D  # Time chunk size for reading input data
+time:
+  start:  2016-12-08 00:00:00
+  timestep: 60S
+  duration: 2D
+  cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
+particles:
+  populations:
+    - name: population_1
+      particle_type: sand
+      characteristics:
+        grain_size: 0.00025 
+        density: 2650.0  
+      tracer_methods:
+        vanwesten:
+          flow_field_name: 
+            - bed_load_velocity
+      transport_probability: no_probability # Options: no_probability, stochastic_transport, reduced_velocity
+      seeding:
+        burial_depth: 
+          constant: 0
+        release_start: 2016-12-08 00:00:00
+        quantity: 1
+        strategy: 
+          random:
+            bbox: "4000,2000 10000,5000"
+            seed: 42
+            nlocations: 100
+outputs:
+  directory: ./results
+  store_tracks: true
+  save_interval: 1H
+visualization:
+  dashboard:
+    enable: true
+    update_interval: 1H

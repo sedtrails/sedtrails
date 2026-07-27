@@ -22,7 +22,19 @@ from scipy.spatial import ConvexHull, QhullError, cKDTree
 
 @dataclass
 class RasterInterpolationWeights:
-    """Cached mapping from dashboard raster pixels to source grid faces."""
+    """Cached mapping from dashboard raster pixels to source grid faces.
+
+    Parameters
+    ----------
+    geometry_key : tuple
+        Key identifying the source-grid geometry.
+    shape : tuple of int
+        Raster pixel dimensions.
+    extent : tuple of float
+        Raster bounds as xmin, xmax, ymin, ymax.
+    face_indices, weights, valid_mask, quiver_indices : numpy.ndarray
+        Interpolation and rendering lookup arrays.
+    """
 
     geometry_key: tuple
     shape: tuple[int, int]
@@ -34,7 +46,13 @@ class RasterInterpolationWeights:
 
 
 class SimulationDashboard:
-    """Real-time visualization dashboard for particle simulations."""
+    """Real-time visualization dashboard for particle simulations.
+
+    Parameters
+    ----------
+    reference_date : str, optional
+        ISO-8601 reference date used to convert simulation times.
+    """
 
     LARGE_GRID_POINT_LIMIT = 5_000
     LARGE_GRID_QUIVER_LIMIT = 100
@@ -44,7 +62,13 @@ class SimulationDashboard:
     STRANDED_PARTICLE_COLOR = '#ffb3b3'
 
     def __init__(self, reference_date: str = '1970-01-01'):
-        """Initialize the dashboard."""
+        """Initialize the dashboard.
+
+        Parameters
+        ----------
+        reference_date : str, optional
+            ISO-8601 reference date used to convert simulation times.
+        """
         self.fig = None
         self.axes = {}
         self.lines = {}

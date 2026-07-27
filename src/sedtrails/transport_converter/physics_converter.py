@@ -149,12 +149,14 @@ class PhysicsConverter:
         """
         Initialize the physics converter.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         config : dict, optional
-            Base config for physics (e.g., tracer_method, global constants overrides).
+            Base physics configuration, such as ``tracer_method`` and global
+            constant overrides.
         tracer_config : dict, optional
-            Method-specific parameters (e.g., soulsby params). These will be flattened into PhysicsConfig.
+            Method-specific parameters, such as Soulsby settings. Values are
+            flattened into PhysicsConfig.
         """
         self.config = PhysicsConfig.from_dict(config=config or {}, tracer_config=tracer_config or {})
         self._grain_properties: dict = {}

@@ -140,6 +140,28 @@ class TestSedtrailsCLI:
             report_domain_exits=False,
         )
 
+    def test_viz_trajectories_defaults_to_output_path_and_new_plot_settings(
+        self, runner, cli_command, tmp_path, monkeypatch
+    ):
+        """Test default trajectories visualization settings."""
+        monkeypatch.chdir(tmp_path)
+
+        with patch('sedtrails.application_interfaces.api.plot_trajectories') as mock_plot_trajectories:
+            result = runner.invoke(cli_command, ['viz', 'trajectories'])
+
+        assert result.exit_code == 0
+        mock_plot_trajectories.assert_called_once_with(
+            'sedtrails_results.nc',
+            output=None,
+            max_particles=10000,
+            sample_fraction=None,
+            sample_seed=0,
+            markers='end',
+            marker_size=3.0,
+            panels='spatial',
+            show=None,
+        )
+
     def test_run_simulation_error(self, runner, cli_command, sample_config_data, mock_run_simulation, tmp_path, monkeypatch):
         """Test run when simulation fails."""
         monkeypatch.chdir(tmp_path)

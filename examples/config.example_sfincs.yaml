@@ -29,13 +29,14 @@ particles:
       tracer_methods: 
          passive_tracer:
             flow_field_name: ["depth_avg_flow_velocity"]
+      diffusion:
+        method: brownian
+        coefficient: 0.0
       characteristics:
-        diffusion_coefficient: 0.0
+        {}
       transport_probability: no_probability  # Options: no_probability, stochastic_transport, reduced_velocity
       seeding:
         release_start: 2024-05-01 00:00:00
-        burial_depth: 
-           constant: 0.0
         quantity: 1
         strategy:
            point: 

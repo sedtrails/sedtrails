@@ -29,6 +29,7 @@ from numpy import ndarray
 from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.exceptions.exceptions import ConfigurationError
+from sedtrails.particle_tracer.diffusion_library import BrownianDiffusionStrategy, DiffusionCalculator
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.position_calculator_numba import (
     BOUNDARY_CLASS_LAND,
@@ -299,6 +300,16 @@ def _log_seeding_box_volume(config, positions: list) -> None:
 
 
 class HasFieldCoordinates(Protocol):
+    """Protocol for seeding input that exposes field coordinates.
+
+    Attributes
+    ----------
+    x : ndarray
+        Field x-coordinate array.
+    y : ndarray
+        Field y-coordinate array.
+    """
+
     x: ndarray
     y: ndarray
 
@@ -387,6 +398,9 @@ class PopulationConfig:
     vertical_position_value: Any = field(init=False, default=None)
     strategy_settings: Dict = field(init=False, default_factory=dict)
     remove_permanently_buried: bool = field(init=False, default=False)
+    diffusion_method: str = field(init=False, default='brownian')
+    diffusion_coefficient: float = field(init=False, default=0.0)
+    diffusion_seed: int | None = field(init=False, default=None)
 
     def __post_init__(self):
         _strategy = find_value(self.population_config, 'seeding.strategy', {}).keys()
@@ -405,17 +419,39 @@ class PopulationConfig:
         self.particle_type = find_value(self.population_config, 'particle_type', '')
         if not self.particle_type:
             raise MissingConfigurationParameter('"particle_type" is not defined in the population configuration.')
-        _burial_depth = find_value(self.population_config, 'seeding.burial_depth', MISSING)
-        if _burial_depth is MISSING or _burial_depth is None:
-            raise MissingConfigurationParameter('"burial_depth" is not defined in the population configuration.')
-        if isinstance(_burial_depth, (int, float)):
-            _burial_depth = {'constant': float(_burial_depth)}
-        elif not isinstance(_burial_depth, dict):
-            raise TypeError('"seeding.burial_depth" must be a dictionary or a number.')
-        self.burial_depth = _burial_depth
+        _burial_depth = find_value(self.population_config, 'seeding.burial_depth', None)
+        if _burial_depth is None:
+            self.burial_depth = {'constant': 0.0}
+        else:
+            self.burial_depth = _burial_depth
         self.remove_permanently_buried = bool(
             find_value(self.population_config, 'seeding.remove_permanently_buried', False)
         )
+        diffusion_config = find_value(self.population_config, 'diffusion', {})
+        if not isinstance(diffusion_config, dict):
+            raise ValueError('"diffusion" must be a mapping.')
+        self.diffusion_method = diffusion_config.get('method', 'brownian')
+        if self.diffusion_method not in {'none', 'brownian'}:
+            raise ValueError('"diffusion.method" must be "none" or "brownian".')
+        diffusion_coefficient = diffusion_config.get(
+            'coefficient', find_value(self.population_config, 'characteristics.diffusion_coefficient', 0.0)
+        )
+        if (
+            isinstance(diffusion_coefficient, (bool, np.bool_))
+            or not isinstance(diffusion_coefficient, (int, float, np.number))
+            or not np.isfinite(diffusion_coefficient)
+            or diffusion_coefficient < 0.0
+        ):
+            raise ValueError(
+                '"diffusion.coefficient" (or legacy "characteristics.diffusion_coefficient") must be a finite non-negative number.'
+            )
+        self.diffusion_coefficient = float(diffusion_coefficient)
+        diffusion_seed = diffusion_config.get('seed')
+        if diffusion_seed is not None and (
+            isinstance(diffusion_seed, (bool, np.bool_)) or not isinstance(diffusion_seed, (int, np.integer))
+        ):
+            raise ValueError('"diffusion.seed" must be an integer.')
+        self.diffusion_seed = None if diffusion_seed is None else int(diffusion_seed)
 
         vertical_position = find_value(self.population_config, 'seeding.vertical_position', None)
         if vertical_position is None:
@@ -1023,6 +1059,7 @@ class ParticlePopulation:
     _position_calculator_temporal_with_simplex: Any = field(init=False)
     _position_calculator_with_boundary_class: Any = field(init=False)
     _position_calculator_temporal_with_boundary_class: Any = field(init=False)
+    _diffusion_calculator: DiffusionCalculator | None = field(init=False, default=None)
     _particle_simplices: ndarray = field(init=False)
     _particle_simplices_stale: bool = field(init=False, default=True)
     _current_time: float = field(init=False)
@@ -1043,6 +1080,11 @@ class ParticlePopulation:
         self._position_calculator_temporal_with_boundary_class = (
             self.grid_geometry.update_particles_temporal_with_boundary_class
         )
+        if self.population_config.diffusion_method == 'brownian' and self.population_config.diffusion_coefficient > 0.0:
+            rng = None
+            if self.population_config.diffusion_seed is not None:
+                rng = np.random.default_rng(self.population_config.diffusion_seed)
+            self._diffusion_calculator = DiffusionCalculator(BrownianDiffusionStrategy(), rng=rng)
 
         # generate particles based on the configuration
         _particles = ParticleFactory.create_particles(self.population_config)
@@ -2981,7 +3023,7 @@ class ParticlePopulation:
                 self.particles[status_name] = np.zeros(0, dtype=bool)
             return
 
-        transport_probability_method = self.population_config.population_config['transport_probability']
+        transport_probability_method = self.population_config.population_config.get('transport_probability', 'no_probability')
         if transport_probability_method == 'no_probability':
             self.particles['status_transported'] = np.ones(n_particles, dtype=bool)
         else:
@@ -3388,6 +3430,48 @@ class ParticlePopulation:
                 new_simplices[land_local_indices] = old_simplices[land_local_indices]
                 self.particles['status_beached'][land_particle_indices] = True
                 self.particles['status_domain'][land_particle_indices] = True
+
+        if self._diffusion_calculator is not None:
+            diffusable = ~outside_domain
+            if np.any(diffusable):
+                local_indices = np.flatnonzero(diffusable)
+                start_x = new_x[local_indices]
+                start_y = new_y[local_indices]
+                start_simplices = new_simplices[local_indices]
+                diffused_x, diffused_y = self._diffusion_calculator.calc_diffusion(
+                    start_x, start_y, np.zeros_like(start_x), np.zeros_like(start_y),
+                    self.population_config.diffusion_coefficient, current_timestep,
+                )
+                diffused_simplices = self.grid_geometry.locate_points(
+                    diffused_x, diffused_y, start_simplices
+                )
+                diffused_outside = diffused_simplices < 0
+                if np.any(diffused_outside):
+                    crossed_classes = self.grid_geometry.classify_boundary_crossings(
+                        start_x[diffused_outside], start_y[diffused_outside],
+                        diffused_x[diffused_outside], diffused_y[diffused_outside],
+                    )
+                    outside_particles = particle_indices[local_indices[diffused_outside]]
+                    self.particles['status_domain'][outside_particles] = False
+                    self.particles['status_mobile'][outside_particles] = False
+                    open_boundary = crossed_classes == 'open'
+                    if np.any(open_boundary):
+                        open_indices = outside_particles[open_boundary]
+                        self.particles['status_left_domain'][open_indices] = True
+                        self.particles['status_alive'][open_indices] = False
+                    land_boundary = crossed_classes == 'land'
+                    if np.any(land_boundary):
+                        land_local = np.flatnonzero(diffused_outside)[land_boundary]
+                        land_particles = outside_particles[land_boundary]
+                        diffused_x[land_local] = start_x[land_local]
+                        diffused_y[land_local] = start_y[land_local]
+                        diffused_simplices[land_local] = start_simplices[land_local]
+                        self.particles['status_beached'][land_particles] = True
+                        self.particles['status_domain'][land_particles] = True
+                        self.particles['status_mobile'][land_particles] = False
+                new_x[local_indices] = diffused_x
+                new_y[local_indices] = diffused_y
+                new_simplices[local_indices] = diffused_simplices
 
         self.particles['x'][ix] = new_x
         self.particles['y'][ix] = new_y

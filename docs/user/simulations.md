@@ -118,6 +118,81 @@ visualization:
     update_interval: 1H
 ```
 
+### Choosing a Tracer Mode
+
+Each population must define exactly one tracer method under `particles.populations[].tracer_methods`.
+
+- There is **no default tracer method**. You must explicitly choose one of: `vanwesten`, `soulsby`, or `passive_tracer`.
+- For `passive_tracer`, `flow_field_name` is optional and defaults to `depth_avg_flow_velocity`.
+- For `vanwesten` and `soulsby`, you should provide `flow_field_name` explicitly.
+- If you use `passive_tracer`, set `particle_type: passive`.
+- If you use `passive_tracer`, `transport_probability` must be `no_probability` (the default). Using `stochastic_transport` or `reduced_velocity` raises a configuration error.
+- If you use `passive_tracer`, omit `seeding.burial_depth`. Passive tracer does not support burial depth and will raise a configuration error if it is set.
+
+Use the following minimal keyword blocks inside each population:
+
+```yaml
+tracer_methods:
+  vanwesten:
+    flow_field_name:
+      - bed_load_velocity
+      - suspended_velocity
+```
+
+```yaml
+tracer_methods:
+  soulsby:
+    flow_field_name:
+      - grain_velocity
+```
+
+```yaml
+tracer_methods:
+  passive_tracer: {}
+```
+
+Minimal passive population example:
+
+```yaml
+- name: passive_population
+  particle_type: passive
+  characteristics:
+    diffusion_coefficient: 0.0
+  tracer_methods:
+    passive_tracer: {}
+  seeding:
+    release_start: 2016-09-21 19:30:00
+    quantity: 1
+    strategy:
+      random:
+        bbox: "39400,16800 40600,17800"
+        seed: 42
+        nlocations: 10
+```
+
+You can also set an explicit passive flow field:
+
+```yaml
+tracer_methods:
+  passive_tracer:
+    flow_field_name:
+      - depth_avg_flow_velocity
+```
+
+Repository examples by mode:
+
+- Van Westen: `examples/sedtrails-example.yaml`
+- Soulsby: `examples/config.example_soulsby.yaml`
+- Passive tracer: `examples/sedtrails-example-passive.yaml` (FM) and `examples/config.example_sfincs.yaml` (SFINCS)
+
+Run any mode the same way by selecting the config file:
+
+```bash
+sedtrails run -c ./examples/sedtrails-example.yaml
+sedtrails run -c ./examples/config.example_soulsby.yaml
+sedtrails run -c ./examples/config.example_sfincs.yaml
+```
+
 ## Running a Simulation
 
 The following steps run the tracked example configuration at `examples/sedtrails-example.yaml`.

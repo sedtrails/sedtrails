@@ -24,6 +24,16 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
     """
 
     def __init__(self, config, tracer_methods: None):
+        """Initialize the van Westen physics plugin.
+
+        Parameters
+        ----------
+        config : PhysicsConfig
+            Physics configuration supplied by the converter.
+        tracer_methods : object
+            Tracer-method configuration retained for plugin interface
+            compatibility.
+        """
         super().__init__()
         self.config = config
 

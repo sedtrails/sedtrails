@@ -134,6 +134,8 @@ def _restart_format_config(config: dict[str, Any], config_path: Path) -> dict[st
         'input_format': input_format,
         'reference_date': input_model.get('reference_date', '1970-01-01'),
         'morfac': input_model.get('morfac', 1.0),
+        'sediment_fraction_index': input_model.get('sediment_fraction_index', 0),
+        'sediment_fraction_name': input_model.get('sediment_fraction_name'),
     }
 
 
