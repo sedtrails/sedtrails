@@ -26,7 +26,7 @@ def _safe_velocity_direction(
     return direction_x, direction_y
 
 
-class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the PhysicsPlugin
+class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the PhysicsPlugin
     """
     Plugin for Soulsby et al. (2011) sediment transport physics calculations.
     This plugin implements the physics calculations as described in Soulsby et al. (2011).
