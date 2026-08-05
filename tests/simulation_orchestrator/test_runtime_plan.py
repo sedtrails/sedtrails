@@ -271,6 +271,23 @@ def test_missing_flow_field_name_raises_configuration_error():
         build_population_runtime_plans([population_config], [object()], {})
 
 
+@pytest.mark.parametrize('transport_probability', ['stochastic_transport', 'reduced_velocity'])
+def test_macdonald_rejects_unsupported_transport_probability(transport_probability):
+    """MacDonald must not create a zero mixing layer for burial probability modes."""
+    population_config = _population_config(
+        {
+            'macdonald': {
+                'flow_field_name': ['centroid_particle_velocity'],
+                'computationType': '2D',
+            }
+        },
+        transport_probability=transport_probability,
+    )
+
+    with pytest.raises(ConfigurationError, match='Only "no_probability"'):
+        build_population_runtime_plans([population_config], [object()], {})
+
+
 def test_population_count_mismatch_raises_configuration_error():
     """Raise a configuration error when seeded and configured population counts differ."""
     population_config = _population_config({'vanwesten': {'flow_field_name': ['bed_load_velocity']}})

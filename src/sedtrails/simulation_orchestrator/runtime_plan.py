@@ -93,15 +93,14 @@ def validate_population_runtime_configurations(
         tracer_methods = population_config.get('tracer_methods')
         if not isinstance(tracer_methods, Mapping) or len(tracer_methods) != 1:
             continue
-        if 'passive_tracer' not in tracer_methods:
-            continue
-
+        method_name = next(iter(tracer_methods))
         transport_probability_method = population_config.get(
             'transport_probability', DEFAULT_TRANSPORT_PROBABILITY_METHOD
         )
-        _validate_passive_tracer_configuration(
+        _validate_transport_probability_configuration(
             population_index,
             population_config,
+            method_name,
             transport_probability_method,
         )
 
@@ -230,12 +229,12 @@ def _build_population_runtime_plan(
     transport_probability_method = population_config.get(
         'transport_probability', DEFAULT_TRANSPORT_PROBABILITY_METHOD
     )
-    if method_name == 'passive_tracer':
-        _validate_passive_tracer_configuration(
-            population_index,
-            population_config,
-            transport_probability_method,
-        )
+    _validate_transport_probability_configuration(
+        population_index,
+        population_config,
+        method_name,
+        transport_probability_method,
+    )
     physics_config = build_physics_config(base_physics_config, population_config, method_name, method_config)
     tracer_config = {method_name: dict(method_config)}
     converter = PhysicsConverter(physics_config, tracer_config)
@@ -426,6 +425,27 @@ def _validate_passive_tracer_configuration(
             f'Population {population_index} uses tracer method "passive_tracer" with '
             f'transport_probability={transport_probability_method!r}. Only "no_probability" is allowed '
             'for passive_tracer.'
+        )
+
+
+def _validate_transport_probability_configuration(
+    population_index: int,
+    population_config: Mapping[str, Any],
+    method_name: str,
+    transport_probability_method: str,
+) -> None:
+    """Validate method-specific transport-probability support."""
+    if method_name == 'passive_tracer':
+        _validate_passive_tracer_configuration(
+            population_index,
+            population_config,
+            transport_probability_method,
+        )
+    elif method_name == 'macdonald' and transport_probability_method != DEFAULT_TRANSPORT_PROBABILITY_METHOD:
+        raise ConfigurationError(
+            f'Population {population_index} uses tracer method "macdonald" with '
+            f'transport_probability={transport_probability_method!r}. Only "no_probability" is currently '
+            'supported for MacDonald.'
         )
 
 
