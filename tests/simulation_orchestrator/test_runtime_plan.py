@@ -141,6 +141,22 @@ def test_passive_example_preflight_does_not_invent_burial_depth():
     validate_population_runtime_configurations(population_configs)
 
 
+def test_macdonald_example_uses_registered_centroid_velocity():
+    """Build a runtime plan from the shipped MacDonald example."""
+    repository_root = Path(__file__).resolve().parents[2]
+    config_path = repository_root / 'examples' / 'sedtrails-example-macdonald.yaml'
+    config = YAMLConfigValidator().validate_yaml(str(config_path))
+    population_configs = config['particles']['populations']
+
+    runtime_plan = build_population_runtime_plans(
+        population_configs,
+        [object()],
+        {},
+    )[0]
+
+    assert runtime_plan.tracer.flow_field_names == ('centroid_particle_velocity',)
+
+
 def test_passive_tracer_rejects_non_default_transport_probability_methods():
     """Passive tracer should fail fast when stochastic/reduced probability modes are configured."""
     population_config = _population_config(
