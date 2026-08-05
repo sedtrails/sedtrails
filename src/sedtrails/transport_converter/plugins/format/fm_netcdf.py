@@ -560,17 +560,21 @@ class FormatPlugin(BaseFormatPlugin):
             var_name = variable_map[key]
             if var_name in self.input_data:
                 var = self.input_data[var_name]
+                if (
+                    key in {'flow_velocity_x', 'flow_velocity_y'}
+                    and 'layer' in var.dims
+                    and var.sizes['layer'] > 1
+                ):
+                    raise ValueError(
+                        f"Variable '{var_name}' contains {var.sizes['layer']} vertical layers, but "
+                        'SedTRAILS requires depth-averaged flow velocity. Provide a depth-averaged '
+                        'velocity variable or preprocess the layers with thickness weighting.'
+                    )
 
                 # Check if variable has time dimension
                 if 'time' in var.dims:
                     # Check if variable has layer dimension
                     if 'layer' in var.dims:
-                        if key in {'flow_velocity_x', 'flow_velocity_y'} and var.sizes['layer'] > 1:
-                            raise ValueError(
-                                f"Variable '{var_name}' contains {var.sizes['layer']} vertical layers, but "
-                                'SedTRAILS requires depth-averaged flow velocity. Provide a depth-averaged '
-                                'velocity variable or preprocess the layers with thickness weighting.'
-                            )
                         # For variables with time and layer, select layer 0 and apply time slice
                         data[key] = var.isel(layer=0, time=time_slice).values
                     else:
