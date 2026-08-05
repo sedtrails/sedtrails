@@ -113,7 +113,7 @@
                   "type": "string",
                   "enum": ["max", "mean"],
                   "default": "mean",
-                  "description": "Select whether MacDonald formulas use the max or mean bed shear stress/shear velocity fields for Rouse number, Shields-dependent transport, and Q3D turbulence."
+                  "description": "Select the current shear velocity used for suspension profiles and Q3D diffusion. Maximum bed shear remains fixed for Shields mobilisation, resuspension, pickup, and active-layer calculations."
                 },
                 "entrainment": {
                   "type": "object",

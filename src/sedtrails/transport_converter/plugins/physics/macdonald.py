@@ -234,7 +234,11 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         #Question Vassia: should the max_suspended_velocity_factor be used here or in the final step - on the mean_particle_velocity?
         
         # bed load velocity (MacDonald et al., 2006, equation 30) - Engelund & Fredsoe (1976), same as Soulsby et al (2011)
-        bed_load_velocity = physics_lib.compute_bed_load_velocity(max_shields_number, critical_shields, max_shear_velocity)
+        bed_load_velocity = physics_lib.compute_bed_load_velocity(
+            max_shields_number,
+            critical_shields,
+            mean_shear_velocity,
+        )
 
         # sediment advection velocity (MacDonald et al., 2006, equation 32)
         u_zc = qs_qt * suspended_velocity + (1 - qs_qt) * bed_load_velocity
@@ -504,7 +508,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         flow_velocity_x = sedtrails_data.depth_avg_flow_velocity['x']
         flow_velocity_y = sedtrails_data.depth_avg_flow_velocity['y']
         flow_velocity_magnitude = sedtrails_data.depth_avg_flow_velocity['magnitude']
-        max_shear_velocity = sedtrails_data.max_shear_velocity
+        selected_shear_velocity = sedtrails_data.selected_shear_velocity
         z_c = sedtrails_data.total_transport_centroid_elevation
         centroid_particle_velocity = sedtrails_data.centroid_particle_velocity['magnitude']
         max_bed_shear_stress = sedtrails_data.max_bed_shear_stress
@@ -565,7 +569,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
                 water_depth=water_depth,
                 z_p=z_entrainment,
                 flow_velocity_magnitude=flow_velocity_magnitude,
-                shear_velocity=max_shear_velocity,
+                shear_velocity=selected_shear_velocity,
                 K_Et=getattr(self.config, 'q3d_horizontal_diffusion_factor', 0.15),
                 compute_horizontal=horizontal_diffusion_enabled,
                 compute_vertical=vertical_diffusion_enabled,

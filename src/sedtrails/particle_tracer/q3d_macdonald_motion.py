@@ -1130,7 +1130,7 @@ class Q3DMacdonaldMotionMixin:
                 waterdepth_active,
                 z_p_active,
                 da_velocity_magnitude_active,
-                max_shear_velocity_active,
+                selected_shear_velocity_active,
                 K_Et=K_Et,  # scalar
                 K_Ev=K_Ev,  # scalar
                 M_b=M_b_active,

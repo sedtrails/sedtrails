@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from sedtrails.transport_converter import physics_lib
 from sedtrails.transport_converter.physics_converter import PhysicsConfig, PhysicsConverter
 from sedtrails.transport_converter.plugins.physics.macdonald import PhysicsPlugin
 
@@ -351,3 +352,48 @@ def test_q3d_divergence_is_cached_for_unchanged_input_chunk(monkeypatch):
 
     assert first is second
     assert calls == 2
+
+
+def test_max_shear_controls_mobility_and_mean_shear_scales_bedload_speed(monkeypatch):
+    """Separate peak-stress mobility from mean-current bedload speed scaling."""
+    config = _macdonald_config(export_diagnostic_fields=True)
+    grain_properties = {
+        'critical_shields': 0.05,
+        'settling_velocity': 0.02,
+        'dimensionless_grain_size': 6.0,
+    }
+    sedtrails_data = _MacdonaldSedtrailsDataStub()
+    captured_shear_velocity = []
+    original = physics_lib.compute_bed_load_velocity
+
+    def capture_bedload_velocity(shields_number, critical_shields, shear_velocity):
+        captured_shear_velocity.append(np.asarray(shear_velocity).copy())
+        return original(shields_number, critical_shields, shear_velocity)
+
+    monkeypatch.setattr(
+        physics_lib,
+        'compute_bed_load_velocity',
+        capture_bedload_velocity,
+    )
+    PhysicsPlugin(config, tracer_methods={}).add_physics(
+        sedtrails_data,
+        grain_properties,
+        transport_probability_method='no_probability',
+    )
+
+    expected_mean_shear = physics_lib.compute_shear_velocity(
+        sedtrails_data.mean_bed_shear_stress,
+        config.water_density,
+    )
+    expected_max_shields = physics_lib.compute_shields(
+        sedtrails_data.max_bed_shear_stress,
+        config.gravity,
+        config.particle_density,
+        config.water_density,
+        config.grain_diameter,
+    )
+    np.testing.assert_allclose(
+        captured_shear_velocity[0],
+        expected_mean_shear,
+    )
+    np.testing.assert_allclose(sedtrails_data.max_shields_number, expected_max_shields)
