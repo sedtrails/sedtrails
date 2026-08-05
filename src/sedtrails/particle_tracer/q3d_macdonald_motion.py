@@ -105,6 +105,17 @@ class Q3DMacdonaldMotionMixin:
         )
 
     @staticmethod
+    def _flow_component_field(flow_field, component):
+        """Return one static or temporally bounded flow-field component."""
+        if all(key in flow_field for key in ('lower', 'upper', 'weight')):
+            return {
+                'lower': flow_field['lower'][component],
+                'upper': flow_field['upper'][component],
+                'weight': flow_field['weight'],
+            }
+        return flow_field[component]
+
+    @staticmethod
 
     def _turbulent_diffusion_coefficients(
         water_depth,
@@ -770,14 +781,23 @@ class Q3DMacdonaldMotionMixin:
         water_depth_field = water_depth
         skin_roughness_height_field = skin_roughness_height
 
-        # Store centroid velocity at particle positions for diagnostics.
-        self._update_particle_flow_field('centroid_particle_velocity', centroid_flow_field)
-
-        # Use hydrodynamic flow for Q3D movement direction and depth-averaged
-        # |U|. The MacDonald centroid velocity from the grid is retained only as
-        # a diagnostic, because Q3D recomputes particle velocity at the live z_p.
-        self._update_particle_flow_field('depth_avg_flow_velocity', hydrodynamic_flow_field)
         initial_particle_fields = {
+            'centroid_particle_velocity_u': self._flow_component_field(
+                centroid_flow_field,
+                'u',
+            ),
+            'centroid_particle_velocity_v': self._flow_component_field(
+                centroid_flow_field,
+                'v',
+            ),
+            'depth_avg_flow_velocity_u': self._flow_component_field(
+                hydrodynamic_flow_field,
+                'u',
+            ),
+            'depth_avg_flow_velocity_v': self._flow_component_field(
+                hydrodynamic_flow_field,
+                'v',
+            ),
             'bed_level': bed_level_field,
             'max_shear_velocity': max_shear_velocity,
             'selected_shear_velocity': selected_shear_velocity,
@@ -799,6 +819,14 @@ class Q3DMacdonaldMotionMixin:
         if M_b is not None:
             initial_particle_fields['q3d_wave_breaking_factor'] = M_b
         self._update_particle_fields(initial_particle_fields)
+        self.particles['centroid_particle_velocity_magnitude'] = np.hypot(
+            self.particles['centroid_particle_velocity_u'],
+            self.particles['centroid_particle_velocity_v'],
+        )
+        self.particles['depth_avg_flow_velocity_magnitude'] = np.hypot(
+            self.particles['depth_avg_flow_velocity_u'],
+            self.particles['depth_avg_flow_velocity_v'],
+        )
 
         # Required fields after interpolation/broadcasting. Hydrodynamic flow is
         # required for direction; centroid velocity is diagnostics only.
@@ -1261,9 +1289,16 @@ class Q3DMacdonaldMotionMixin:
             if vertical_update_scheme == 'rouse_profile':
                 post_advection_fields['rouse_number'] = rouse_number
             if needs_next_substep_fields:
-                self._update_particle_flow_field('depth_avg_flow_velocity', hydrodynamic_flow_field, indices=active_indices)
                 post_advection_fields.update(
                     {
+                        'depth_avg_flow_velocity_u': self._flow_component_field(
+                            hydrodynamic_flow_field,
+                            'u',
+                        ),
+                        'depth_avg_flow_velocity_v': self._flow_component_field(
+                            hydrodynamic_flow_field,
+                            'v',
+                        ),
                         'max_shear_velocity': max_shear_velocity,
                         'profile_roughness_height': profile_roughness_height,
                         'q3d_velocity_deficit_coefficient': q3d_velocity_deficit_coefficient,
@@ -1274,6 +1309,11 @@ class Q3DMacdonaldMotionMixin:
                     post_advection_fields['q3d_wave_breaking_factor'] = M_b
             # We use the updaed post advection fields to update the particle fields for the next substep or for the vertical advection
             self._update_particle_fields(post_advection_fields, indices=active_indices)
+            if needs_next_substep_fields:
+                self.particles['depth_avg_flow_velocity_magnitude'][active_indices] = np.hypot(
+                    self.particles['depth_avg_flow_velocity_u'][active_indices],
+                    self.particles['depth_avg_flow_velocity_v'][active_indices],
+                )
             
             # Next we read the new local bed level, water depth, and skin roughness at the new x,y position for the vertical update.
             bed_level_new_active = np.asarray(self.particles['bed_level'], dtype=float)[active_indices]

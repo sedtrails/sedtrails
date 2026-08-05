@@ -1318,6 +1318,29 @@ class ParticlePopulation(Q3DMacdonaldMotionMixin):
             self._mark_particle_simplices_current()
         return particle_values
 
+    def _interpolate_particle_fields_at_target(
+        self,
+        fields,
+        indices,
+        x_points,
+        y_points,
+    ):
+        """Interpolate fields while reusing simplex ids for a target subset."""
+        if indices is None:
+            return self._interpolate_particle_fields(fields)
+
+        cache_is_current = self._particle_simplices_match_positions()
+        simplex_ids = self._particle_simplices[indices] if cache_is_current else None
+        particle_values, refreshed_simplices = self._field_interpolator_multi_with_simplex(
+            tuple(fields),
+            x_points,
+            y_points,
+            simplex_ids=simplex_ids,
+        )
+        if cache_is_current:
+            self._particle_simplices[indices] = refreshed_simplices
+        return particle_values
+
     def _update_particle_field(self, name: str, field_value) -> None:
         self._update_particle_fields({name: field_value})
 
@@ -1432,10 +1455,12 @@ class ParticlePopulation(Q3DMacdonaldMotionMixin):
         if not arrays_to_interpolate:
             return
 
-        if indices is None:
-            interpolated_values = self._interpolate_particle_fields(tuple(arrays_to_interpolate))
-        else:
-            interpolated_values = self._field_interpolator_multi(tuple(arrays_to_interpolate), x_points, y_points)
+        interpolated_values = self._interpolate_particle_fields_at_target(
+            tuple(arrays_to_interpolate),
+            indices,
+            x_points,
+            y_points,
+        )
         value_index = 0
         for job in interpolation_jobs:
             kind = job[0]
@@ -1481,11 +1506,12 @@ class ParticlePopulation(Q3DMacdonaldMotionMixin):
         if _is_temporal_flow_field(flow_field):
             weight = flow_field['weight']
             if weight <= 0.0 or flow_field['lower'] is flow_field['upper']:
-                lower_u, lower_v = self._field_interpolator_multi(
+                lower_u, lower_v = self._interpolate_particle_fields_at_target(
                     (
                         np.asarray(flow_field['lower']['u']),
                         np.asarray(flow_field['lower']['v']),
                     ),
+                    indices,
                     x_points,
                     y_points,
                 )
@@ -1498,13 +1524,14 @@ class ParticlePopulation(Q3DMacdonaldMotionMixin):
                 )
                 return
 
-            lower_u, lower_v, upper_u, upper_v = self._field_interpolator_multi(
+            lower_u, lower_v, upper_u, upper_v = self._interpolate_particle_fields_at_target(
                 (
                     np.asarray(flow_field['lower']['u']),
                     np.asarray(flow_field['lower']['v']),
                     np.asarray(flow_field['upper']['u']),
                     np.asarray(flow_field['upper']['v']),
                 ),
+                indices,
                 x_points,
                 y_points,
             )
@@ -1519,11 +1546,12 @@ class ParticlePopulation(Q3DMacdonaldMotionMixin):
             )
             return
 
-        u, v = self._field_interpolator_multi(
+        u, v = self._interpolate_particle_fields_at_target(
             (
                 np.asarray(flow_field['u']),
                 np.asarray(flow_field['v']),
             ),
+            indices,
             x_points,
             y_points,
         )

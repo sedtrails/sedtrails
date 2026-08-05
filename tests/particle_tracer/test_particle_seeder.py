@@ -1682,7 +1682,10 @@ class TestParticlePopulation:
             field_y=np.array([0.0, 0.0, 1.0, 1.0]),
             population_config=point_config_simple,
         )
-        population._field_interpolator_multi = lambda *args: interpolated_components
+        population._field_interpolator_multi_with_simplex = lambda *args, **kwargs: (
+            interpolated_components,
+            population._particle_simplices.copy(),
+        )
 
         population._update_particle_flow_field('depth_avg_flow_velocity', flow_field)
 
@@ -1691,6 +1694,45 @@ class TestParticlePopulation:
         particle_magnitude = population.particles['depth_avg_flow_velocity_magnitude']
         np.testing.assert_allclose(particle_magnitude, np.hypot(particle_u, particle_v))
         np.testing.assert_allclose(particle_magnitude, np.sqrt(0.5))
+
+    def test_indexed_particle_fields_reuse_cached_simplex_ids(
+        self,
+        point_config_simple,
+        monkeypatch,
+    ):
+        """Reuse current simplex ids when Q3D samples an active subset."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=point_config_simple,
+        )
+        target_indices = np.array([0], dtype=np.int64)
+        expected_simplices = population._particle_simplices[target_indices].copy()
+        calls = []
+
+        def interpolate(fields, x_points, y_points, simplex_ids=None):
+            calls.append(simplex_ids.copy())
+            return (np.full(len(x_points), 4.0),), simplex_ids
+
+        monkeypatch.setattr(
+            population,
+            '_field_interpolator_multi_with_simplex',
+            interpolate,
+        )
+        monkeypatch.setattr(
+            population,
+            '_field_interpolator_multi',
+            lambda *args, **kwargs: pytest.fail('uncached interpolation was used'),
+        )
+
+        population._update_particle_fields(
+            {'sampled_field': np.arange(4.0)},
+            indices=target_indices,
+        )
+
+        assert len(calls) == 1
+        np.testing.assert_array_equal(calls[0], expected_simplices)
+        np.testing.assert_allclose(population.particles['sampled_field'][target_indices], 4.0)
 
     def test_update_burial_depth_tracks_temporal_bed_level_change(self):
         """Accretion should increase burial depth, while erosion clamps at zero."""
