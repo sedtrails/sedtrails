@@ -191,3 +191,10 @@ cython_debug/
 /examples/output
 results/particle_trajectories.png
 /examples/results
+
+# Generated analysis and visualization outputs
+/particle_trajectories.png
+/resources/diagnostic_velocity_profile_roughness_switch_*.png
+/resources/macdonald_zs_over_H_vs_rouse.png
+/resources/roughness_parameter_space_*.pdf
+/resources/roughness_parameter_space_*.png
