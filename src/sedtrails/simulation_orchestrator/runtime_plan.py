@@ -337,6 +337,7 @@ def required_physics_fields(
         fields = (
             *flow_field_names,
             'mixing_layer_thickness',
+            'max_shields_number',
             'particle_advection_velocity',
             'max_shear_velocity',
             'mean_shear_velocity',
@@ -354,6 +355,16 @@ def required_physics_fields(
         entrainment_method = str(entrainment_config.get('method', 'shields_threshold')).lower().replace('-', '_')
         if entrainment_method == 'entrainment_frequency':
             fields = (*fields, 'macdonald_entrainment_frequency')
+        deposition_config = method_config.get('deposition', {}) or {}
+        deposition_method = str(deposition_config.get('method', 'shields_threshold')).lower().replace('-', '_')
+        if computation_type == '2D' and deposition_method == 'markov_settling':
+            fields = (
+                *fields,
+                deposition_config.get(
+                    'settling_height_field',
+                    'suspended_transport_centroid_elevation',
+                ),
+            )
         if computation_type == 'Q3D':
             fields = (
                 *fields,

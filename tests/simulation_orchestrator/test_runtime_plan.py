@@ -278,6 +278,42 @@ def test_required_physics_fields_are_method_specific_and_unique():
     )
 
 
+def test_macdonald_required_fields_include_default_transition_inputs():
+    """Preserve fields consumed by default MacDonald 2D transitions."""
+    fields = required_physics_fields(
+        'macdonald',
+        ['centroid_particle_velocity'],
+        {'computationType': '2D'},
+    )
+
+    assert 'max_shields_number' in fields
+
+
+@pytest.mark.parametrize(
+    ('settling_height_field', 'expected_field'),
+    [
+        (None, 'suspended_transport_centroid_elevation'),
+        ('water_depth', 'water_depth'),
+    ],
+)
+def test_macdonald_required_fields_include_markov_settling_height(
+    settling_height_field,
+    expected_field,
+):
+    """Preserve the configured MacDonald Markov settling-height field."""
+    deposition = {'method': 'markov_settling'}
+    if settling_height_field is not None:
+        deposition['settling_height_field'] = settling_height_field
+
+    fields = required_physics_fields(
+        'macdonald',
+        ['centroid_particle_velocity'],
+        {'computationType': '2D', 'deposition': deposition},
+    )
+
+    assert expected_field in fields
+
+
 def test_build_plan_sedtrails_data_copies_only_required_physics_fields():
     """Copy only required converted physics fields into plan-local sedtrails data."""
     source_data = _FakeSedtrailsData()
