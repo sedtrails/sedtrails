@@ -31,6 +31,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
     def __init__(self, config, tracer_methods):
         super().__init__()
         self.config = config
+        self._q3d_divergence_cache_inputs = None
+        self._q3d_divergence_cache_value = None
         
         # This plugin relies on shared class-level MacDonald lookup cache
         _ = PhysicsPlugin._macdonald_lookup_da
@@ -579,7 +581,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         # For 2D hydrodynamic input, PTM estimates vertical flow velocity from
         # continuity (MacDonald 2006, Eq. 42), after the Q3D vertical advection
         # concept in Eq. 41. Here divU supplies the horizontal divergence term.
-        divU, dudx, dvdy = PhysicsPlugin.divergence_scattered_knn_time(
+        divU, dudx, dvdy = self._get_q3d_divergence(
             sedtrails_data.x,
             sedtrails_data.y,
             flow_velocity_x,
@@ -640,6 +642,34 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
             sedtrails_data.add_physics_field('turbulent_diffusion_coefficient_vertical', E_turb_vert)
             sedtrails_data.add_physics_field('vertical_advection_velocity', w_zp)
             sedtrails_data.add_physics_field('vertical_particle_velocity', vertical_particle_velocity)
+
+    def _get_q3d_divergence(self, x, y, u, v, k=12, r_max=150):
+        """Return cached Q3D horizontal divergence for one input-data chunk."""
+        cached_inputs = self._q3d_divergence_cache_inputs
+        current_inputs = (x, y, u, v, k, r_max)
+        if cached_inputs is not None:
+            same_arrays = all(
+                cached is current
+                for cached, current in zip(
+                    cached_inputs[:4],
+                    current_inputs[:4],
+                    strict=True,
+                )
+            )
+            if same_arrays and cached_inputs[4:] == current_inputs[4:]:
+                return self._q3d_divergence_cache_value
+
+        result = PhysicsPlugin.divergence_scattered_knn_time(
+            x,
+            y,
+            u,
+            v,
+            k=k,
+            r_max=r_max,
+        )
+        self._q3d_divergence_cache_inputs = current_inputs
+        self._q3d_divergence_cache_value = result
+        return result
 
     @staticmethod
 
@@ -747,19 +777,13 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
                 f"but u/v have {npoints}"
             )
 
-        divU = np.full((nt, npoints), np.nan)
-        dudx = np.full((nt, npoints), np.nan)
-        dvdy = np.full((nt, npoints), np.nan)
-
-        for it in range(nt):
-            divU[it], dudx[it], dvdy[it] = PhysicsPlugin.divergence_scattered_knn(
-                x, y,
-                u[it], v[it],
-                k=k,
-                r_max=r_max,
-            )
-
-        return divU, dudx, dvdy
+        stencils = PhysicsPlugin._build_divergence_stencils(
+            x,
+            y,
+            k=k,
+            r_max=r_max,
+        )
+        return PhysicsPlugin._apply_divergence_stencils(u, v, stencils)
 
     @staticmethod
 
@@ -798,51 +822,89 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         y = np.asarray(y)
         u = np.asarray(u)
         v = np.asarray(v)
+        if u.ndim != 1 or v.ndim != 1:
+            raise ValueError('u and v must be 1D arrays')
+        if u.shape != x.shape or v.shape != x.shape or y.shape != x.shape:
+            raise ValueError('x, y, u, and v must have matching shapes')
 
-        N = x.size
-        divU = np.full(N, np.nan)
-        dudx = np.full(N, np.nan)
-        dvdy = np.full(N, np.nan)
+        stencils = PhysicsPlugin._build_divergence_stencils(
+            x,
+            y,
+            k=k,
+            r_max=r_max,
+            eps=eps,
+        )
+        div_u, dudx, dvdy = PhysicsPlugin._apply_divergence_stencils(
+            u[np.newaxis, :],
+            v[np.newaxis, :],
+            stencils,
+        )
+        return div_u[0], dudx[0], dvdy[0]
+
+    @staticmethod
+    def _build_divergence_stencils(x, y, k=12, r_max=None, eps=1e-12):
+        """Build reusable local derivative weights for a scattered grid."""
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        if x.ndim != 1 or y.ndim != 1 or x.shape != y.shape:
+            raise ValueError('x and y must be matching 1D arrays')
+
+        npoints = x.size
+        stencils = [None] * npoints
+        if npoints < 4:
+            return stencils
 
         coords = np.column_stack((x, y))
         tree = cKDTree(coords)
+        query_k = min(k + 1, npoints)
+        dists, indices = tree.query(coords, k=query_k)
+        if query_k == 1:
+            dists = dists[:, np.newaxis]
+            indices = indices[:, np.newaxis]
 
-        # k+1 because the nearest neighbour is the point itself
-        query_k = min(k + 1, N)
-        dists, idxs = tree.query(coords, k=query_k)
-
-        for i in range(N):
-            neigh = idxs[i][1:]
-            r = dists[i][1:]
-
+        for point_index in range(npoints):
+            neighbours = np.asarray(indices[point_index, 1:], dtype=int)
+            distances = np.asarray(dists[point_index, 1:], dtype=float)
             if r_max is not None:
-                mask = r <= r_max
-                neigh = neigh[mask]
-                r = r[mask]
-
-            if neigh.size < 3:
+                inside_radius = distances <= r_max
+                neighbours = neighbours[inside_radius]
+                distances = distances[inside_radius]
+            if neighbours.size < 3:
                 continue
 
-            dx = x[neigh] - x[i]
-            dy = y[neigh] - y[i]
+            dx = x[neighbours] - x[point_index]
+            dy = y[neighbours] - y[point_index]
+            root_weights = np.sqrt(1.0 / (distances + eps))
+            design = np.column_stack((np.ones_like(dx), dx, dy))
+            weighted_design = design * root_weights[:, np.newaxis]
+            coefficient_map = np.linalg.pinv(weighted_design) * root_weights
+            stencils[point_index] = (
+                neighbours,
+                coefficient_map[1],
+                coefficient_map[2],
+            )
+        return stencils
 
-            # Distance-weighted least squares
-            w = 1.0 / (r + eps)
-            W = np.sqrt(w)
+    @staticmethod
+    def _apply_divergence_stencils(u, v, stencils):
+        """Apply scattered-grid derivative weights to all input time slices."""
+        u = np.asarray(u, dtype=float)
+        v = np.asarray(v, dtype=float)
+        if u.ndim != 2 or v.ndim != 2 or u.shape != v.shape:
+            raise ValueError('u and v must be matching 2D arrays')
+        if u.shape[1] != len(stencils):
+            raise ValueError('Velocity fields and divergence stencils do not match')
 
-            A = np.column_stack((np.ones_like(dx), dx, dy))
-            Aw = A * W[:, None]
-
-            # u-plane
-            bu, *_ = np.linalg.lstsq(Aw, u[neigh] * W, rcond=None)
-            # v-plane
-            bv, *_ = np.linalg.lstsq(Aw, v[neigh] * W, rcond=None)
-
-            dudx[i] = bu[1]
-            dvdy[i] = bv[2]
-            divU[i] = dudx[i] + dvdy[i]
-
-        return divU, dudx, dvdy
+        ntimes, npoints = u.shape
+        dudx = np.full((ntimes, npoints), np.nan)
+        dvdy = np.full((ntimes, npoints), np.nan)
+        for point_index, stencil in enumerate(stencils):
+            if stencil is None:
+                continue
+            neighbours, dudx_weights, dvdy_weights = stencil
+            dudx[:, point_index] = u[:, neighbours] @ dudx_weights
+            dvdy[:, point_index] = v[:, neighbours] @ dvdy_weights
+        return dudx + dvdy, dudx, dvdy
 
 
     @staticmethod

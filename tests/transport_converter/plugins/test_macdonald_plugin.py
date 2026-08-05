@@ -298,3 +298,56 @@ def test_compute_dh_dt_rejects_nonincreasing_input_times():
 
     with pytest.raises(ValueError, match='increase monotonically'):
         PhysicsPlugin.compute_dh_dt(water_depth, np.array([0.0]), np.array([5.0, 5.0]))
+
+
+def test_time_divergence_reuses_geometry_for_all_frames():
+    """Apply one set of scattered-grid derivative stencils over time."""
+    grid_x, grid_y = np.meshgrid(np.arange(3.0), np.arange(3.0))
+    x = grid_x.ravel()
+    y = grid_y.ravel()
+    base_u = 2.0 * x + y
+    base_v = x + 3.0 * y
+    u = np.vstack((base_u, 2.0 * base_u))
+    v = np.vstack((base_v, 3.0 * base_v))
+
+    divergence, dudx, dvdy = PhysicsPlugin.divergence_scattered_knn_time(
+        x,
+        y,
+        u,
+        v,
+        k=8,
+    )
+
+    np.testing.assert_allclose(dudx[0], 2.0)
+    np.testing.assert_allclose(dvdy[0], 3.0)
+    np.testing.assert_allclose(divergence[0], 5.0)
+    np.testing.assert_allclose(divergence[1], 13.0)
+
+
+def test_q3d_divergence_is_cached_for_unchanged_input_chunk(monkeypatch):
+    """Avoid recomputing full-grid divergence during every particle step."""
+    plugin = PhysicsPlugin(_macdonald_config(computationType='Q3D'), tracer_methods={})
+    x = np.arange(4.0)
+    y = np.arange(4.0)
+    u = np.ones((2, 4))
+    v = np.ones((2, 4))
+    calls = 0
+    original = PhysicsPlugin.divergence_scattered_knn_time
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        PhysicsPlugin,
+        'divergence_scattered_knn_time',
+        staticmethod(counted),
+    )
+
+    first = plugin._get_q3d_divergence(x, y, u, v)
+    second = plugin._get_q3d_divergence(x, y, u, v)
+    plugin._get_q3d_divergence(x, y, u.copy(), v)
+
+    assert first is second
+    assert calls == 2
