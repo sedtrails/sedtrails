@@ -18,6 +18,32 @@ from sedtrails.simulation_orchestrator.runtime_plan import validate_population_r
 from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
 
+def test_markov_settling_samples_selected_current_shear():
+    """Peak shear must not suppress the Markov deposition transition."""
+    requested_fields = []
+
+    class Retriever:
+        def get_scalar_field_bounds(self, time, name):
+            requested_fields.append(name)
+            return np.array([1.0])
+
+    physics_config = SimpleNamespace(deposition={'method': 'markov_settling'})
+    tracer_plan = SimpleNamespace(
+        converter=SimpleNamespace(grain_properties={'settling_velocity': 0.01})
+    )
+
+    Simulation._macdonald_2d_deposition_parameters(
+        physics_config,
+        tracer_plan,
+        Retriever(),
+        0.0,
+        {'magnitude': np.array([1.0])},
+    )
+
+    assert 'selected_shear_velocity' in requested_fields
+    assert 'max_shear_velocity' not in requested_fields
+
+
 class _FakePopulation:
     """Minimal population double for permanent-burial integration tests."""
 

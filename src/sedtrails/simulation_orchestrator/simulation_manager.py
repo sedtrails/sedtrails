@@ -942,7 +942,7 @@ class Simulation:
                 ),
                 'shear_velocity_field': retriever.get_scalar_field_bounds(
                     field_time_seconds,
-                    'max_shear_velocity',
+                    'selected_shear_velocity',
                 ),
             }
         )
