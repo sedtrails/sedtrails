@@ -475,12 +475,14 @@ class PopulationConfig:
             raise MissingConfigurationParameter(
                 f'"seeding.vertical_position.value" is required for mode {mode!r}.'
             )
-        if mode == 'burial_depth' and 'value' in vertical_position:
-            raise ValueError(
-                '"seeding.vertical_position.value" is not used for mode "burial_depth". '
-                'Set the depth with "seeding.burial_depth", for example '
-                '"burial_depth: {constant: 0.1}" or "burial_depth: {random: 0.2}".'
-            )
+        if mode in {'burial_depth', 'bed', 'centroid_on_release'} and 'value' in vertical_position:
+            message = f'"seeding.vertical_position.value" is not used for mode "{mode}".'
+            if mode == 'burial_depth':
+                message += (
+                    ' Set the depth with "seeding.burial_depth", for example '
+                    '"burial_depth: {constant: 0.1}" or "burial_depth: {random: 0.2}".'
+                )
+            raise ValueError(message)
 
         self.vertical_position_mode = mode
         self.vertical_position_value = vertical_position.get('value')

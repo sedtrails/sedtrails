@@ -287,6 +287,44 @@ def test_population_schema_rejects_invalid_diffusion_config(tmp_path, diffusion)
         _validate_config(tmp_path, config)
 
 
+@pytest.mark.parametrize('mode', ['height_above_bed', 'absolute_z'])
+def test_population_schema_requires_vertical_position_value(tmp_path, mode):
+    """Height and absolute-z modes require their numeric vertical value."""
+    config = _base_config()
+    config['particles']['populations'][0]['seeding']['vertical_position'] = {'mode': mode}
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+@pytest.mark.parametrize('mode', ['burial_depth', 'bed', 'centroid_on_release'])
+def test_population_schema_rejects_unused_vertical_position_value(tmp_path, mode):
+    """Modes without a direct numeric height must not silently ignore value."""
+    config = _base_config()
+    config['particles']['populations'][0]['seeding']['vertical_position'] = {
+        'mode': mode,
+        'value': 0.1,
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+@pytest.mark.parametrize('mode', ['height_above_bed', 'absolute_z'])
+def test_population_schema_accepts_vertical_position_value(tmp_path, mode):
+    """Height and absolute-z modes accept a numeric vertical value."""
+    config = _base_config()
+    config['particles']['populations'][0]['seeding']['vertical_position'] = {
+        'mode': mode,
+        'value': 0.1,
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    vertical_position = validated['particles']['populations'][0]['seeding']['vertical_position']
+    assert vertical_position == {'mode': mode, 'value': pytest.approx(0.1)}
+
+
 def _validate_config(tmp_path, config):
     """Write a temporary config file and validate it with the schema validator."""
     config_file = tmp_path / 'sedtrails.yml'

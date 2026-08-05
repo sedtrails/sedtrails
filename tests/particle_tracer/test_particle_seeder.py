@@ -969,8 +969,12 @@ class TestParticleFactory:
         assert particles[0].vertical_position_mode == 'height_above_bed'
         assert particles[0].vertical_position_value == pytest.approx(0.4)
 
-    def test_burial_depth_mode_rejects_unused_vertical_position_value(self):
-        with pytest.raises(ValueError, match='vertical_position.value.*not used.*seeding.burial_depth'):
+    @pytest.mark.parametrize('mode', ['burial_depth', 'bed', 'centroid_on_release'])
+    def test_vertical_position_modes_reject_unused_value(self, mode):
+        match = 'vertical_position.value.*not used'
+        if mode == 'burial_depth':
+            match += '.*seeding.burial_depth'
+        with pytest.raises(ValueError, match=match):
             PopulationConfig(
                 {
                     'name': 'Invalid burial-depth value config',
@@ -980,7 +984,7 @@ class TestParticleFactory:
                         'quantity': 1,
                         'release_start': '2025-06-18 13:00:00',
                         'burial_depth': {'constant': 0.1},
-                        'vertical_position': {'mode': 'burial_depth', 'value': 0.1},
+                        'vertical_position': {'mode': mode, 'value': 0.1},
                     },
                 }
             )

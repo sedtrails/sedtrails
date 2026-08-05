@@ -463,6 +463,34 @@
                     },
                     "required": [
                         "mode"
+                    ],
+                    "allOf": [
+                        {
+                            "if": {
+                                "properties": {
+                                    "mode": {
+                                        "enum": ["height_above_bed", "absolute_z"]
+                                    }
+                                }
+                            },
+                            "then": {
+                                "required": ["value"]
+                            }
+                        },
+                        {
+                            "if": {
+                                "properties": {
+                                    "mode": {
+                                        "enum": ["burial_depth", "bed", "centroid_on_release"]
+                                    }
+                                }
+                            },
+                            "then": {
+                                "not": {
+                                    "required": ["value"]
+                                }
+                            }
+                        }
                     ]
                 },
                 "class": {
