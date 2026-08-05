@@ -38,6 +38,38 @@ class RestartParticleState:
     alive_mask: np.ndarray
     in_domain_mask: np.ndarray
     restart_seconds: float | None
+    particle_fields: dict[str, np.ndarray]
+
+
+_RESTART_PARTICLE_FIELDS = (
+    'z',
+    'z_p',
+    'burial_depth',
+    'status_suspended',
+    'status_deposited',
+    'status_buried',
+    'vertical_position_initialized',
+)
+
+
+def _optional_restart_fields(
+    ds: xr.Dataset,
+    n_particles: int,
+    time_dim: str | None = None,
+    slot_idx: int | None = None,
+) -> dict[str, np.ndarray]:
+    """Extract optional Q3D state fields from one output sample."""
+    fields = {}
+    for name in _RESTART_PARTICLE_FIELDS:
+        if name not in ds:
+            continue
+        variable = ds[name]
+        if time_dim is not None and time_dim in variable.dims:
+            variable = variable.isel({time_dim: slot_idx})
+        values = np.asarray(variable.values)
+        if values.ndim == 1 and values.shape[0] == n_particles:
+            fields[name] = values
+    return fields
 
 
 def _to_datetime(value: Any) -> datetime:
@@ -238,6 +270,7 @@ def _extract_checkpoint_state(ds: xr.Dataset) -> RestartParticleState:
         alive_mask=np.asarray(alive_mask, dtype=bool),
         in_domain_mask=np.asarray(in_domain_mask, dtype=bool),
         restart_seconds=restart_seconds,
+        particle_fields=_optional_restart_fields(ds, n_particles),
     )
 
 
@@ -279,6 +312,7 @@ def _extract_time_particle_state(ds: xr.Dataset) -> RestartParticleState:
         alive_mask=np.asarray(alive_mask, dtype=bool),
         in_domain_mask=np.asarray(in_domain_mask, dtype=bool),
         restart_seconds=restart_seconds,
+        particle_fields=_optional_restart_fields(ds, n_particles, time_dim, slot_idx),
     )
 
 
@@ -449,8 +483,8 @@ def create_restart_from_netcdf(
         for pop_idx, population in enumerate(populations):
             pop_name = str(population.get('name', f'population_{pop_idx + 1}'))
 
-            selected = [
-                (float(restart_state.x[i]), float(restart_state.y[i]))
+            selected_indices = [
+                i
                 for i in range(n_particles)
                 if keep_mask[i] and int(restart_state.pop_ids[i]) == pop_idx
             ]
@@ -458,16 +492,22 @@ def create_restart_from_netcdf(
             population.setdefault('seeding', {})
             population['seeding']['release_start'] = restart_time
 
-            if not selected:
+            if not selected_indices:
                 # Disable seeding for this population on restart (avoid reseeding new particles).
                 population['seeding']['quantity'] = 0
                 continue
 
             points_file = seeds_dir / f'{pop_name}.restart_points.csv'
+            state_fields = [name for name in _RESTART_PARTICLE_FIELDS if name in restart_state.particle_fields]
             with open(points_file, 'w', encoding='utf-8') as handle:
-                handle.write('x,y\n')
-                for x_coord, y_coord in selected:
-                    handle.write(f'{x_coord:.8f},{y_coord:.8f}\n')
+                handle.write(','.join(('x', 'y', *state_fields)) + '\n')
+                for particle_index in selected_indices:
+                    values = [
+                        f'{float(restart_state.x[particle_index]):.8f}',
+                        f'{float(restart_state.y[particle_index]):.8f}',
+                    ]
+                    values.extend(str(restart_state.particle_fields[name][particle_index]) for name in state_fields)
+                    handle.write(','.join(values) + '\n')
 
             population['seeding']['quantity'] = 1
             population['seeding']['strategy'] = {

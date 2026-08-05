@@ -607,6 +607,33 @@ class TestFilePointsStrategy:
         assert result[1] == (2, 3.0, 4.0)
         assert result[2] == (2, 5.0, 6.0)
 
+    def test_file_points_restores_q3d_checkpoint_state(self, tmp_path):
+        """Restart CSV state columns should initialize particle vertical state."""
+        points_file = tmp_path / 'restart.csv'
+        points_file.write_text(
+            'x,y,z,z_p,burial_depth,status_suspended,status_deposited,status_buried,'
+            'vertical_position_initialized\n0.2,0.3,-1.2,0.4,0.0,1,0,0,1\n'
+        )
+        config = PopulationConfig(
+            {
+                'name': 'restart state',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'file_points': {'path': str(points_file), 'deduplicate': False}},
+                    'quantity': 1,
+                    'release_start': '0',
+                    'burial_depth': {'constant': 0.0},
+                },
+            }
+        )
+
+        particle = ParticleFactory.create_particles(config)[0]
+
+        assert particle.z == pytest.approx(-1.2)
+        assert particle.z_p == pytest.approx(0.4)
+        assert bool(particle.status_suspended) is True
+        assert bool(particle.vertical_position_initialized) is True
+
     def test_file_points_strategy_no_header(self, file_points_strategy, file_points_config_no_header):
         """Test file_points strategy with no header."""
         result = file_points_strategy.seed(file_points_config_no_header)

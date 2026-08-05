@@ -887,8 +887,7 @@ class FilePointsStrategy(SeedingStrategy):
         if x_name not in df.columns or y_name not in df.columns:
             raise ValueError(f'Columns not found. Available: {list(df.columns)}; requested x={x_name}, y={y_name}')
 
-        df = df[[x_name, y_name]].copy()
-        df.columns = ['x', 'y']
+        df = df.copy().rename(columns={x_name: 'x', y_name: 'y'})
 
         if dropna:
             df = df.dropna(subset=['x', 'y'])
@@ -909,6 +908,19 @@ class FilePointsStrategy(SeedingStrategy):
         # Build seed locations
         seed_locations = [
             (quantity, float(x), float(y)) for x, y in zip(df['x'].to_numpy(), df['y'].to_numpy(), strict=True)
+        ]
+        restart_fields = (
+            'z',
+            'z_p',
+            'burial_depth',
+            'status_suspended',
+            'status_deposited',
+            'status_buried',
+            'vertical_position_initialized',
+        )
+        config.file_point_particle_states = [
+            {name: row[name] for name in restart_fields if name in df.columns and pd.notna(row[name])}
+            for _, row in df.iterrows()
         ]
         return seed_locations
 
@@ -980,7 +992,8 @@ class ParticleFactory:
         burial_rng = random.Random(strategy_seed)
 
         particles = []
-        for qty, x, y in positions:
+        file_point_states = getattr(config, 'file_point_particle_states', [])
+        for position_index, (qty, x, y) in enumerate(positions):
             for _ in range(qty):
                 p = ParticleClass()
                 p.x = x
@@ -993,6 +1006,12 @@ class ParticleFactory:
                 )
                 p.vertical_position_mode = vertical_position_mode
                 p.vertical_position_value = vertical_position_value
+                for name, value in (
+                    file_point_states[position_index].items()
+                    if position_index < len(file_point_states)
+                    else ()
+                ):
+                    setattr(p, name, value)
 
                 particles.append(p)
 
@@ -1102,13 +1121,25 @@ class ParticlePopulation(Q3DMacdonaldMotionMixin):
                 dtype='<U32',
             ),
             'vertical_position_value': np.array(vertical_position_values, dtype=float),
-            'vertical_position_initialized': np.zeros(len(_particles), dtype=bool),
-            'status_suspended': np.zeros(len(_particles), dtype=bool),
-            'status_deposited': np.ones(len(_particles), dtype=bool),
-            'status_buried': np.array([p.burial_depth > 0.0 for p in _particles], dtype=bool),
+            'vertical_position_initialized': np.array(
+                [getattr(p, 'vertical_position_initialized', False) for p in _particles],
+                dtype=bool,
+            ),
+            'status_suspended': np.array([getattr(p, 'status_suspended', False) for p in _particles], dtype=bool),
+            'status_deposited': np.array([getattr(p, 'status_deposited', True) for p in _particles], dtype=bool),
+            'status_buried': np.array(
+                [getattr(p, 'status_buried', p.burial_depth > 0.0) for p in _particles],
+                dtype=bool,
+            ),
             'status_left_domain': np.zeros(len(_particles), dtype=bool),
             'status_beached': np.zeros(len(_particles), dtype=bool),
         }
+        for field_name in ('z', 'z_p'):
+            if any(hasattr(p, field_name) for p in _particles):
+                self.particles[field_name] = np.array(
+                    [getattr(p, field_name, np.nan) for p in _particles],
+                    dtype=float,
+                )
         self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
         self._mark_particle_simplices_current()
         self._validate_seed_locations_inside_domain()
