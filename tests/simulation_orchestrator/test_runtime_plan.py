@@ -366,8 +366,8 @@ def test_build_plan_sedtrails_data_copies_only_required_physics_fields():
     assert source_data.get_physics_fields() == []
     assert plan_data.get_physics_fields() == ['bed_load_velocity', 'mixing_layer_thickness']
     assert not plan_data.has_physics_field('ignored_field')
-    assert plan_data.bed_load_velocity is not converter.generated_velocity
-    assert plan_data.bed_load_velocity['x'] is not converter.generated_velocity['x']
+    assert plan_data.bed_load_velocity is converter.generated_velocity
+    assert plan_data.bed_load_velocity['x'] is converter.generated_velocity['x']
     np.testing.assert_array_equal(plan_data.bed_load_velocity['x'], np.array([1.0, 2.0]))
 
 

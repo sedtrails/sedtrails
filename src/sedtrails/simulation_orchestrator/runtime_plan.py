@@ -196,7 +196,7 @@ def _copy_required_plan_fields(sedtrails_data: Any, working_data: Any, tracer_pl
     plan_data = _shallow_sedtrails_data_clone(sedtrails_data)
     for field_name in tracer_plan.required_physics_fields:
         if working_data.has_physics_field(field_name):
-            plan_data.add_physics_field(field_name, _copy_physics_value(getattr(working_data, field_name)))
+            plan_data.add_physics_field(field_name, getattr(working_data, field_name))
     return plan_data
 
 def _build_population_runtime_plan(
@@ -471,18 +471,8 @@ def _shallow_sedtrails_data_clone(sedtrails_data: Any) -> Any:
     cloned_data = copy.copy(sedtrails_data)
     cloned_data._physics_fields = {}
     for field_name, value in getattr(sedtrails_data, '_physics_fields', {}).items():
-        cloned_data.add_physics_field(field_name, _copy_physics_value(value))
+        cloned_data.add_physics_field(field_name, value)
     return cloned_data
-
-
-def _copy_physics_value(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {key: _copy_physics_value(item) for key, item in value.items()}
-    if isinstance(value, np.ndarray):
-        return np.array(value, copy=True)
-    if hasattr(value, 'copy'):
-        return value.copy()
-    return copy.deepcopy(value)
 
 
 def _select_population_fraction_data(
