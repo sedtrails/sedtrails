@@ -249,9 +249,12 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         # sediment advection velocity (MacDonald et al., 2006, equation 32)
         u_zc = qs_qt * suspended_velocity + (1 - qs_qt) * bed_load_velocity
         # total transport centroid elevation (MacDonald et al., 2006, equation 34)
-        z_c = np.zeros_like(u_zc)
-        mask = selected_shear_velocity > 0
-        z_c[mask] = profile_roughness_height[mask] * 10 ** (0.1739 * (u_zc[mask] / selected_shear_velocity[mask]) - 1.47826)
+        z_c = PhysicsPlugin._calculate_total_transport_centroid_elevation(
+            u_zc,
+            selected_shear_velocity,
+            profile_roughness_height,
+            water_depth,
+        )
 
         # Centroid particle velocity u_zc (MacDonald et al., 2006, equation 35).
         # In 2D this is the advecting particle velocity. In Q3D it is the reference
@@ -1502,6 +1505,74 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         valid = np.isfinite(numerator) & np.isfinite(denominator) & (denominator != 0)
         np.divide(numerator, denominator, out=result, where=valid)
         return result
+
+    @staticmethod
+    def _calculate_total_transport_centroid_elevation(
+        particle_velocity,
+        selected_shear_velocity,
+        profile_roughness_height,
+        water_depth,
+    ):
+        """Calculate a finite total-load centroid height above the bed.
+
+        MacDonald et al. (2006), Eq. 34, is evaluated in log10 space so that
+        very small positive shear velocities cannot overflow the exponential.
+        Equation 40 defines the near-bed velocity-deficit zone up to
+        ``1.4 * z_c``. The centroid is therefore capped at ``water_depth / 1.4``
+        so that the full closure remains inside the water column.
+
+        Parameters
+        ----------
+        particle_velocity : array-like
+            Total-load particle velocity magnitude in m/s.
+        selected_shear_velocity : array-like
+            Current shear velocity in m/s.
+        profile_roughness_height : array-like
+            Roughness height used by the velocity profile in m.
+        water_depth : array-like
+            Local water depth in m.
+
+        Returns
+        -------
+        numpy.ndarray
+            Total-load centroid height above the bed in m.
+        """
+        particle_velocity, selected_shear_velocity, profile_roughness_height, water_depth = (
+            np.broadcast_arrays(
+                np.asarray(particle_velocity, dtype=float),
+                np.asarray(selected_shear_velocity, dtype=float),
+                np.asarray(profile_roughness_height, dtype=float),
+                np.asarray(water_depth, dtype=float),
+            )
+        )
+        centroid = np.zeros_like(particle_velocity, dtype=float)
+        valid = (
+            np.isfinite(particle_velocity)
+            & (particle_velocity >= 0.0)
+            & np.isfinite(selected_shear_velocity)
+            & (selected_shear_velocity > 0.0)
+            & np.isfinite(profile_roughness_height)
+            & (profile_roughness_height > 0.0)
+            & np.isfinite(water_depth)
+            & (water_depth > 0.0)
+        )
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore', under='ignore'):
+            maximum_centroid_elevation = np.nextafter(water_depth / 1.4, 0.0)
+            log10_centroid = (
+                np.log10(profile_roughness_height)
+                + 0.1739 * particle_velocity / selected_shear_velocity
+                - 1.47826
+            )
+            bounded_log10_centroid = np.minimum(
+                log10_centroid,
+                np.log10(maximum_centroid_elevation),
+            )
+            np.power(10.0, bounded_log10_centroid, out=centroid, where=valid)
+        centroid[valid] = np.minimum(
+            centroid[valid],
+            maximum_centroid_elevation[valid],
+        )
+        return centroid
 
     @staticmethod
 

@@ -71,6 +71,50 @@ def test_shared_entrainment_frequency_is_zero_below_threshold_and_positive_above
     assert frequency[1] > 0.0
 
 
+def test_total_transport_centroid_is_finite_and_bounded_at_low_shear():
+    """Keep the MacDonald transport centroid inside the water column."""
+    particle_velocity = np.array([0.0268485, 0.2, 0.0])
+    selected_shear_velocity = np.array([8.0e-6, 0.05, 0.0])
+    roughness_height = np.array([0.001, 0.001, 0.001])
+    water_depth = np.array([8.66, 2.0, 1.0])
+
+    centroid = PhysicsPlugin._calculate_total_transport_centroid_elevation(
+        particle_velocity,
+        selected_shear_velocity,
+        roughness_height,
+        water_depth,
+    )
+
+    expected_moderate_shear = roughness_height[1] * 10 ** (
+        0.1739 * particle_velocity[1] / selected_shear_velocity[1] - 1.47826
+    )
+    fall_time = PhysicsPlugin.safe_divide(centroid, 0.02, fill=0.0)
+    deficit_coefficient = np.clip(fall_time * 0.1, 0.0, 1.0)
+    centroid_floor_height = Q3DMacdonaldMotionMixin()._q3d_height_after_vertical_update(
+        'centroid_floor',
+        z_p_old=np.ones(3),
+        bed_level_old=np.zeros(3),
+        bed_level_new=np.zeros(3),
+        water_depth_new=water_depth,
+        particle_w=np.zeros(3),
+        settling_velocity=np.zeros(3),
+        transport_centroid_elevation_new=centroid,
+        rouse_number_new=np.ones(3),
+        dt=60.0,
+    )
+
+    assert np.all(np.isfinite(centroid))
+    assert np.all(1.4 * centroid <= water_depth)
+    assert centroid[0] == pytest.approx(water_depth[0] / 1.4)
+    assert centroid[1] == pytest.approx(expected_moderate_shear)
+    assert centroid[2] == pytest.approx(0.0)
+    assert np.all(np.isfinite(fall_time))
+    assert np.all(np.isfinite(deficit_coefficient))
+    assert deficit_coefficient[0] > 0.0
+    assert centroid_floor_height[0] == pytest.approx(centroid[0])
+    assert centroid_floor_height[0] < water_depth[0]
+
+
 def _macdonald_eq27_z_over_h(rouse_number):
     """Independent reference implementation of MacDonald et al. (2006) Eq. 27.
 
