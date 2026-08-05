@@ -2949,6 +2949,22 @@ def test_macdonald_2d_release_state_maps_bed_and_burial_modes():
     assert population.particles['status_eligible'].tolist() == [True]
 
 
+@pytest.mark.parametrize(
+    ('height_above_bed', 'expected_suspended'),
+    [(0.0, False), (0.1, True), (-0.1, False)],
+)
+def test_macdonald_2d_release_state_uses_configured_height(height_above_bed, expected_suspended):
+    """Configured release height should determine the initial 2D transport state."""
+    population = _macdonald_2d_test_population()
+    population.particles['vertical_position_initialized'][:] = False
+    population.particles['vertical_position_value'][:] = height_above_bed
+
+    population.initialize_macdonald_2d_release_state()
+
+    assert population.particles['status_suspended'].tolist() == [expected_suspended]
+    assert population.particles['status_deposited'].tolist() == [not expected_suspended]
+
+
 def test_burial_status_recalculation_uses_initialized_depth_immediately():
     population = _macdonald_2d_test_population()
     population.particles['mixing_depth'] = np.array([0.1])

@@ -242,7 +242,9 @@ class Q3DMacdonaldMotionMixin:
 
         for mode in np.unique(modes[to_initialize]):
             idx = to_initialize & (modes == mode)
-            if mode in {'height_above_bed', 'centroid_on_release'}:
+            if mode == 'height_above_bed':
+                height_above_bed = np.maximum(np.nan_to_num(values[idx], nan=0.0), 0.0)
+            elif mode == 'centroid_on_release':
                 height_above_bed = np.ones(np.count_nonzero(idx), dtype=float)
             elif mode == 'absolute_z':
                 absolute_z = np.where(np.isfinite(values[idx]), values[idx], bed_level[idx])
