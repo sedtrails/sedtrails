@@ -84,15 +84,10 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
             self.config.grain_diameter,
         )
 
-        shear_velocity_source = str(getattr(self.config, 'shear_velocity_source', 'mean')).strip().lower()
-        if shear_velocity_source not in {'max', 'mean'}:
-            raise ValueError("MacDonald shear_velocity_source must be 'max' or 'mean'.")
-        if shear_velocity_source == 'mean':
-            selected_bed_shear_stress = mean_bed_shear_stress
-            selected_shear_velocity = mean_shear_velocity
-        else:
-            selected_bed_shear_stress = max_bed_shear_stress
-            selected_shear_velocity = max_shear_velocity
+        # Current/mean shear drives profiles, advection, and diffusion. Maximum
+        # shear is retained separately for mobilisation and resuspension.
+        selected_bed_shear_stress = mean_bed_shear_stress
+        selected_shear_velocity = mean_shear_velocity
         # water depth
         water_depth = sedtrails_data.water_depth
 

@@ -512,6 +512,21 @@ def test_population_schema_rejects_negative_q3d_horizontal_diffusion_factor(tmp_
         _validate_config(tmp_path, config)
 
 
+def test_population_schema_rejects_max_shear_for_macdonald_profiles(tmp_path):
+    """Maximum shear cannot be selected for advection or diffusion physics."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': 'Q3D',
+            'shear_velocity_source': 'max',
+        }
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
 @pytest.mark.parametrize(
     'entrainment',
     [

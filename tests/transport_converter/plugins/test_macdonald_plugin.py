@@ -172,7 +172,6 @@ def _macdonald_config(**overrides):
     """Build a MacDonald physics config with the fields add_physics() needs."""
     config = PhysicsConfig.from_dict(config={'tracer_method': 'macdonald'})
     config.use_transport_fields = 'model-native'
-    config.shear_velocity_source = 'mean'
     config.computationType = '2D'
     config.max_suspended_velocity_factor = None
     config.export_diagnostic_fields = False
@@ -298,6 +297,8 @@ def test_soulsby_vanrijn_transport_accepts_scalar_settling_velocity():
     )
 
     assert sedtrails_data.centroid_particle_velocity['magnitude'].shape == sedtrails_data.water_depth.shape
+    expected_mean_shear = np.sqrt(sedtrails_data.mean_bed_shear_stress / config.water_density)
+    np.testing.assert_allclose(sedtrails_data.selected_shear_velocity, expected_mean_shear)
 
 
 def test_compute_dh_dt_uses_eulerian_frame_spacing():
