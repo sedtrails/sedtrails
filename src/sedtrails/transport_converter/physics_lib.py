@@ -155,7 +155,7 @@ def compute_bed_load_velocity(
 
     Notes
     -----
-    
+
 
     Only computed where θ_max > θ_cr (critical conditions).
 
@@ -479,10 +479,10 @@ def compute_mixing_layer_thickness(
 
 # Convenience function for getting all grain properties at once
 def compute_grain_properties(
-    grain_diameter: float, 
-    gravity: float, 
-    sediment_density: float, 
-    water_density: float, 
+    grain_diameter: float,
+    gravity: float,
+    sediment_density: float,
+    water_density: float,
     kinematic_viscosity: float,
     settling_velocity_method: str = "soulsby1997",  # or "macdonald2006"
 
@@ -526,7 +526,7 @@ def compute_grain_properties(
     Engineering Conference and the 6th Australasian Port and Harbour Conference; Volume 1. Equation 14
 
     MacDonald, N., Davies, M., Zundel, A., Howlett, J., Demirbilek, Z.,
-    Gailani, J., Lackey, T., & Smith, J. (2006). *PTM: Particle Tracking Model. 
+    Gailani, J., Lackey, T., & Smith, J. (2006). *PTM: Particle Tracking Model.
     Report 1: Model Theory, Implementation, and Example Applications*.
     U.S. Army Corps of Engineers. Equation 28
     """
@@ -536,7 +536,7 @@ def compute_grain_properties(
     # Critical Shields number, θ_cr (Soulsby 1997, Equation 77, p. 106)
     theta_cr = 0.3 / (1 + 1.2 * dstar) + 0.055 * (1 - np.exp(-0.020 * dstar))
 
-    # Settling velocity, w_s 
+    # Settling velocity, w_s
     if settling_velocity_method.lower() in ["soulsby1997", "soulsby", "soulsby_1997"]: #(default is Soulsby 1997, Equation 102, p. 134)
         settling_velocity = (kinematic_viscosity / grain_diameter) * (
             np.sqrt(10.36**2 + 1.049 * dstar**3) - 10.36
@@ -546,7 +546,7 @@ def compute_grain_properties(
         ws_large = (kinematic_viscosity / grain_diameter) * term_large
         ws_small = (kinematic_viscosity / grain_diameter) * (0.0077 * dstar**2)
         settling_velocity = np.where(dstar >= 0.672, ws_large, ws_small)
-        
+
     else:
         raise ValueError(
             f"Unknown settling_velocity_method='{settling_velocity_method}'. "
@@ -594,7 +594,7 @@ def calculate_skin_roughness(
 
     Reference
     ---------
-    Soulsby, R. (1997). Dynamics of marine sands: a manual for practical applications. Thomas Telford. eq 24 and below. 
+    Soulsby, R. (1997). Dynamics of marine sands: a manual for practical applications. Thomas Telford. eq 24 and below.
 
     """
 
@@ -715,7 +715,7 @@ def calculate_current_related_bed_roughness_vanrijn2007(
     flow_velocity_magnitude : array-like
         Depth-averaged current velocity [m/s].
     near_bed_peak_orbital_velocity : array-like
-        Near-bed peak orbital velocity [m/s]. 
+        Near-bed peak orbital velocity [m/s].
         Can be estimated from wave parameters or provided as input if available.
         near_bed_peak_orbital_velocity=pi * Hs / (Tr * sinh(2*k*water_depth)) is
         a common approximation for wave orbital velocity (see van Rijn, 2007, below equation 5d).
@@ -726,7 +726,7 @@ def calculate_current_related_bed_roughness_vanrijn2007(
     relative_density : float, optional
         Sediment relative density s = ρ_s / ρ_w (default 2.65).
     gravity : float
-        Gravitational acceleration g [m/s²].   
+        Gravitational acceleration g [m/s²].
 
 
     Returns
@@ -747,12 +747,12 @@ def calculate_current_related_bed_roughness_vanrijn2007(
     psi = Uwc2 / ((relative_density - 1.0) * gravity * grain_diameter)
 
     # thresholds
-    d_gravel = 0.002     # [m] defined in van Rijn 2007 
-    d_sand   = 0.000062  # [m] defined in van Rijn 2007 
-    d_silt   = 0.000032  # [m] defined in van Rijn 2007 
+    d_gravel = 0.002     # [m] defined in van Rijn 2007
+    d_sand   = 0.000062  # [m] defined in van Rijn 2007
+    d_silt   = 0.000032  # [m] defined in van Rijn 2007
 
     # --- Grain-size factors (depend on d50 only; broadcast happens automatically in np.where) ---
-    f_cs = np.minimum(1.0, (0.25 * d_gravel / grain_diameter) ** 1.5)           # ripple coarse-sed limiter (expresses the effect of a gradually decreasing ripple roughness 
+    f_cs = np.minimum(1.0, (0.25 * d_gravel / grain_diameter) ** 1.5)           # ripple coarse-sed limiter (expresses the effect of a gradually decreasing ripple roughness
                                                                                 # for very coarse sediment beds - for those sediments f_cs< 1, for finer sediments f_cs=1 )
     f_fs = np.minimum(1.0, grain_diameter / (1.5 * d_sand))                     # megaripple fine-sed limiter no megaripple roughness for fine sediments (silt, very fine sand)
 

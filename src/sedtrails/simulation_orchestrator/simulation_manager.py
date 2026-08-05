@@ -1877,4 +1877,3 @@ class Simulation:
 #     sim.run()
 
 #     # NOTE: This will failed on the output saving. But that's success
-

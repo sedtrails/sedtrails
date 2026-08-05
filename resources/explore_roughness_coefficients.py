@@ -558,7 +558,7 @@ for r, h in enumerate(depths_demo):
         rf"$\theta_c={fmt(theta_cr)}$, "
         rf"$\theta_{{\max}}/\theta_c={fmt(mobility)}$",
         fontsize=10
-    )    
+    )
     axA.set_xlabel("u(z) [m/s]")
     axA.set_ylabel("z/h [-]")
     axA.grid(True, which="both", alpha=0.3)

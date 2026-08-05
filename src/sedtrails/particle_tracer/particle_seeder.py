@@ -1587,7 +1587,7 @@ class ParticlePopulation(Q3DMacdonaldMotionMixin):
 
         self._update_particle_field('bed_level', bed_level)
         self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
-        
+
 
     def update_status_buried(self, burial_depth=None) -> np.ndarray:
         """Calculate burial eligibility from the current transport-probability method."""
@@ -1888,5 +1888,3 @@ def _geometry_triangles_from_field_data(sedtrails_data: HasFieldCoordinates) -> 
 #     particles = seeder.seed(config_random)
 #     print(f'Created {len(particles)} particles using random strategy.')
 #     print(particles[:5])  # Print first 5 particles for inspection
-
-

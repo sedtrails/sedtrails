@@ -584,7 +584,7 @@ class Q3DMacdonaldMotionMixin:
             # change after horizontal advection.
             z_p_new = z_p_old + particle_w * dt + (bed_level_old - bed_level_new)
         elif scheme == 'centroid_floor':
-            z_c_new = np.clip(np.nan_to_num(transport_centroid_elevation_new, nan=0.0), 0.0, water_depth_new) # relative to bed 
+            z_c_new = np.clip(np.nan_to_num(transport_centroid_elevation_new, nan=0.0), 0.0, water_depth_new) # relative to bed
             candidate_z = z_p_old - np.maximum(np.nan_to_num(settling_velocity, nan=0.0), 0.0) * dt
             z_p_new = np.maximum(candidate_z, z_c_new)
         elif scheme == 'rouse_profile':
@@ -991,7 +991,7 @@ class Q3DMacdonaldMotionMixin:
         # 5. Move suspended particles in q3d_motion_substeps smaller updates.
         #    Substepping does not change the outer timestep physics; it only
         #    evaluates the Q3D random walk and vertical update on smaller dt_sub
-        #    intervals, 
+        #    intervals,
         #    Substepping uses dt_sub in the random-walk velocity formulas from
         #    MacDonald Eqs. 51-52. This keeps each diffusive displacement proportional
         #    to sqrt(E * dt_sub), so the accumulated random walk has the correct
@@ -1279,14 +1279,14 @@ class Q3DMacdonaldMotionMixin:
                 particle_w_active = particle_w_active[continuing]
                 settling_active = settling_active[continuing]
 
-            # After the particle has moved to a new x,y horizontally, it might now be over a newer bed level, water depth and skin roughness. 
+            # After the particle has moved to a new x,y horizontally, it might now be over a newer bed level, water depth and skin roughness.
             post_advection_fields = {
                 'bed_level': bed_level_field, # this is needed to convert beween absolute z and relative z_p for the vertical update.
                 'water_depth': water_depth_field, # this is needed to clip the new z_p to the water depth after the vertical update.
                 'skin_roughness_height': skin_roughness_height_field, # this is needed to compute the deposition threshold for the vertical update.
             }
 
-            #If there is another substep we will need to update the following fields for the next substep, 
+            #If there is another substep we will need to update the following fields for the next substep,
             # so we store them in the particle fields. If this is the last substep, we don't need to store them because they won't be used again.
             needs_next_substep_fields = substep_index < substeps - 1
             if vertical_update_scheme in {'centroid_floor', 'rouse_profile'} or needs_next_substep_fields:
@@ -1319,7 +1319,7 @@ class Q3DMacdonaldMotionMixin:
                     self.particles['depth_avg_flow_velocity_u'][active_indices],
                     self.particles['depth_avg_flow_velocity_v'][active_indices],
                 )
-            
+
             # Next we read the new local bed level, water depth, and skin roughness at the new x,y position for the vertical update.
             bed_level_new_active = np.asarray(self.particles['bed_level'], dtype=float)[active_indices]
             water_depth_new_active = np.maximum(
@@ -1341,7 +1341,7 @@ class Q3DMacdonaldMotionMixin:
                     np.asarray(self.particles['total_transport_centroid_elevation'], dtype=float)[active_indices],
                     nan=0.0,
                 )
-            else: # z_c_new_acive is only useful for the sceme that uses i (centroid floor and rouse profile). 
+            else: # z_c_new_acive is only useful for the sceme that uses i (centroid floor and rouse profile).
                   # For the geometric scheme, we don't need it, so we just set it to zero, so that the function call has consistent arguments
                 z_c_new_active = np.zeros(active_count, dtype=float)
 
@@ -1350,7 +1350,7 @@ class Q3DMacdonaldMotionMixin:
                     np.asarray(self.particles['rouse_number'], dtype=float)[active_indices],
                     nan=0.0,
                 )
-            else: # rouse_number_new_active is only useful for the sceme that uses it. 
+            else: # rouse_number_new_active is only useful for the sceme that uses it.
                   # For the other schemes, we don't need it, so we just set it to zero, so that the function call has consistent arguments
                 rouse_number_new_active = np.zeros(active_count, dtype=float)
 
@@ -1805,4 +1805,3 @@ class Q3DMacdonaldMotionMixin:
         self.particles['status_mobile'] = eligible & suspended
         self.particles['macdonald_2d_settling_transition_rate'] = transition_rate
         self.particles['macdonald_2d_settling_probability'] = settling_probability
-
