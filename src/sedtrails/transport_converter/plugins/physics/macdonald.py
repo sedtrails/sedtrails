@@ -588,7 +588,11 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
             r_max=150,
         )
         # This is the waterlevel gradient term in Eq. 42
-        dh_dt = PhysicsPlugin.compute_dh_dt(water_depth, sedtrails_data.bed_level, timestep)
+        dh_dt = PhysicsPlugin.compute_dh_dt(
+            water_depth,
+            sedtrails_data.bed_level,
+            sedtrails_data.times,
+        )
 
         # local vertical flow velocity (Macdonald 2006, Eq. 42) at the grid level, not the live particle z_p. 
         w_zp = np.zeros_like(water_depth, dtype=float)
@@ -639,9 +643,24 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
 
     @staticmethod
 
-    def compute_dh_dt(water_depth, bed_level, dt):
+    def compute_dh_dt(water_depth, bed_level, times):
         """
-        Time derivative of water depth dh/dt using backward difference.
+        Return the water-surface time derivative using backward differences.
+
+        Parameters
+        ----------
+        water_depth : array-like
+            Water depth with time on the first axis [m].
+        bed_level : array-like
+            Bed elevation, either static or with time on the first axis [m].
+        times : array-like or float
+            Eulerian input-frame times [s]. A scalar interval is accepted for
+            compatibility, but Q3D runtime calculations pass the actual times.
+
+        Returns
+        -------
+        numpy.ndarray
+            Water-surface elevation derivative [m/s].
         """
         water_depth = np.asarray(water_depth, dtype=float)
         bed_level = np.asarray(bed_level, dtype=float)
@@ -651,11 +670,27 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
             bed_level = np.broadcast_to(bed_level, water_depth.shape)
 
         dh_dt = np.zeros_like(water_depth, dtype=float)
-        if water_depth.shape[0] < 2 or dt <= 0:
+        if water_depth.shape[0] < 2:
             return dh_dt
 
+        time_values = np.asarray(times, dtype=float)
+        if time_values.ndim == 0:
+            time_deltas = np.full(water_depth.shape[0] - 1, float(time_values))
+        elif time_values.ndim == 1 and time_values.size == water_depth.shape[0]:
+            time_deltas = np.diff(time_values)
+        else:
+            raise ValueError(
+                'times must be a scalar interval or a 1D array matching the '
+                'water-depth time dimension.'
+            )
+        if np.any(~np.isfinite(time_deltas)) or np.any(time_deltas <= 0.0):
+            raise ValueError('Eulerian input-frame times must increase monotonically.')
+
         water_surface = water_depth + bed_level
-        dh_dt[1:] = (water_surface[1:] - water_surface[:-1]) / dt
+        delta_shape = (time_deltas.size,) + (1,) * (water_depth.ndim - 1)
+        dh_dt[1:] = (
+            water_surface[1:] - water_surface[:-1]
+        ) / time_deltas.reshape(delta_shape)
         dh_dt[0] = dh_dt[1]  # reasonable fill for first timestep
 
         wet = water_depth != 0

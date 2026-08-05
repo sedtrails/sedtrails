@@ -279,3 +279,22 @@ def test_soulsby_vanrijn_transport_accepts_scalar_settling_velocity():
     )
 
     assert sedtrails_data.centroid_particle_velocity['magnitude'].shape == sedtrails_data.water_depth.shape
+
+
+def test_compute_dh_dt_uses_eulerian_frame_spacing():
+    """Differentiate water-surface elevation using the input-frame times."""
+    water_depth = np.array([[1.0], [2.0], [5.0]])
+    bed_level = np.array([0.0])
+    times = np.array([0.0, 10.0, 40.0])
+
+    result = PhysicsPlugin.compute_dh_dt(water_depth, bed_level, times)
+
+    np.testing.assert_allclose(result[:, 0], np.array([0.1, 0.1, 0.1]))
+
+
+def test_compute_dh_dt_rejects_nonincreasing_input_times():
+    """Reject invalid Eulerian timestamps instead of dividing by zero."""
+    water_depth = np.array([[1.0], [2.0]])
+
+    with pytest.raises(ValueError, match='increase monotonically'):
+        PhysicsPlugin.compute_dh_dt(water_depth, np.array([0.0]), np.array([5.0, 5.0]))
