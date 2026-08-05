@@ -93,6 +93,27 @@ def test_map_dfm_variables_rejects_static_layer_velocity_as_depth_average(tmp_pa
         plugin._map_dfm_variables({'num_times': 1}, None, None)
 
 
+def test_map_dfm_variables_squeezes_static_singleton_velocity_layer(tmp_path, monkeypatch):
+    """A validated singleton layer should not survive time broadcasting."""
+    dataset = xr.Dataset(
+        {
+            'net_xcc': ('mesh2d_nFaces', np.array([0.0, 1.0])),
+            'net_ycc': ('mesh2d_nFaces', np.array([0.0, 0.0])),
+            'sea_water_x_velocity': (
+                ('layer', 'mesh2d_nFaces'),
+                np.ones((1, 2)),
+            ),
+        }
+    )
+    plugin = _plugin_with_dataset(tmp_path, monkeypatch, dataset)
+    plugin.load()
+    monkeypatch.setattr(plugin, '_active_triangular_connectivity', lambda x, y: np.array([[0, 1, 1]]))
+
+    mapped = plugin._map_dfm_variables({'num_times': 3}, None, None)
+
+    assert mapped['flow_velocity_x'].shape == (3, 2)
+
+
 @pytest.mark.parametrize('missing_variable', ['bedlevel', 'max_bss_magnitude'])
 def test_get_max_exposure_depth_fields_requires_inputs(tmp_path, monkeypatch, missing_variable):
     """Missing exposure-input variables should fail with clear KeyErrors."""

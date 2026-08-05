@@ -570,6 +570,8 @@ class FormatPlugin(BaseFormatPlugin):
                         'SedTRAILS requires depth-averaged flow velocity. Provide a depth-averaged '
                         'velocity variable or preprocess the layers with thickness weighting.'
                     )
+                if key in {'flow_velocity_x', 'flow_velocity_y'} and 'layer' in var.dims:
+                    var = var.isel(layer=0)
 
                 # Check if variable has time dimension
                 if 'time' in var.dims:
