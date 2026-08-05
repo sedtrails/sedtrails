@@ -389,7 +389,6 @@ class Q3DMacdonaldMotionMixin:
         open_boundary = ~land_boundary
 
         self.particles['status_domain'][outside_particle_indices] = False
-        self.particles['status_mobile'][outside_particle_indices] = False
 
         left_domain_indices = outside_particle_indices[open_boundary]
         if left_domain_indices.size:

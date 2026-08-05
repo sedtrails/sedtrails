@@ -2991,6 +2991,24 @@ def test_q3d_full_update_refreshes_selected_shear_between_substeps():
     assert population.particles['z'][0] >= population.particles['bed_level'][0]
 
 
+def test_q3d_boundary_exit_does_not_require_preexisting_mobile_state():
+    """Q3D advection should finalize mobility after handling an open exit."""
+    population = _macdonald_2d_test_population()
+    population.particles.pop('status_mobile', None)
+
+    left_domain, beached = population._advect_particles_with_velocity(
+        active=np.array([True]),
+        velocity_x=np.array([10.0]),
+        velocity_y=np.array([0.0]),
+        dt=1.0,
+    )
+
+    np.testing.assert_array_equal(left_domain, [0])
+    assert beached.size == 0
+    assert population.particles['status_alive'].tolist() == [False]
+    assert population.particles['status_left_domain'].tolist() == [True]
+
+
 def test_macdonald_2d_release_state_maps_bed_and_burial_modes():
     population = _macdonald_2d_test_population()
 
