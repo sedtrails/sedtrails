@@ -199,6 +199,33 @@ class Particle(ABC):
         """
         return self._status_mobile
 
+    @property
+    def is_mobile(self) -> bool:
+        """Return the mobility state using the legacy public name.
+
+        Returns
+        -------
+        bool
+            Whether the particle is mobile.
+
+        Notes
+        -----
+        ``status_mobile`` is the preferred name. This alias preserves the
+        public API used before particle status fields were standardized.
+        """
+        return self.status_mobile
+
+    @is_mobile.setter
+    def is_mobile(self, value: bool) -> None:
+        """Set mobility using the legacy public name.
+
+        Parameters
+        ----------
+        value : bool
+            Mobility state to assign.
+        """
+        self.status_mobile = value
+
     @status_mobile.setter
     def status_mobile(self, value: bool) -> None:
         """

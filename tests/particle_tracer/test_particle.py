@@ -47,6 +47,26 @@ class TestParticle:
         particle = Passive()
         assert particle.name == ''
 
+    def test_legacy_is_mobile_alias_tracks_status_mobile(self):
+        """Keep the legacy mobility property synchronized with its new name."""
+        particle = Sand()
+
+        particle.is_mobile = False
+
+        assert particle.is_mobile is False
+        assert particle.status_mobile is False
+
+        particle.status_mobile = True
+
+        assert particle.is_mobile is True
+
+    def test_legacy_is_mobile_alias_preserves_validation(self):
+        """Route legacy assignments through status mobility validation."""
+        particle = Sand()
+
+        with pytest.raises(TypeError, match="Expected 'status_mobile' to be a boolean"):
+            particle.is_mobile = 1
+
 
 class TestMud:
     """
