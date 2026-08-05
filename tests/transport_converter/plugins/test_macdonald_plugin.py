@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from sedtrails.transport_converter.physics_converter import PhysicsConfig
+from sedtrails.transport_converter.physics_converter import PhysicsConfig, PhysicsConverter
 from sedtrails.transport_converter.plugins.physics.macdonald import PhysicsPlugin
 
 
@@ -261,3 +261,21 @@ def test_add_physics_required_field_values_unaffected_by_export_diagnostics_flag
                 np.testing.assert_array_equal(value_off[key], value_on[key], err_msg=f'{field}[{key}] differs')
         else:
             np.testing.assert_array_equal(value_off, value_on, err_msg=f'{field} differs')
+
+
+def test_soulsby_vanrijn_transport_accepts_scalar_settling_velocity():
+    """Broadcast the converter's scalar settling velocity over field arrays."""
+    config = _macdonald_config(use_transport_fields='SoulsbyvanRijn1997')
+    converter = PhysicsConverter(config.as_dict(), {'macdonald': {}})
+    settling_velocity = converter.grain_properties['settling_velocity']
+    sedtrails_data = _MacdonaldSedtrailsDataStub()
+
+    assert np.asarray(settling_velocity).ndim == 0
+
+    PhysicsPlugin(config, tracer_methods={}).add_physics(
+        sedtrails_data,
+        converter.grain_properties,
+        transport_probability_method='no_probability',
+    )
+
+    assert sedtrails_data.centroid_particle_velocity['magnitude'].shape == sedtrails_data.water_depth.shape

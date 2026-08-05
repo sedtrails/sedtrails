@@ -198,8 +198,24 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
 
             # suspended load transport fraction, equation 31 MacDonald et al. (2006)
             qs_qt = np.full_like(selected_shear_velocity, np.nan, dtype=float)
-            mask = (selected_shear_velocity > 0) & (settling_velocity > 0) & np.isfinite(selected_shear_velocity) & np.isfinite(settling_velocity)
-            qs_qt[mask] = (0.5 * np.tanh(1.3 * np.log(selected_shear_velocity[mask] / settling_velocity[mask]) - 0.3) + 0.5)            
+            settling_velocity_field = np.broadcast_to(
+                np.asarray(settling_velocity, dtype=float),
+                selected_shear_velocity.shape,
+            )
+            mask = (
+                (selected_shear_velocity > 0)
+                & (settling_velocity_field > 0)
+                & np.isfinite(selected_shear_velocity)
+                & np.isfinite(settling_velocity_field)
+            )
+            qs_qt[mask] = 0.5 * np.tanh(
+                1.3
+                * np.log(
+                    selected_shear_velocity[mask]
+                    / settling_velocity_field[mask]
+                )
+                - 0.3
+            ) + 0.5
 
         # suspended load height (MacDonald et al., 2006, equation 27)
         z_s = PhysicsPlugin.calculate_macdonald_susp_load_height(rouse_number, water_depth)
