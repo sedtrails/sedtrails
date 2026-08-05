@@ -2928,6 +2928,69 @@ def _constant_flow_field(speed):
     }
 
 
+def test_q3d_full_update_refreshes_selected_shear_between_substeps():
+    """A complete two-substep update should resample current shear after movement."""
+    config = PopulationConfig(
+        {
+            'name': 'Q3D field refresh test',
+            'particle_type': 'sand',
+            'transport_probability': 'no_probability',
+            'tracer_methods': {
+                'macdonald': {
+                    'flow_field_name': ['centroid_particle_velocity'],
+                    'computationType': 'Q3D',
+                }
+            },
+            'seeding': {
+                'strategy': {'point': {'locations': ['0.25,0.5']}},
+                'quantity': 1,
+                'release_start': '0',
+                'burial_depth': {'constant': 0.0},
+                'vertical_position': {'mode': 'height_above_bed', 'value': 0.2},
+            },
+        }
+    )
+    population = ParticlePopulation(
+        field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+        field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+        population_config=config,
+    )
+    population._current_time = 0.0
+    population.update_status()
+    zeros = np.zeros(4)
+    ones = np.ones(4)
+    flow = {'u': ones * 0.1, 'v': zeros, 'magnitude': ones * 0.1}
+    selected_shear = np.array([0.001, 0.005, 0.005, 0.001])
+
+    population.update_q3d_particle_position(
+        current_timestep=1.0,
+        centroid_flow_field=flow,
+        hydrodynamic_flow_field=flow,
+        bed_level_field=zeros,
+        max_shear_velocity=ones,
+        selected_shear_velocity=selected_shear,
+        profile_roughness_height=ones * 0.001,
+        total_transport_centroid_elevation=ones * 0.1,
+        q3d_velocity_deficit_coefficient=zeros,
+        q3d_vertical_velocity_gradient=zeros,
+        turbulent_shields_number=ones,
+        critical_shields_number=0.05,
+        settling_velocity=0.0,
+        water_depth=ones * 2.0,
+        skin_roughness_height=ones * 0.001,
+        entrainment_height_above_bed=ones * 0.1,
+        q3d_horizontal_diffusion_enabled=False,
+        q3d_vertical_update_scheme='centroid_floor',
+        q3d_motion_substeps=2,
+    )
+
+    assert population.particles['x'][0] > 0.25
+    assert population.particles['selected_shear_velocity'][0] > 0.002
+    assert population.particles['vertical_position_initialized'].tolist() == [True]
+    assert population.particles['status_suspended'].tolist() == [True]
+    assert population.particles['z'][0] >= population.particles['bed_level'][0]
+
+
 def test_macdonald_2d_release_state_maps_bed_and_burial_modes():
     population = _macdonald_2d_test_population()
 

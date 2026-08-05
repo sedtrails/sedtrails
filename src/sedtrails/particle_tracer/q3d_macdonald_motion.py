@@ -1305,6 +1305,7 @@ class Q3DMacdonaldMotionMixin:
                             'v',
                         ),
                         'max_shear_velocity': max_shear_velocity,
+                        'selected_shear_velocity': selected_shear_velocity,
                         'profile_roughness_height': profile_roughness_height,
                         'q3d_velocity_deficit_coefficient': q3d_velocity_deficit_coefficient,
                         'q3d_vertical_velocity_gradient': q3d_vertical_velocity_gradient,
