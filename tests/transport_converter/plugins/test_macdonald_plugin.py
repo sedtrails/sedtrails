@@ -27,6 +27,23 @@ def test_lookup_invalid_input_emits_filterable_warning_once(monkeypatch, capsys)
         PhysicsPlugin.calculate_macdonald_susp_load_height(0.0, 1.0)
 
     assert caught == []
+
+
+def test_lookup_interpolation_does_not_use_xarray_interp(monkeypatch):
+    """Repeated lookup interpolation should operate directly on cached NumPy arrays."""
+    monkeypatch.setattr(PhysicsPlugin, '_macdonald_lookup_rouse', None)
+    monkeypatch.setattr(PhysicsPlugin, '_macdonald_lookup_values', None)
+
+    def fail_interp(*args, **kwargs):
+        raise AssertionError('xarray interpolation should not be used')
+
+    monkeypatch.setattr('xarray.DataArray.interp', fail_interp)
+
+    result = PhysicsPlugin.calculate_macdonald_susp_load_height(np.array([0.5, 1.0]), 2.0)
+
+    assert np.all(np.isfinite(result))
+
+
 def test_shared_entrainment_frequency_is_zero_below_threshold_and_positive_above():
     config = SimpleNamespace(
         particle_density=2650.0,

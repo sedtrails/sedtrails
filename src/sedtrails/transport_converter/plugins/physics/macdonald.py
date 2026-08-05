@@ -24,7 +24,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
 
     # Shared class-level cache for MacDonald lookup table
     # Loaded lazily on first use and shared across all plugin instances
-    _macdonald_lookup_da = None
+    _macdonald_lookup_rouse = None
+    _macdonald_lookup_values = None
     _macdonald_lookup_path = None
     _macdonald_warned_oob = False
 
@@ -35,7 +36,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         self._q3d_divergence_cache_value = None
         
         # This plugin relies on shared class-level MacDonald lookup cache
-        _ = PhysicsPlugin._macdonald_lookup_da
+        _ = PhysicsPlugin._macdonald_lookup_rouse
+        _ = PhysicsPlugin._macdonald_lookup_values
         _ = PhysicsPlugin._macdonald_lookup_path
         _ = PhysicsPlugin._macdonald_warned_oob
 
@@ -1242,7 +1244,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         # ----------------------------
         # Load & cache lookup table (1D: z_over_h(rouse))
         # ----------------------------
-        if PhysicsPlugin._macdonald_lookup_da is None:
+        if PhysicsPlugin._macdonald_lookup_rouse is None or PhysicsPlugin._macdonald_lookup_values is None:
             module_dir = os.path.dirname(os.path.abspath(__file__))
 
             # file name for the NEW 1D table
@@ -1269,10 +1271,22 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
             if da.ndim != 1:
                 raise ValueError(f"Expected 1D lookup for 'z_over_h', got ndim={da.ndim}, dims={da.dims}")
 
-            PhysicsPlugin._macdonald_lookup_da = da
+            lookup_rouse = np.asarray(da['rouse'].values, dtype=float)
+            lookup_values = np.asarray(da.values, dtype=float)
+            if (
+                lookup_rouse.size < 2
+                or not np.all(np.isfinite(lookup_rouse))
+                or not np.all(np.isfinite(lookup_values))
+                or not np.all(np.diff(lookup_rouse) > 0.0)
+            ):
+                raise ValueError('MacDonald lookup coordinates and values must be finite and strictly increasing.')
+
+            PhysicsPlugin._macdonald_lookup_rouse = lookup_rouse
+            PhysicsPlugin._macdonald_lookup_values = lookup_values
             PhysicsPlugin._macdonald_lookup_path = lookup_path
 
-        lookup = PhysicsPlugin._macdonald_lookup_da  # DataArray over coord 'rouse'
+        lookup_rouse = PhysicsPlugin._macdonald_lookup_rouse
+        lookup_values = PhysicsPlugin._macdonald_lookup_values
 
         # ----------------------------
         # Prepare inputs (supports scalars or arrays, incl. 3D)
@@ -1288,8 +1302,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         # invalid: rouse must be > 0; depth must be >= 0; finite values only
         invalid = (~np.isfinite(r)) | (~np.isfinite(h)) | (r <= 0) | (h < 0)
 
-        rmin = float(lookup["rouse"].min().values)
-        rmax = float(lookup["rouse"].max().values)
+        rmin = float(lookup_rouse[0])
+        rmax = float(lookup_rouse[-1])
 
         # ----------------------------
         # Masks for regimes
@@ -1313,8 +1327,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
 
         # 2) interpolate for normal regime
         if np.any(interp_ok):
-            r_da = xr.DataArray(r[interp_ok])
-            z_over_h[interp_ok] = lookup.interp(rouse=r_da, method="linear").values
+            z_over_h[interp_ok] = np.interp(r[interp_ok], lookup_rouse, lookup_values)
 
         # 3) low_oob stays NaN; invalid stays NaN
 
