@@ -99,8 +99,9 @@
                 },
                 "computationType": {
                     "type": "string",
+                    "enum": ["2D", "Q3D"],
                     "default": "2D",
-                    "description": "type of computation used in MacDonald method (2D, Q3D, or 3D)"
+                    "description": "Type of implemented MacDonald computation: depth-averaged 2D or quasi-3D Q3D."
                 },
 				"use_transport_fields": {
 				  "type": "string",

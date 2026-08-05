@@ -360,6 +360,38 @@ def test_population_schema_accepts_macdonald_2d_deposition_options(tmp_path):
     }
 
 
+@pytest.mark.parametrize('computation_type', ['2D', 'Q3D'])
+def test_population_schema_accepts_implemented_macdonald_computation_types(
+    tmp_path,
+    computation_type,
+):
+    """Accept only MacDonald modes implemented by the physics plugin."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {'computationType': computation_type}
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    method = validated['particles']['populations'][0]['tracer_methods']['macdonald']
+    assert method['computationType'] == computation_type
+
+
+@pytest.mark.parametrize('computation_type', ['3D', 'q3d', 'unsupported'])
+def test_population_schema_rejects_unimplemented_macdonald_computation_types(
+    tmp_path,
+    computation_type,
+):
+    """Reject modes that would fail only after physics conversion."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {'computationType': computation_type}
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
 @pytest.mark.parametrize(
     'entrainment',
     [
