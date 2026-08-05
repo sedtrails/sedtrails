@@ -1503,7 +1503,7 @@ class Simulation:
                                 retriever.get_scalar_field_bounds(field_time_seconds, 'water_depth'),
                                 retriever.get_scalar_field_bounds(
                                     field_time_seconds,
-                                    'q3d_entrainment_height_above_bed',
+                                    'total_transport_centroid_elevation',
                                 ),
                             )
                         else:
