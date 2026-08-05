@@ -92,6 +92,7 @@
             "properties": {
                 "flow_field_name": {
                     "type": "array",
+                    "minItems": 1,
                     "items": {
                         "type": "string"
                     },
@@ -213,6 +214,9 @@
 				  "description": "If true, also compute and export MacDonald diagnostic-only fields that are not read by any part of the transport/entrainment/deposition pipeline: grid-level fields shared by 2D and Q3D (e.g. shear_velocity_ratio, suspended_transport_ratio, bedload_velocity, chezy diagnostics) and, for Q3D, the grid-level diffusion and vertical-velocity fields that are redundant with the particle-level Q3D calculation. Leave false to reduce memory use on larger simulations."
 				}
             },
+            "required": [
+                "flow_field_name"
+            ],
             "description": "Macdonald method for particle tracking"
         },
         "soulsby_method": {

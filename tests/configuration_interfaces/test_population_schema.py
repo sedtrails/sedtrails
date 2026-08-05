@@ -28,6 +28,16 @@ def test_population_schema_requires_flow_field_name(tmp_path):
         _validate_config(tmp_path, config)
 
 
+@pytest.mark.parametrize('macdonald_config', [{}, {'flow_field_name': []}])
+def test_population_schema_requires_nonempty_macdonald_flow_field(tmp_path, macdonald_config):
+    """MacDonald needs at least one registered velocity field for advection."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {'macdonald': macdonald_config}
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
 def test_population_schema_accepts_one_method_with_flow_fields(tmp_path):
     """Accept a valid single tracer method with flow field names."""
     config = _base_config()
@@ -332,6 +342,7 @@ def test_population_schema_accepts_macdonald_2d_deposition_options(tmp_path):
     config = _base_config()
     config['particles']['populations'][0]['tracer_methods'] = {
         'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
             'computationType': '2D',
             'entrainment': {
                 'method': 'entrainment_frequency',
@@ -368,7 +379,10 @@ def test_population_schema_accepts_implemented_macdonald_computation_types(
     """Accept only MacDonald modes implemented by the physics plugin."""
     config = _base_config()
     config['particles']['populations'][0]['tracer_methods'] = {
-        'macdonald': {'computationType': computation_type}
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': computation_type,
+        }
     }
 
     validated = _validate_config(tmp_path, config)
@@ -385,7 +399,10 @@ def test_population_schema_rejects_unimplemented_macdonald_computation_types(
     """Reject modes that would fail only after physics conversion."""
     config = _base_config()
     config['particles']['populations'][0]['tracer_methods'] = {
-        'macdonald': {'computationType': computation_type}
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': computation_type,
+        }
     }
 
     with pytest.raises(YamlValidationError, match='YAML config validation error'):
@@ -397,6 +414,7 @@ def test_population_schema_accepts_q3d_vertical_diffusion_factor(tmp_path):
     config = _base_config()
     config['particles']['populations'][0]['tracer_methods'] = {
         'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
             'computationType': 'Q3D',
             'q3d_vertical_diffusion_factor': 0.2,
         }
@@ -413,6 +431,7 @@ def test_population_schema_rejects_negative_q3d_vertical_diffusion_factor(tmp_pa
     config = _base_config()
     config['particles']['populations'][0]['tracer_methods'] = {
         'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
             'computationType': 'Q3D',
             'q3d_vertical_diffusion_factor': -0.1,
         }
@@ -434,7 +453,11 @@ def test_population_schema_rejects_negative_q3d_vertical_diffusion_factor(tmp_pa
 def test_population_schema_rejects_invalid_macdonald_2d_entrainment(tmp_path, entrainment):
     config = _base_config()
     config['particles']['populations'][0]['tracer_methods'] = {
-        'macdonald': {'computationType': '2D', 'entrainment': entrainment}
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': '2D',
+            'entrainment': entrainment,
+        }
     }
 
     with pytest.raises(YamlValidationError, match='YAML config validation error'):
@@ -451,7 +474,11 @@ def test_population_schema_rejects_invalid_macdonald_2d_entrainment(tmp_path, en
 def test_population_schema_rejects_invalid_macdonald_2d_deposition(tmp_path, deposition):
     config = _base_config()
     config['particles']['populations'][0]['tracer_methods'] = {
-        'macdonald': {'computationType': '2D', 'deposition': deposition}
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': '2D',
+            'deposition': deposition,
+        }
     }
 
     with pytest.raises(YamlValidationError, match='YAML config validation error'):
