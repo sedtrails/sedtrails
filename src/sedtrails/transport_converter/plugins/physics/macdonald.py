@@ -592,7 +592,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         # For 2D hydrodynamic input, PTM estimates vertical flow velocity from
         # continuity (MacDonald 2006, Eq. 42), after the Q3D vertical advection
         # concept in Eq. 41. Here divU supplies the horizontal divergence term.
-        divU, dudx, dvdy = self._get_q3d_divergence(
+        divU = self._get_q3d_divergence(
             sedtrails_data.x,
             sedtrails_data.y,
             flow_velocity_x,
@@ -673,7 +673,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
             if same_arrays and cached_inputs[4:] == current_inputs[4:]:
                 return self._q3d_divergence_cache_value
 
-        result = PhysicsPlugin.divergence_scattered_knn_time(
+        divergence, _, _ = PhysicsPlugin.divergence_scattered_knn_time(
             x,
             y,
             u,
@@ -682,8 +682,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
             r_max=r_max,
         )
         self._q3d_divergence_cache_inputs = current_inputs
-        self._q3d_divergence_cache_value = result
-        return result
+        self._q3d_divergence_cache_value = divergence
+        return divergence
 
     @staticmethod
 

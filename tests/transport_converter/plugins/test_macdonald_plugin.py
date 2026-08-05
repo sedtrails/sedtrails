@@ -381,6 +381,7 @@ def test_q3d_divergence_is_cached_for_unchanged_input_chunk(monkeypatch):
     plugin._get_q3d_divergence(x, y, u.copy(), v)
 
     assert first is second
+    assert first.shape == u.shape
     assert calls == 2
 
 
