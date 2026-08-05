@@ -320,6 +320,17 @@ def test_compute_dh_dt_rejects_nonincreasing_input_times():
         PhysicsPlugin.compute_dh_dt(water_depth, np.array([0.0]), np.array([5.0, 5.0]))
 
 
+def test_q3d_vertical_gradient_preserves_surface_change_without_divergence():
+    """Missing divergence must not erase a valid free-surface derivative."""
+    result = PhysicsPlugin._combine_q3d_vertical_velocity_gradient(
+        dh_dt=np.array([[0.2, 0.3]]),
+        water_depth=np.array([[2.0, 3.0]]),
+        divergence=np.array([[np.nan, 0.4]]),
+    )
+
+    np.testing.assert_allclose(result, [[0.1, 0.5]])
+
+
 def test_time_divergence_reuses_geometry_for_all_frames():
     """Apply one set of scattered-grid derivative stencils over time."""
     grid_x, grid_y = np.meshgrid(np.arange(3.0), np.arange(3.0))

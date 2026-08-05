@@ -610,8 +610,11 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         # local vertical flow velocity (Macdonald 2006, Eq. 42) at the grid level, not the live particle z_p.
         w_zp = np.zeros_like(water_depth, dtype=float)
         wet = water_depth > 0
-        depth_change_over_depth = PhysicsPlugin.safe_divide(dh_dt, water_depth, fill=0.0)
-        q3d_vertical_velocity_gradient = depth_change_over_depth + divU
+        q3d_vertical_velocity_gradient = PhysicsPlugin._combine_q3d_vertical_velocity_gradient(
+            dh_dt,
+            water_depth,
+            divU,
+        )
 
         if export_q3d_grid_diagnostics:
             #the local vertical flow velocity at the grid level is used to compute the vertical particle velocity at the grid level
@@ -737,6 +740,13 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         wet = water_depth != 0
         dh_dt[~wet] = np.nan  # set dh/dt to NaN where water depth is zero (dry areas)
         return dh_dt
+
+    @staticmethod
+    def _combine_q3d_vertical_velocity_gradient(dh_dt, water_depth, divergence):
+        """Combine surface change and finite horizontal divergence terms."""
+        depth_change_over_depth = PhysicsPlugin.safe_divide(dh_dt, water_depth, fill=0.0)
+        finite_divergence = np.where(np.isfinite(divergence), divergence, 0.0)
+        return depth_change_over_depth + finite_divergence
 
 
     @staticmethod
