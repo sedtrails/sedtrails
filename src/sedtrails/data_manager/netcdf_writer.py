@@ -47,6 +47,7 @@ _STATUS_DEFAULTS = {
     'status_available_for_entrainment': 0,
     'status_entrained_now': 0,
     'status_deposited_now': 0,
+    'vertical_position_initialized': 0,
 }
 
 _CORE_FLOAT_FIELDS = ('x', 'y', 'z', 'z_p', 'z_burial', 'burial_depth', 'mixing_depth')

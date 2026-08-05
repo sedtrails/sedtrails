@@ -69,6 +69,8 @@ def _optional_restart_fields(
         values = np.asarray(variable.values)
         if values.ndim == 1 and values.shape[0] == n_particles:
             fields[name] = values
+    if 'vertical_position_initialized' not in fields and 'z' in fields:
+        fields['vertical_position_initialized'] = np.isfinite(fields['z'])
     return fields
 
 

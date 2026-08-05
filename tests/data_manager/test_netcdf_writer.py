@@ -251,6 +251,7 @@ class TestNetCDFWriterStreaming:
 
         assert 'q3d_first_substep_z_p' not in handle.variables
         assert 'q3d_motion_substeps' not in handle.variables
+        assert 'vertical_position_initialized' in handle.variables
         handle.close()
 
     def test_unwritten_slots_are_fill_values(self, writer, population):
