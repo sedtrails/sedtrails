@@ -1382,11 +1382,21 @@ class Simulation:
             n_output_slots,
             store_tracks,
         )
-        physics_config = getattr(self.physics_converter, 'config', None)
-        q3d_save_first_substep_diagnostics = bool(
-            getattr(physics_config, 'q3d_save_first_substep_diagnostics', False)
-        )
-        q3d_diagnostics = 'full' if q3d_save_first_substep_diagnostics else 'minimal'
+        q3d_runtime_plans = [
+            plan
+            for plan in runtime_plans
+            if plan.tracer.method_name == 'macdonald'
+            and str(getattr(plan.tracer.converter.config, 'computationType', '2D')).upper() == 'Q3D'
+        ]
+        if not q3d_runtime_plans:
+            q3d_diagnostics = 'none'
+        elif any(
+            bool(getattr(plan.tracer.converter.config, 'q3d_save_first_substep_diagnostics', False))
+            for plan in q3d_runtime_plans
+        ):
+            q3d_diagnostics = 'full'
+        else:
+            q3d_diagnostics = 'minimal'
         netcdf_options['q3d_diagnostics'] = q3d_diagnostics
         checkpoint_options.setdefault('writer_kwargs', {})['q3d_diagnostics'] = q3d_diagnostics
 
@@ -1698,8 +1708,15 @@ class Simulation:
                                     ),
                                     q3d_vertical_update_scheme=config_value('q3d_vertical_update_scheme', 'geometric'),
                                     q3d_motion_substeps=config_value('q3d_motion_substeps', 1),
-                                    q3d_save_first_substep_diagnostics=q3d_save_first_substep_diagnostics,
-                                    q3d_diagnostics=q3d_diagnostics,
+                                    q3d_save_first_substep_diagnostics=config_value(
+                                        'q3d_save_first_substep_diagnostics',
+                                        False,
+                                    ),
+                                    q3d_diagnostics=(
+                                        'full'
+                                        if config_value('q3d_save_first_substep_diagnostics', False)
+                                        else 'minimal'
+                                    ),
                                 )
                         else:
                             if is_macdonald_2d:

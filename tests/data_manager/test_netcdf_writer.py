@@ -241,6 +241,18 @@ class TestNetCDFWriterStreaming:
         )
         handle.close()
 
+    def test_q3d_diagnostics_can_be_disabled(self, writer, population):
+        """Non-Q3D output should not allocate Q3D-only trajectory variables."""
+        handle = writer.open_output(
+            'stream.nc', self.N_SLOTS, self.N_PARTICLES,
+            self.N_POPULATIONS, self.N_FLOWFIELDS, [population], ['vel'],
+            q3d_diagnostics='none',
+        )
+
+        assert 'q3d_first_substep_z_p' not in handle.variables
+        assert 'q3d_motion_substeps' not in handle.variables
+        handle.close()
+
     def test_unwritten_slots_are_fill_values(self, writer, population):
         """Slots not yet written should contain the declared fill value, not zeros."""
         handle = writer.open_output(

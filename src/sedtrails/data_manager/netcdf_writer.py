@@ -247,8 +247,10 @@ class NetCDFWriter:
     @staticmethod
     def _q3d_float_fields(level: str) -> tuple[str, ...]:
         normalized = str(level or 'minimal').strip().lower().replace('-', '_')
-        if normalized not in {'minimal', 'full'}:
-            raise ValueError("q3d_diagnostics must be either 'minimal' or 'full'.")
+        if normalized not in {'none', 'minimal', 'full'}:
+            raise ValueError("q3d_diagnostics must be 'none', 'minimal', or 'full'.")
+        if normalized == 'none':
+            return ()
         if normalized == 'full':
             return _Q3D_MIN_FLOAT_FIELDS + _Q3D_FULL_FLOAT_FIELDS
         return _Q3D_MIN_FLOAT_FIELDS
@@ -385,7 +387,8 @@ class NetCDFWriter:
                 chunksizes=time_particle_chunks,
                 **compression_kwargs,
             )
-        for var_name in _Q3D_INT_FIELDS:
+        q3d_int_fields = () if str(q3d_diagnostics).lower() == 'none' else _Q3D_INT_FIELDS
+        for var_name in q3d_int_fields:
             ds.createVariable(
                 var_name,
                 'i4',
@@ -430,7 +433,8 @@ class NetCDFWriter:
                 if field_name in h.variables:
                     h[field_name][slot_idx, sl] = cls._particle_field(particles, field_name, np.nan)
             for field_name in _Q3D_INT_FIELDS:
-                h[field_name][slot_idx, sl] = cls._particle_field(particles, field_name, np.int32(-1))
+                if field_name in h.variables:
+                    h[field_name][slot_idx, sl] = cls._particle_field(particles, field_name, np.int32(-1))
             for status_name, default in _STATUS_DEFAULTS.items():
                 h[status_name][slot_idx, sl] = cls._particle_field(particles, status_name, default)
 
@@ -584,7 +588,8 @@ class NetCDFWriter:
                     chunksizes=(particle_chunk,),
                     **compression_kwargs,
                 )
-            for var_name in _Q3D_INT_FIELDS:
+            q3d_int_fields = () if str(q3d_diagnostics).lower() == 'none' else _Q3D_INT_FIELDS
+            for var_name in q3d_int_fields:
                 ds.createVariable(
                     var_name,
                     'i4',
@@ -613,7 +618,7 @@ class NetCDFWriter:
                     ds[field_name][sl] = self._particle_field(particles, field_name, default)
                 for field_name in q3d_float_fields:
                     ds[field_name][sl] = self._particle_field(particles, field_name, np.nan)
-                for field_name in _Q3D_INT_FIELDS:
+                for field_name in q3d_int_fields:
                     ds[field_name][sl] = self._particle_field(particles, field_name, np.int32(-1))
                 for status_name, default in _STATUS_DEFAULTS.items():
                     ds[status_name][sl] = self._particle_field(particles, status_name, default)
