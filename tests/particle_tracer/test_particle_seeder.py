@@ -3009,6 +3009,24 @@ def test_q3d_boundary_exit_does_not_require_preexisting_mobile_state():
     assert population.particles['status_left_domain'].tolist() == [True]
 
 
+def test_q3d_release_state_is_resolved_before_motion():
+    """Initial Q3D output state should use bed datum and configured release height."""
+    population = _macdonald_2d_test_population()
+    population.particles['vertical_position_initialized'][:] = False
+    population.particles['vertical_position_value'][:] = 0.4
+
+    population.initialize_macdonald_q3d_release_state(
+        bed_level_field=np.full(4, -3.0),
+        water_depth_field=np.full(4, 2.0),
+        entrainment_height_field=np.full(4, 0.2),
+    )
+
+    np.testing.assert_allclose(population.particles['z'], [-2.6])
+    np.testing.assert_allclose(population.particles['z_p'], [0.4])
+    assert population.particles['vertical_position_initialized'].tolist() == [True]
+    assert population.particles['status_suspended'].tolist() == [True]
+
+
 def test_macdonald_2d_release_state_maps_bed_and_burial_modes():
     population = _macdonald_2d_test_population()
 

@@ -271,6 +271,79 @@ class Q3DMacdonaldMotionMixin:
             & ~buried
         )
 
+    def initialize_macdonald_q3d_release_state(
+        self,
+        bed_level_field: Any,
+        water_depth_field: Any,
+        entrainment_height_field: Any,
+    ) -> None:
+        """Resolve Q3D release elevation before the initial output sample.
+
+        Parameters
+        ----------
+        bed_level_field : array or temporal field
+            Bed elevation in the model vertical datum [m].
+        water_depth_field : array or temporal field
+            Local water depth [m].
+        entrainment_height_field : array or temporal field
+            MacDonald release-centroid height above bed [m].
+        """
+        self._update_particle_fields(
+            {
+                'bed_level': bed_level_field,
+                'water_depth': water_depth_field,
+                'q3d_entrainment_height_above_bed': entrainment_height_field,
+            }
+        )
+        n_particles = len(self.particles['x'])
+        if 'z' not in self.particles:
+            self.particles['z'] = np.full(n_particles, np.nan, dtype=float)
+        bed_level = np.asarray(self.particles['bed_level'], dtype=float)
+        water_depth = np.maximum(np.nan_to_num(self.particles['water_depth'], nan=0.0), 0.0)
+        entrainment_height = np.clip(
+            np.nan_to_num(self.particles['q3d_entrainment_height_above_bed'], nan=0.0),
+            0.0,
+            water_depth,
+        )
+        burial_depth = np.maximum(
+            np.nan_to_num(self.particles.get('burial_depth', np.zeros(n_particles)), nan=0.0),
+            0.0,
+        )
+        is_suspended = np.asarray(self.particles['status_suspended'], dtype=bool).copy()
+        is_deposited = np.asarray(self.particles['status_deposited'], dtype=bool).copy()
+        is_buried = np.asarray(self.particles['status_buried'], dtype=bool).copy()
+        initializable = (
+            np.asarray(self.particles['status_released'], dtype=bool)
+            & np.asarray(self.particles['status_domain'], dtype=bool)
+            & np.asarray(self.particles['status_alive'], dtype=bool)
+        )
+        z, burial_depth, is_suspended, is_deposited, is_buried = self._initialize_vertical_position(
+            bed_level,
+            water_depth,
+            entrainment_height,
+            np.asarray(self.particles['z'], dtype=float).copy(),
+            burial_depth,
+            initializable,
+            is_suspended,
+            is_deposited,
+            is_buried,
+        )
+        is_buried = self.update_status_buried(burial_depth=burial_depth)
+        eligible = (
+            initializable
+            & np.asarray(self.particles['status_transported'], dtype=bool)
+            & ~is_buried
+        )
+        self.particles['z'] = z
+        self.particles['z_p'] = np.maximum(z - bed_level, 0.0)
+        self.particles['burial_depth'] = burial_depth
+        self.particles['z_burial'] = bed_level - burial_depth
+        self.particles['status_suspended'] = is_suspended
+        self.particles['status_deposited'] = is_deposited
+        self.particles['status_buried'] = is_buried
+        self.particles['status_eligible'] = eligible
+        self.particles['status_mobile'] = eligible & is_suspended
+
     def _initialize_vertical_position(
         self,
         bed_level,

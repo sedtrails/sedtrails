@@ -1422,23 +1422,6 @@ class Simulation:
             nc_handle['time'].units = nc_handle.time_units
             nc_handle['time'].reference_date = nc_handle.reference_date
 
-            # Store the seeded initial state before the first physics update.
-            with self._profile_section('record_output'):
-                nc_handle = self.data_manager.writer.record_output(nc_handle, populations, slot_idx, timer.current)
-            last_saved_time = timer.current
-            slot_idx += 1
-            self._maybe_write_checkpoint(
-                populations,
-                timer.current,
-                simulation_time,
-                slot_idx,
-                checkpoint_options,
-            )
-            next_output_time = self._next_scheduled_output_time(
-                simulation_time,
-                save_interval_seconds,
-                slot_idx,
-            )
         else:
             self.logger.info(
                 'End-position output enabled: final state will be written to %s',
@@ -1486,6 +1469,57 @@ class Simulation:
                                 float(np.asarray(sedtrails_data.times)[-1]),
                             )
                             input_exhaustion_warning_logged = True
+
+                if store_tracks and slot_idx == 0:
+                    for runtime_plan in runtime_plans:
+                        if runtime_plan.tracer.method_name != 'macdonald':
+                            continue
+                        population = runtime_plan.population
+                        retriever = plan_retrievers[runtime_plan.population_index]
+                        bed_level = retriever.get_scalar_field_bounds(field_time_seconds, 'bed_level')
+                        population.update_information(
+                            current_time=timer.current,
+                            mixing_depth=None,
+                            bed_level=bed_level,
+                            transport_probability=1.0,
+                        )
+                        population.update_status()
+                        computation_type = str(
+                            getattr(runtime_plan.tracer.converter.config, 'computationType', '2D')
+                        ).upper()
+                        if computation_type == 'Q3D':
+                            population.initialize_macdonald_q3d_release_state(
+                                bed_level,
+                                retriever.get_scalar_field_bounds(field_time_seconds, 'water_depth'),
+                                retriever.get_scalar_field_bounds(
+                                    field_time_seconds,
+                                    'q3d_entrainment_height_above_bed',
+                                ),
+                            )
+                        else:
+                            population.initialize_macdonald_2d_release_state()
+
+                    with self._profile_section('record_output'):
+                        nc_handle = self.data_manager.writer.record_output(
+                            nc_handle,
+                            populations,
+                            slot_idx,
+                            timer.current,
+                        )
+                    last_saved_time = timer.current
+                    slot_idx += 1
+                    self._maybe_write_checkpoint(
+                        populations,
+                        timer.current,
+                        simulation_time,
+                        slot_idx,
+                        checkpoint_options,
+                    )
+                    next_output_time = self._next_scheduled_output_time(
+                        simulation_time,
+                        save_interval_seconds,
+                        slot_idx,
+                    )
 
                 # TODO: integrate loop over flow fields into CFL Condition
                 # Collect flow fields for CFL computation
