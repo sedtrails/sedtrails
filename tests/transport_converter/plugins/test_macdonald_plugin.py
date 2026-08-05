@@ -446,6 +446,30 @@ def test_model_native_profile_uses_chezy_shear_from_depth_averaged_speed():
     np.testing.assert_allclose(sedtrails_data.selected_bed_shear_stress, expected_stress)
 
 
+def test_chezy_log_profile_recovers_depth_averaged_speed():
+    """The Chezy-equivalent log profile should average to the input speed."""
+    water_depth = 4.0
+    depth_averaged_speed = 1.3
+    chezy = 65.0
+    gravity = 9.81
+    shear_velocity = depth_averaged_speed * np.sqrt(gravity) / chezy
+    roughness = PhysicsPlugin.calculate_chezy_equivalent_roughness_height(
+        water_depth,
+        chezy,
+        gravity=gravity,
+    )
+    z = np.linspace(0.0, water_depth, 100_001)
+    velocity = PhysicsPlugin.calculate_macdonald_loglaw_velocity_at_z(
+        np.full_like(z, shear_velocity),
+        z,
+        np.full_like(z, roughness),
+    )
+
+    integrated_average = np.trapezoid(velocity, z) / water_depth
+
+    assert integrated_average == pytest.approx(depth_averaged_speed, rel=1e-4)
+
+
 def test_vertical_diffusivity_has_depth_scaling_and_consistent_implementations():
     """Keep Q3D vertical diffusivity dimensional in grid and particle paths."""
     water_depth = np.array([1.0, 2.0])

@@ -1378,7 +1378,11 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         von_karman_constant: float = 0.4,
         gravity: float = 9.81,
     ) -> np.ndarray:
-        """Convert effective Chezy coefficient to equivalent Nikuradse roughness height."""
+        """Convert Chezy coefficient to depth-average-consistent roughness.
+
+        The ``30/e`` prefactor makes the depth integral of the matching log
+        profile equal the supplied Chezy depth-averaged velocity.
+        """
         water_depth = np.asarray(water_depth, dtype=float)
         chezy_coefficient = np.asarray(chezy_coefficient, dtype=float)
         water_depth, chezy_coefficient = np.broadcast_arrays(water_depth, chezy_coefficient)
@@ -1390,7 +1394,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
             & (chezy_coefficient > 0.0)
             & (gravity > 0.0)
         )
-        roughness[valid] = 30.0 * water_depth[valid] * np.exp(
+        roughness[valid] = (30.0 / np.e) * water_depth[valid] * np.exp(
             -float(von_karman_constant) * chezy_coefficient[valid] / np.sqrt(float(gravity))
         )
         return roughness
