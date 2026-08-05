@@ -1481,53 +1481,55 @@ class ParticlePopulation(Q3DMacdonaldMotionMixin):
         if _is_temporal_flow_field(flow_field):
             weight = flow_field['weight']
             if weight <= 0.0 or flow_field['lower'] is flow_field['upper']:
-                lower_u, lower_v, lower_magnitude = self._field_interpolator_multi(
+                lower_u, lower_v = self._field_interpolator_multi(
                     (
                         np.asarray(flow_field['lower']['u']),
                         np.asarray(flow_field['lower']['v']),
-                        np.asarray(flow_field['lower']['magnitude']),
                     ),
                     x_points,
                     y_points,
                 )
                 self._assign_particle_field_values(f'{prefix}_u', lower_u, indices=indices)
                 self._assign_particle_field_values(f'{prefix}_v', lower_v, indices=indices)
-                self._assign_particle_field_values(f'{prefix}_magnitude', lower_magnitude, indices=indices)
+                self._assign_particle_field_values(
+                    f'{prefix}_magnitude',
+                    np.hypot(lower_u, lower_v),
+                    indices=indices,
+                )
                 return
 
-            lower_u, lower_v, lower_magnitude, upper_u, upper_v, upper_magnitude = self._field_interpolator_multi(
+            lower_u, lower_v, upper_u, upper_v = self._field_interpolator_multi(
                 (
                     np.asarray(flow_field['lower']['u']),
                     np.asarray(flow_field['lower']['v']),
-                    np.asarray(flow_field['lower']['magnitude']),
                     np.asarray(flow_field['upper']['u']),
                     np.asarray(flow_field['upper']['v']),
-                    np.asarray(flow_field['upper']['magnitude']),
                 ),
                 x_points,
                 y_points,
             )
-            self._assign_particle_field_values(f'{prefix}_u', lower_u + weight * (upper_u - lower_u), indices=indices)
-            self._assign_particle_field_values(f'{prefix}_v', lower_v + weight * (upper_v - lower_v), indices=indices)
+            particle_u = lower_u + weight * (upper_u - lower_u)
+            particle_v = lower_v + weight * (upper_v - lower_v)
+            self._assign_particle_field_values(f'{prefix}_u', particle_u, indices=indices)
+            self._assign_particle_field_values(f'{prefix}_v', particle_v, indices=indices)
             self._assign_particle_field_values(
                 f'{prefix}_magnitude',
-                lower_magnitude + weight * (upper_magnitude - lower_magnitude),
+                np.hypot(particle_u, particle_v),
                 indices=indices,
             )
             return
 
-        u, v, magnitude = self._field_interpolator_multi(
+        u, v = self._field_interpolator_multi(
             (
                 np.asarray(flow_field['u']),
                 np.asarray(flow_field['v']),
-                np.asarray(flow_field['magnitude']),
             ),
             x_points,
             y_points,
         )
         self._assign_particle_field_values(f'{prefix}_u', u, indices=indices)
         self._assign_particle_field_values(f'{prefix}_v', v, indices=indices)
-        self._assign_particle_field_values(f'{prefix}_magnitude', magnitude, indices=indices)
+        self._assign_particle_field_values(f'{prefix}_magnitude', np.hypot(u, v), indices=indices)
 
     def update_burial_depth(self) -> None:
         """Update burial depth for temporal bed-level accretion or erosion.

@@ -1636,6 +1636,62 @@ class TestParticlePopulation:
 
         np.testing.assert_allclose(population.particles['bed_level'], 0.5)
 
+    @pytest.mark.parametrize(
+        ('flow_field', 'interpolated_components'),
+        [
+            (
+                {
+                    'u': np.ones(4),
+                    'v': np.ones(4),
+                    'magnitude': np.full(4, 99.0),
+                },
+                (np.array([0.5]), np.array([0.5])),
+            ),
+            (
+                {
+                    'lower': {
+                        'u': np.ones(4),
+                        'v': np.zeros(4),
+                        'magnitude': np.full(4, 99.0),
+                    },
+                    'upper': {
+                        'u': np.zeros(4),
+                        'v': np.ones(4),
+                        'magnitude': np.full(4, 99.0),
+                    },
+                    'weight': 0.5,
+                },
+                (
+                    np.array([1.0]),
+                    np.array([0.0]),
+                    np.array([0.0]),
+                    np.array([1.0]),
+                ),
+            ),
+        ],
+    )
+    def test_flow_field_magnitude_is_recomputed_from_interpolated_components(
+        self,
+        point_config_simple,
+        flow_field,
+        interpolated_components,
+    ):
+        """Keep particle depth-averaged speed consistent with local u and v."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=point_config_simple,
+        )
+        population._field_interpolator_multi = lambda *args: interpolated_components
+
+        population._update_particle_flow_field('depth_avg_flow_velocity', flow_field)
+
+        particle_u = population.particles['depth_avg_flow_velocity_u']
+        particle_v = population.particles['depth_avg_flow_velocity_v']
+        particle_magnitude = population.particles['depth_avg_flow_velocity_magnitude']
+        np.testing.assert_allclose(particle_magnitude, np.hypot(particle_u, particle_v))
+        np.testing.assert_allclose(particle_magnitude, np.sqrt(0.5))
+
     def test_update_burial_depth_tracks_temporal_bed_level_change(self):
         """Accretion should increase burial depth, while erosion clamps at zero."""
         config = PopulationConfig(
