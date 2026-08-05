@@ -185,6 +185,12 @@
 				  "default": true,
 				  "description": "If false, disable Q3D horizontal turbulent diffusion and its random-walk velocity components without changing geometric-scheme vertical diffusion."
 				},
+				"q3d_horizontal_diffusion_factor": {
+				  "type": "number",
+				  "minimum": 0.0,
+				  "default": 0.15,
+				  "description": "Dimensionless Q3D horizontal turbulent diffusion factor."
+				},
 				"q3d_vertical_diffusion_factor": {
 				  "type": "number",
 				  "minimum": 0.0,

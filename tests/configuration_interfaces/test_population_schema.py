@@ -479,6 +479,39 @@ def test_population_schema_rejects_negative_q3d_vertical_diffusion_factor(tmp_pa
         _validate_config(tmp_path, config)
 
 
+@pytest.mark.parametrize('factor', [0.0, 0.2])
+def test_population_schema_accepts_q3d_horizontal_diffusion_factor(tmp_path, factor):
+    """Accept a nonnegative horizontal Q3D diffusion factor."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': 'Q3D',
+            'q3d_horizontal_diffusion_factor': factor,
+        }
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    method = validated['particles']['populations'][0]['tracer_methods']['macdonald']
+    assert method['q3d_horizontal_diffusion_factor'] == pytest.approx(factor)
+
+
+def test_population_schema_rejects_negative_q3d_horizontal_diffusion_factor(tmp_path):
+    """Reject negative horizontal Q3D diffusion scaling."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': 'Q3D',
+            'q3d_horizontal_diffusion_factor': -0.1,
+        }
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
 @pytest.mark.parametrize(
     'entrainment',
     [
