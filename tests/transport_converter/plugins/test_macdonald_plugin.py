@@ -397,3 +397,31 @@ def test_max_shear_controls_mobility_and_mean_shear_scales_bedload_speed(monkeyp
         expected_mean_shear,
     )
     np.testing.assert_allclose(sedtrails_data.max_shields_number, expected_max_shields)
+
+
+def test_model_native_profile_uses_chezy_shear_from_depth_averaged_speed():
+    """Pair model-native profile roughness with its depth-averaged current shear."""
+    config = _macdonald_config(export_diagnostic_fields=True)
+    sedtrails_data = _MacdonaldSedtrailsDataStub()
+    sedtrails_data.effective_chezy = np.array([[50.0, 70.0]])
+    grain_properties = {
+        'critical_shields': 0.05,
+        'settling_velocity': 0.02,
+        'dimensionless_grain_size': 6.0,
+    }
+
+    PhysicsPlugin(config, tracer_methods={}).add_physics(
+        sedtrails_data,
+        grain_properties,
+        transport_probability_method='no_probability',
+    )
+
+    expected_shear = (
+        sedtrails_data.depth_avg_flow_velocity['magnitude']
+        * np.sqrt(config.gravity)
+        / sedtrails_data.effective_chezy
+    )
+    expected_stress = config.water_density * expected_shear**2
+    np.testing.assert_allclose(sedtrails_data.selected_shear_velocity, expected_shear)
+    np.testing.assert_allclose(sedtrails_data.chezy_current_shear_velocity, expected_shear)
+    np.testing.assert_allclose(sedtrails_data.selected_bed_shear_stress, expected_stress)

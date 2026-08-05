@@ -113,7 +113,7 @@
                   "type": "string",
                   "enum": ["max", "mean"],
                   "default": "mean",
-                  "description": "Select the current shear velocity used for suspension profiles and Q3D diffusion. Maximum bed shear remains fixed for Shields mobilisation, resuspension, pickup, and active-layer calculations."
+                  "description": "Select the current shear velocity used for suspension profiles and Q3D diffusion when transport fields are calculated. Model-native transport instead uses the current shear derived consistently from depth-averaged velocity and effective Chezy. Maximum bed shear remains fixed for Shields mobilisation, resuspension, pickup, and active-layer calculations."
                 },
                 "entrainment": {
                   "type": "object",

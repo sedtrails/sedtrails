@@ -99,7 +99,6 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         s = physics_lib.calculate_relative_density_ratio(self.config.particle_density, self.config.water_density)    # relative density ratio
         dstar = grain_properties.get('dimensionless_grain_size')  
         settling_velocity = grain_properties.get('settling_velocity')  # gives very similar results to physics_lib.compute_settling_velocity
-        rouse_number = physics_lib.calculate_rouse_number(settling_velocity, selected_shear_velocity, self.config.von_karman_constant)
         
         if critical_shields is None:
             raise ValueError("Missing required 'critical_shields' value in grain_properties.")
@@ -119,7 +118,11 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
                 flow_velocity_magnitude * np.sqrt(self.config.gravity),
                 effective_chezy,
                 fill=0.0,
-            )# not used now. But consider using it in the velocity profile calculation instead of the shear velocity from the bed shear stress.
+            )
+            selected_shear_velocity = chezy_current_shear_velocity
+            selected_bed_shear_stress = (
+                self.config.water_density * selected_shear_velocity**2
+            )
             k_s_form = np.full_like(water_depth, np.nan, dtype=float)
             k_s_total = np.full_like(water_depth, np.nan, dtype=float)
             profile_roughness_height = k_s_chezy_equivalent
@@ -132,6 +135,12 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
             k_s_chezy_equivalent = np.full_like(water_depth, np.nan, dtype=float)
             chezy_current_shear_velocity = np.full_like(water_depth, np.nan, dtype=float)
             profile_roughness_height = k_s_total
+
+        rouse_number = physics_lib.calculate_rouse_number(
+            settling_velocity,
+            selected_shear_velocity,
+            self.config.von_karman_constant,
+        )
 
         if self.config.use_transport_fields=='model-native':
             # bed load transport
