@@ -538,27 +538,31 @@ class TestSimulationManagerTimeConfig:
         assert Simulation._is_output_sample_due(sample_time, next_output_time, end_time) is expected
 
     @pytest.mark.parametrize(
-        'method_name,transport_probability_method,expected',
+        'method_name,transport_probability_method,method_config,expected',
         [
-            ('vanwesten', 'stochastic_transport', True),
-            ('vanwesten', 'reduced_velocity', True),
-            ('vanwesten', 'no_probability', True),
-            ('soulsby', 'no_probability', True),
-            ('passive_tracer', 'no_probability', True),
-            ('soulsby', 'reduced_velocity', False),
-            ('passive_tracer', 'stochastic_transport', False),
+            ('vanwesten', 'stochastic_transport', {}, True),
+            ('vanwesten', 'reduced_velocity', {}, True),
+            ('vanwesten', 'no_probability', {}, True),
+            ('soulsby', 'no_probability', {}, True),
+            ('passive_tracer', 'no_probability', {}, True),
+            ('soulsby', 'reduced_velocity', {}, False),
+            ('passive_tracer', 'stochastic_transport', {}, False),
+            ('macdonald', 'no_probability', {'computationType': '2D'}, True),
+            ('macdonald', 'no_probability', {'computationType': 'Q3D'}, False),
         ],
     )
     def test_should_update_bed_level_after_movement_policy(
         self,
         method_name,
         transport_probability_method,
+        method_config,
         expected,
     ):
         """Post-move bed-level updates should follow tracer and transport policy rules."""
         tracer_plan = SimpleNamespace(
             method_name=method_name,
             transport_probability_method=transport_probability_method,
+            method_config=method_config,
         )
 
         assert Simulation._should_update_bed_level_after_movement(tracer_plan) is expected

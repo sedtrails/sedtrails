@@ -847,9 +847,15 @@ class Simulation:
         - Also run for any tracer configured with ``no_probability`` so
           particle ``z`` follows bed level after movement (passive/soulsby included).
 
-        Future quasi-3D tracers can introduce exceptions here when vertical
-        position is solved independently from bed level.
+        MacDonald Q3D is excluded because it solves and stores its own absolute
+        vertical position and height above bed during particle motion.
         """
+        if tracer_plan.method_name == 'macdonald':
+            method_config = getattr(tracer_plan, 'method_config', {}) or {}
+            computation_type = str(method_config.get('computationType', '2D')).upper()
+            if computation_type == 'Q3D':
+                return False
+
         return (
             tracer_plan.method_name == 'vanwesten'
             or tracer_plan.transport_probability_method == 'no_probability'
