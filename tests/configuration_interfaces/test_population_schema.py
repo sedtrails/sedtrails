@@ -392,6 +392,36 @@ def test_population_schema_rejects_unimplemented_macdonald_computation_types(
         _validate_config(tmp_path, config)
 
 
+def test_population_schema_accepts_q3d_vertical_diffusion_factor(tmp_path):
+    """Accept a nonnegative dimensionless Q3D vertical diffusion factor."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'computationType': 'Q3D',
+            'q3d_vertical_diffusion_factor': 0.2,
+        }
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    method = validated['particles']['populations'][0]['tracer_methods']['macdonald']
+    assert method['q3d_vertical_diffusion_factor'] == pytest.approx(0.2)
+
+
+def test_population_schema_rejects_negative_q3d_vertical_diffusion_factor(tmp_path):
+    """Reject negative Q3D vertical diffusivity scaling."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'computationType': 'Q3D',
+            'q3d_vertical_diffusion_factor': -0.1,
+        }
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
 @pytest.mark.parametrize(
     'entrainment',
     [

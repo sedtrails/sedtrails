@@ -184,6 +184,12 @@
 				  "default": true,
 				  "description": "If false, disable Q3D horizontal turbulent diffusion and its random-walk velocity components without changing geometric-scheme vertical diffusion."
 				},
+				"q3d_vertical_diffusion_factor": {
+				  "type": "number",
+				  "minimum": 0.0,
+				  "default": 0.15,
+				  "description": "Dimensionless Q3D vertical diffusion factor. SedTRAILS uses a depth-scaled variant of MacDonald Eq. 49 so water depth supplies the length scale required for diffusivity units of m^2/s."
+				},
 				"q3d_vertical_update_scheme": {
 				  "type": "string",
 				  "enum": ["geometric", "centroid_floor", "rouse_profile", "rouse_sample"],

@@ -1651,6 +1651,7 @@ class Simulation:
                                     entrainment_height_above_bed=scalar_field('q3d_entrainment_height_above_bed'),
                                     rouse_number=scalar_field('rouse_number'),
                                     K_Et=config_value('q3d_horizontal_diffusion_factor', 0.15),
+                                    K_Ev=config_value('q3d_vertical_diffusion_factor', 0.15),
                                     q3d_horizontal_diffusion_enabled=config_value(
                                         'q3d_horizontal_diffusion_enabled',
                                         True,

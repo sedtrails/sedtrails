@@ -147,7 +147,8 @@ class Q3DMacdonaldMotionMixin:
         K_Et : float
             Horizontal diffusion scaling coefficient, typically about 0.15-0.6 (below eq 45 in MacDonald et al. (2006)).
         K_Ev : float or None
-            Vertical diffusion scaling coefficient. If None, defaults to K_Et.
+            Dimensionless vertical diffusion scaling coefficient. If None,
+            defaults to K_Et. Water depth supplies the length scale.
         M_b : array or None
             Wave-breaking enhancement factor at particle positions. If None, defaults to 1. (eq 47 in MacDonald et al. (2006)).
         E_turb_hor_min : float
@@ -184,13 +185,15 @@ class Q3DMacdonaldMotionMixin:
             horizontal = M_b * K_Et * water_depth * shear_velocity
             horizontal = np.maximum(np.nan_to_num(horizontal, nan=0.0), E_turb_hor_min)
 
-        # Vertical diffusion coefficient, equations 49 and 50 in MacDonald et al. (2006).
+        # Depth-scaled variant of equations 49 and 50. In the report K_Ev
+        # carries length units; here K_Ev is dimensionless and h supplies that
+        # length explicitly.
         vertical = np.zeros_like(water_depth, dtype=float)
         if compute_vertical:
             shape = np.zeros_like(water_depth, dtype=float)
             valid = water_depth > 0.0
             shape[valid] = z_p[valid] * (water_depth[valid] - z_p[valid]) ** 2 / water_depth[valid] ** 3
-            vertical = M_b * K_Ev * flow_velocity_magnitude * shape
+            vertical = M_b * K_Ev * water_depth * flow_velocity_magnitude * shape
             vertical = np.maximum(np.nan_to_num(vertical, nan=0.0), E_turb_vert_min)
         return horizontal, vertical
 

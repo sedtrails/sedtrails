@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from sedtrails.particle_tracer.q3d_macdonald_motion import Q3DMacdonaldMotionMixin
 from sedtrails.transport_converter import physics_lib
 from sedtrails.transport_converter.physics_converter import PhysicsConfig, PhysicsConverter
 from sedtrails.transport_converter.plugins.physics.macdonald import PhysicsPlugin
@@ -425,3 +426,34 @@ def test_model_native_profile_uses_chezy_shear_from_depth_averaged_speed():
     np.testing.assert_allclose(sedtrails_data.selected_shear_velocity, expected_shear)
     np.testing.assert_allclose(sedtrails_data.chezy_current_shear_velocity, expected_shear)
     np.testing.assert_allclose(sedtrails_data.selected_bed_shear_stress, expected_stress)
+
+
+def test_vertical_diffusivity_has_depth_scaling_and_consistent_implementations():
+    """Keep Q3D vertical diffusivity dimensional in grid and particle paths."""
+    water_depth = np.array([1.0, 2.0])
+    particle_height = 0.5 * water_depth
+    flow_speed = np.ones(2)
+    shear_velocity = np.zeros(2)
+    kwargs = {
+        'K_Ev': 0.2,
+        'compute_horizontal': False,
+        'E_turb_vert_min': 0.0,
+    }
+
+    _, grid_vertical = PhysicsPlugin.compute_turbulent_diffusion_coefficients(
+        water_depth,
+        particle_height,
+        flow_speed,
+        shear_velocity,
+        **kwargs,
+    )
+    _, particle_vertical = Q3DMacdonaldMotionMixin._turbulent_diffusion_coefficients(
+        water_depth,
+        particle_height,
+        flow_speed,
+        shear_velocity,
+        **kwargs,
+    )
+
+    assert grid_vertical[1] == pytest.approx(2.0 * grid_vertical[0])
+    np.testing.assert_allclose(particle_vertical, grid_vertical)

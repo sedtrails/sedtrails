@@ -580,6 +580,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
                 flow_velocity_magnitude=flow_velocity_magnitude,
                 shear_velocity=selected_shear_velocity,
                 K_Et=getattr(self.config, 'q3d_horizontal_diffusion_factor', 0.15),
+                K_Ev=getattr(self.config, 'q3d_vertical_diffusion_factor', 0.15),
                 compute_horizontal=horizontal_diffusion_enabled,
                 compute_vertical=vertical_diffusion_enabled,
             )
@@ -1015,7 +1016,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         K_Et : float
             Horizontal diffusion scaling coefficient (≈ 0.15–0.6)
         K_Ev : float or None
-            Vertical diffusion scaling coefficient (if None, defaults to K_Et)
+            Dimensionless vertical diffusion scaling coefficient. If None,
+            defaults to K_Et. Water depth supplies the length scale.
         M_b : array or None
             Wave-breaking enhancement factor (defaults to 1)
         E_turb_hor_min : float
@@ -1046,8 +1048,9 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
             E_turb_hor = np.maximum(E_turb_hor, E_turb_hor_min)
 
         # ---------------------
-        # Vertical diffusion
-        # Equations (49) + (50)
+        # Depth-scaled variant of equations (49) and (50). In the report K_Ev
+        # carries length units; here K_Ev is dimensionless and h supplies that
+        # length explicitly.
         # ---------------------
         E_turb_vert = np.zeros_like(water_depth, dtype=float)
         if compute_vertical:
@@ -1060,7 +1063,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
                 / water_depth[valid] ** 3
             )
 
-            E_turb_vert = M_b * K_Ev * flow_velocity_magnitude * shape
+            E_turb_vert = M_b * K_Ev * water_depth * flow_velocity_magnitude * shape
             E_turb_vert = np.nan_to_num(E_turb_vert, nan=0.0)
             E_turb_vert = np.maximum(E_turb_vert, E_turb_vert_min)
 
