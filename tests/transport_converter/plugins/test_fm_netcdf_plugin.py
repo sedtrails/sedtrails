@@ -53,6 +53,26 @@ def test_get_max_exposure_depth_fields_handles_static_fields(tmp_path, monkeypat
     np.testing.assert_allclose(max_bss, [2.0, 4.0])
 
 
+def test_map_dfm_variables_rejects_layer_velocity_as_depth_average(tmp_path, monkeypatch):
+    """A single selected layer must not be reported as depth-averaged velocity."""
+    dataset = xr.Dataset(
+        {
+            'net_xcc': ('mesh2d_nFaces', np.array([0.0, 1.0])),
+            'net_ycc': ('mesh2d_nFaces', np.array([0.0, 0.0])),
+            'sea_water_x_velocity': (
+                ('time', 'layer', 'mesh2d_nFaces'),
+                np.ones((1, 2, 2)),
+            ),
+        }
+    )
+    plugin = _plugin_with_dataset(tmp_path, monkeypatch, dataset)
+    plugin.load()
+    monkeypatch.setattr(plugin, '_active_triangular_connectivity', lambda x, y: np.array([[0, 1, 1]]))
+
+    with pytest.raises(ValueError, match='requires depth-averaged flow velocity'):
+        plugin._map_dfm_variables({'num_times': 1}, None, None)
+
+
 @pytest.mark.parametrize('missing_variable', ['bedlevel', 'max_bss_magnitude'])
 def test_get_max_exposure_depth_fields_requires_inputs(tmp_path, monkeypatch, missing_variable):
     """Missing exposure-input variables should fail with clear KeyErrors."""
