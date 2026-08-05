@@ -666,16 +666,15 @@ def calculate_equilibrium_bedform_height(theta_max, theta_cr, grain_diameter, wa
     and Example Applications. U.S. Army Corps of Engineers. Eq. 12.
     """
 
-    # initialize bedform height array
-    eta_b = np.zeros_like(theta_max, dtype=float)
+    theta_max, theta_cr, grain_diameter, water_depth = np.broadcast_arrays(
+        np.asarray(theta_max, dtype=float),
+        np.asarray(theta_cr, dtype=float),
+        np.asarray(grain_diameter, dtype=float),
+        np.asarray(water_depth, dtype=float),
+    )
+    theta_ratio = np.full(theta_max.shape, np.nan, dtype=float)
+    np.divide(theta_max, theta_cr, out=theta_ratio, where=theta_cr > 0.0)
 
-    # ratio of Shields parameter to critical Shields
-    theta_ratio = np.full_like(theta_max, np.nan, dtype=float)
-    if theta_cr > 0:
-        np.divide(theta_max, theta_cr, out=theta_ratio)
-
-    # apply the valid range for Eq. 12: 1 < theta/theta_cr < 24
-    water_depth = np.broadcast_to(np.asarray(water_depth, dtype=float), theta_max.shape)
     mask = (
         (theta_ratio > 1)
         & (theta_ratio < 24)
@@ -684,18 +683,18 @@ def calculate_equilibrium_bedform_height(theta_max, theta_cr, grain_diameter, wa
         & np.isfinite(water_depth)
     )
 
-    eta_candidate = np.zeros_like(theta_max, dtype=float)
-    eta_candidate[mask] = (
+    diameter_depth_ratio = np.zeros(theta_max.shape, dtype=float)
+    np.divide(grain_diameter, water_depth, out=diameter_depth_ratio, where=water_depth > 0.0)
+    eta_candidate = (
         0.11
-        * water_depth[mask]
-        * (grain_diameter / water_depth[mask]) ** 0.3
-        * (1 - np.exp(-0.5 * (theta_ratio[mask] - 1)))
-        * (24 - theta_ratio[mask])
+        * water_depth
+        * diameter_depth_ratio**0.3
+        * (1 - np.exp(-0.5 * (theta_ratio - 1)))
+        * (24 - theta_ratio)
     )
-    eta_b = np.where(mask, eta_candidate, 0)
+    eta_b = np.where(mask, eta_candidate, 0.0)
 
-    # form roughness is the bedform height
-    return eta_b
+    return float(eta_b) if eta_b.ndim == 0 else eta_b
 
 
 
