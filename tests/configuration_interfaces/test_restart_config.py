@@ -330,6 +330,7 @@ def test_create_restart_from_checkpoint_netcdf(tmp_path):
             'population_id': (('n_particles',), np.array([0, 1], dtype=int)),
             'status_alive': (('n_particles',), np.array([1, 1], dtype=np.uint8)),
             'status_domain': (('n_particles',), np.array([1, 1], dtype=np.uint8)),
+            'status_released': (('n_particles',), np.array([1, 0], dtype=np.uint8)),
             'z': (('n_particles',), np.array([-1.2, -2.3])),
             'z_p': (('n_particles',), np.array([0.4, 0.5])),
             'burial_depth': (('n_particles',), np.array([0.0, 0.0])),
@@ -351,7 +352,8 @@ def test_create_restart_from_checkpoint_netcdf(tmp_path):
     )
 
     assert summary.restart_time == '2020-01-01 00:03:00'
-    assert summary.retained_particles == 2
+    assert summary.retained_particles == 1
+    assert 'population_2' not in summary.seed_files
     seed_text = summary.seed_files['population_1'].read_text(encoding='utf-8')
     assert seed_text.splitlines()[0].startswith('x,y,z,z_p,burial_depth')
     assert '-1.2,0.4' in seed_text

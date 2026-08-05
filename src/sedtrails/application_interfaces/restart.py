@@ -37,6 +37,7 @@ class RestartParticleState:
     pop_ids: np.ndarray
     alive_mask: np.ndarray
     in_domain_mask: np.ndarray
+    released_mask: np.ndarray
     restart_seconds: float | None
     particle_fields: dict[str, np.ndarray]
 
@@ -257,6 +258,9 @@ def _extract_checkpoint_state(ds: xr.Dataset) -> RestartParticleState:
     in_domain_mask = np.ones(n_particles, dtype=bool)
     if 'status_domain' in ds:
         in_domain_mask = _status_values_to_mask(ds['status_domain'].values)
+    released_mask = np.ones(n_particles, dtype=bool)
+    if 'status_released' in ds:
+        released_mask = _status_values_to_mask(ds['status_released'].values)
 
     restart_seconds = None
     if 'time' in ds:
@@ -271,6 +275,7 @@ def _extract_checkpoint_state(ds: xr.Dataset) -> RestartParticleState:
         pop_ids=_population_ids(ds, n_particles),
         alive_mask=np.asarray(alive_mask, dtype=bool),
         in_domain_mask=np.asarray(in_domain_mask, dtype=bool),
+        released_mask=np.asarray(released_mask, dtype=bool),
         restart_seconds=restart_seconds,
         particle_fields=_optional_restart_fields(ds, n_particles),
     )
@@ -301,6 +306,9 @@ def _extract_time_particle_state(ds: xr.Dataset) -> RestartParticleState:
     in_domain_mask = np.ones(n_particles, dtype=bool)
     if 'status_domain' in ds:
         in_domain_mask = _status_values_to_mask(ds['status_domain'].isel({time_dim: slot_idx}).values)
+    released_mask = np.ones(n_particles, dtype=bool)
+    if 'status_released' in ds:
+        released_mask = _status_values_to_mask(ds['status_released'].isel({time_dim: slot_idx}).values)
 
     restart_seconds = None
     time_values = np.asarray(ds['time'].values, dtype=float)
@@ -313,6 +321,7 @@ def _extract_time_particle_state(ds: xr.Dataset) -> RestartParticleState:
         pop_ids=_population_ids(ds, n_particles),
         alive_mask=np.asarray(alive_mask, dtype=bool),
         in_domain_mask=np.asarray(in_domain_mask, dtype=bool),
+        released_mask=np.asarray(released_mask, dtype=bool),
         restart_seconds=restart_seconds,
         particle_fields=_optional_restart_fields(ds, n_particles, time_dim, slot_idx),
     )
@@ -453,6 +462,7 @@ def create_restart_from_netcdf(
             & np.isfinite(restart_state.y)
             & restart_state.alive_mask
             & restart_state.in_domain_mask
+            & restart_state.released_mask
         )
         if not np.any(keep_mask):
             raise ValueError('No valid particle positions available to seed restart.')
