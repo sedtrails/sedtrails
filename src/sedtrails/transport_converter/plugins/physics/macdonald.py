@@ -32,8 +32,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
     def __init__(self, config, tracer_methods):
         super().__init__()
         self.config = config
-        self._q3d_divergence_cache_inputs = None
-        self._q3d_divergence_cache_value = None
+        self._q3d_divergence_geometry = None
+        self._q3d_divergence_stencils = None
 
         # This plugin relies on shared class-level MacDonald lookup cache
         _ = PhysicsPlugin._macdonald_lookup_rouse
@@ -661,31 +661,37 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
             sedtrails_data.add_physics_field('vertical_particle_velocity', vertical_particle_velocity)
 
     def _get_q3d_divergence(self, x, y, u, v, k=12, r_max=150):
-        """Return cached Q3D horizontal divergence for one input-data chunk."""
-        cached_inputs = self._q3d_divergence_cache_inputs
-        current_inputs = (x, y, u, v, k, r_max)
-        if cached_inputs is not None:
-            same_arrays = all(
-                cached is current
-                for cached, current in zip(
-                    cached_inputs[:4],
-                    current_inputs[:4],
-                    strict=True,
-                )
-            )
-            if same_arrays and cached_inputs[4:] == current_inputs[4:]:
-                return self._q3d_divergence_cache_value
+        """Return Q3D horizontal divergence, reusing cached geometry stencils.
 
-        divergence, _, _ = PhysicsPlugin.divergence_scattered_knn_time(
-            x,
-            y,
+        The KNN neighbour search and least-squares weights depend only on the
+        flow-field geometry (x, y, k, r_max), so they are cached and rebuilt
+        only when that geometry changes. The velocity fields (u, v) are
+        expected to change on every call (e.g. every timestep), so they are
+        always re-applied to the cached stencils rather than participating
+        in the cache key.
+        """
+        current_geometry = (x, y, k, r_max)
+        cached_geometry = self._q3d_divergence_geometry
+        geometry_unchanged = (
+            cached_geometry is not None
+            and cached_geometry[0] is x
+            and cached_geometry[1] is y
+            and cached_geometry[2:] == current_geometry[2:]
+        )
+        if not geometry_unchanged:
+            self._q3d_divergence_stencils = PhysicsPlugin._build_divergence_stencils(
+                x,
+                y,
+                k=k,
+                r_max=r_max,
+            )
+            self._q3d_divergence_geometry = current_geometry
+
+        divergence, _, _ = PhysicsPlugin._apply_divergence_stencils(
             u,
             v,
-            k=k,
-            r_max=r_max,
+            self._q3d_divergence_stencils,
         )
-        self._q3d_divergence_cache_inputs = current_inputs
-        self._q3d_divergence_cache_value = divergence
         return divergence
 
     @staticmethod

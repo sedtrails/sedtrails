@@ -399,34 +399,53 @@ def test_time_divergence_reuses_geometry_for_all_frames():
     np.testing.assert_allclose(divergence[1], 13.0)
 
 
-def test_q3d_divergence_is_cached_for_unchanged_input_chunk(monkeypatch):
-    """Avoid recomputing full-grid divergence during every particle step."""
+def test_q3d_divergence_reuses_geometry_stencils_but_always_uses_current_velocity(monkeypatch):
+    """Cache only the geometry-dependent KNN stencils, not the velocity result.
+
+    The neighbour search/least-squares weights depend solely on (x, y, k,
+    r_max) and are expensive, so they should be built once and reused. The
+    velocity fields change every call (e.g. every timestep) and must always
+    be re-applied so the divergence output reflects the latest u, v.
+    """
     plugin = PhysicsPlugin(_macdonald_config(computationType='Q3D'), tracer_methods={})
-    x = np.arange(4.0)
-    y = np.arange(4.0)
-    u = np.ones((2, 4))
-    v = np.ones((2, 4))
-    calls = 0
-    original = PhysicsPlugin.divergence_scattered_knn_time
+    # A small non-collinear grid so the local linear least-squares fit
+    # recovers an exact, unambiguous gradient (an arange-diagonal grid would
+    # be degenerate for this check, since dx and dy are perfectly correlated).
+    x = np.array([0.0, 1.0, 0.0, 1.0])
+    y = np.array([0.0, 0.0, 1.0, 1.0])
+    u = np.tile(x, (2, 1))  # dudx == 1 everywhere
+    v = np.tile(y, (2, 1))  # dvdy == 1 everywhere
+    builds = 0
+    original = PhysicsPlugin._build_divergence_stencils
 
     def counted(*args, **kwargs):
-        nonlocal calls
-        calls += 1
+        nonlocal builds
+        builds += 1
         return original(*args, **kwargs)
 
     monkeypatch.setattr(
         PhysicsPlugin,
-        'divergence_scattered_knn_time',
+        '_build_divergence_stencils',
         staticmethod(counted),
     )
 
     first = plugin._get_q3d_divergence(x, y, u, v)
-    second = plugin._get_q3d_divergence(x, y, u, v)
-    plugin._get_q3d_divergence(x, y, u.copy(), v)
+    np.testing.assert_allclose(first, 2.0)  # dudx + dvdy == 1 + 1
 
-    assert first is second
-    assert first.shape == u.shape
-    assert calls == 2
+    # Same x, y objects (unchanged geometry) but a different u object with
+    # different values, as happens between timesteps.
+    changed_u = u * 2.0  # dudx becomes 2, dvdy stays 1
+    second = plugin._get_q3d_divergence(x, y, changed_u, v)
+
+    # Geometry stencils were built exactly once and reused for both calls.
+    assert builds == 1
+    # The divergence output tracks the current velocity, not a stale cache.
+    assert second.shape == u.shape
+    np.testing.assert_allclose(second, 3.0)
+
+    # A genuine geometry change (new x, y objects) must rebuild the stencils.
+    plugin._get_q3d_divergence(x.copy(), y.copy(), u, v)
+    assert builds == 2
 
 
 def test_max_shear_controls_mobility_and_mean_shear_scales_bedload_speed(monkeypatch):
