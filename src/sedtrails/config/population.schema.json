@@ -69,6 +69,15 @@
                     },
                     "description": "flow field name for van Westen method used in particle computation"
                 },
+                "sediment_fraction_index": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Zero-based sediment fraction index used for this population's transport fields when input transport contains multiple fractions (e.g. Delft3D-FM nSedTot or Delft3D4 LSED/LSEDTOT)."
+                },
+                "sediment_fraction_name": {
+                    "type": "string",
+                    "description": "Sediment fraction label used for this population's transport fields when labels are available (takes precedence over sediment_fraction_index)."
+                },
                 "beta": {
                     "type": "number",
                     "default": 0.2,
@@ -109,6 +118,15 @@
 				  "enum": ["model-native", "SoulsbyvanRijn1997"],
 				  "default": "model-native",
 				  "description": "Select which transport fields are used for particle transport. 'model-native' uses transport velocity fields from Delft3D-FM; 'SoulsbyvanRijn1997' computes Soulsby-vanRijn transports."
+				},
+				"sediment_fraction_index": {
+				  "type": "integer",
+				  "minimum": 0,
+				  "description": "Zero-based sediment fraction index used for this population's transport fields when input transport contains multiple fractions (e.g. Delft3D-FM nSedTot or Delft3D4 LSED/LSEDTOT)."
+				},
+				"sediment_fraction_name": {
+				  "type": "string",
+				  "description": "Sediment fraction label used for this population's transport fields when labels are available (takes precedence over sediment_fraction_index)."
 				},
                 "entrainment": {
                   "type": "object",
@@ -371,15 +389,6 @@
             ],
             "default": "no_probability",
             "description": "Method for applying transport probability: 'no_probability' (passive/always transport), 'stochastic_transport' (probabilistic transport per timestep), 'reduced_velocity' (velocity field reduced by probability)"
-        },
-        "sediment_fraction_index": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "Zero-based sediment fraction index used for this population when input transport contains multiple fractions (e.g. Delft3D4 LSED/LSEDTOT)."
-        },
-        "sediment_fraction_name": {
-            "type": "string",
-            "description": "Sediment fraction label used for this population when labels are available (takes precedence over sediment_fraction_index)."
         },
         "seeding": {
             "type": "object",

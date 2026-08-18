@@ -422,7 +422,7 @@ def test_build_plan_sedtrails_data_selects_population_fraction_before_conversion
     plan_data = build_plan_sedtrails_data(
         source_data,
         tracer_plan,
-        population_config={'sediment_fraction_index': 2},
+        population_config={'tracer_methods': {'vanwesten': {'sediment_fraction_index': 2}}},
     )
 
     assert converter.saw_fraction_shape == (1, 2)
@@ -453,32 +453,49 @@ def test_build_plan_sedtrails_data_rejects_out_of_bounds_population_fraction():
         build_plan_sedtrails_data(
             source_data,
             tracer_plan,
-            population_config={'sediment_fraction_index': 3},
+            population_config={'tracer_methods': {'vanwesten': {'sediment_fraction_index': 3}}},
         )
 
 
-def test_population_fraction_selection_uses_global_default_and_population_override():
-    """Resolve one population choice before applying a global default."""
+def test_population_fraction_selection_uses_global_default_and_tracer_method_override():
+    """Resolve one tracer method's choice before applying a global default."""
     global_selection = _resolve_fraction_selection(
         {},
+        method_name='vanwesten',
         default_fraction_index=2,
         default_fraction_name=None,
     )
     assert global_selection == (2, None)
 
     index_selection = _resolve_fraction_selection(
-        {'sediment_fraction_index': 2},
+        {'tracer_methods': {'vanwesten': {'sediment_fraction_index': 2}}},
+        method_name='vanwesten',
         default_fraction_index=0,
         default_fraction_name='sediment100_nat',
     )
     assert index_selection == (2, None)
 
     name_selection = _resolve_fraction_selection(
-        {'sediment_fraction_name': 'sediment300_nat', 'sediment_fraction_index': 0},
+        {
+            'tracer_methods': {
+                'vanwesten': {'sediment_fraction_name': 'sediment300_nat', 'sediment_fraction_index': 0}
+            }
+        },
+        method_name='vanwesten',
         default_fraction_index=2,
         default_fraction_name='sediment100_nat',
     )
     assert name_selection == (0, 'sediment300_nat')
+
+    # A different tracer method's config (e.g. soulsby, which doesn't support
+    # fraction selection at all) must not leak into the lookup.
+    other_method_selection = _resolve_fraction_selection(
+        {'tracer_methods': {'macdonald': {'sediment_fraction_index': 2}}},
+        method_name='vanwesten',
+        default_fraction_index=1,
+        default_fraction_name=None,
+    )
+    assert other_method_selection == (1, None)
 
 
 def test_fraction_selection_preserves_component_shapes_when_one_component_is_missing():
@@ -524,7 +541,7 @@ def test_build_plan_sedtrails_data_selects_population_fraction_by_name():
     plan_data = build_plan_sedtrails_data(
         source_data,
         tracer_plan,
-        population_config={'sediment_fraction_name': 'sediment200_nat'},
+        population_config={'tracer_methods': {'vanwesten': {'sediment_fraction_name': 'sediment200_nat'}}},
     )
 
     assert converter.saw_fraction_shape == (1, 1)
@@ -556,7 +573,7 @@ def test_build_plan_sedtrails_data_reports_namcon_labels_for_invalid_name():
         build_plan_sedtrails_data(
             source_data,
             tracer_plan,
-            population_config={'sediment_fraction_name': 'not_a_fraction'},
+            population_config={'tracer_methods': {'vanwesten': {'sediment_fraction_name': 'not_a_fraction'}}},
         )
 
 
@@ -586,8 +603,12 @@ def test_build_plan_sedtrails_data_requires_index_when_labels_unavailable():
             source_data,
             tracer_plan,
             population_config={
-                'sediment_fraction_name': 'sediment300_nat',
-                'sediment_fraction_index': 2,
+                'tracer_methods': {
+                    'vanwesten': {
+                        'sediment_fraction_name': 'sediment300_nat',
+                        'sediment_fraction_index': 2,
+                    }
+                }
             },
         )
 

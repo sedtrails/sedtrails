@@ -144,8 +144,9 @@ def build_plan_sedtrails_data(
     tracer_plan : TracerRuntimePlan
         Runtime plan for the tracer population.
     population_config : Mapping[str, Any], optional
-        Configuration for the population. Its sediment fraction selection takes
-        precedence over the input-model defaults.
+        Configuration for the population. Its tracer method's sediment fraction
+        selection (e.g. ``tracer_methods.macdonald.sediment_fraction_index``)
+        takes precedence over the input-model defaults.
     default_fraction_index : int, default 0
         Input-model fallback sediment fraction index.
     default_fraction_name : str, optional
@@ -161,6 +162,7 @@ def build_plan_sedtrails_data(
     fraction_selected_data = _select_population_fraction_data(
         sedtrails_data,
         population_config=population_config,
+        method_name=tracer_plan.method_name,
         default_fraction_index=default_fraction_index,
         default_fraction_name=default_fraction_name,
     )
@@ -478,6 +480,7 @@ def _shallow_sedtrails_data_clone(sedtrails_data: Any) -> Any:
 def _select_population_fraction_data(
     sedtrails_data: Any,
     population_config: Mapping[str, Any] | None,
+    method_name: str,
     default_fraction_index: int,
     default_fraction_name: str | None,
 ) -> Any:
@@ -488,6 +491,7 @@ def _select_population_fraction_data(
 
     selected_fraction_index, selected_fraction_name = _resolve_fraction_selection(
         population_config,
+        method_name=method_name,
         default_fraction_index=default_fraction_index,
         default_fraction_name=default_fraction_name,
     )
@@ -502,7 +506,9 @@ def _select_population_fraction_data(
                 'particles:\n'
                 '  populations:\n'
                 '    - name: your_population_name\n'
-                '      sediment_fraction_index: 0'
+                f'      tracer_methods:\n'
+                f'        {method_name}:\n'
+                '          sediment_fraction_index: 0'
             )
         else:
             normalized_labels = [str(label).strip().lower() for label in available_labels]
@@ -543,19 +549,31 @@ def _select_population_fraction_data(
 def _resolve_fraction_selection(
     population_config: Mapping[str, Any] | None,
     *,
+    method_name: str,
     default_fraction_index: int,
     default_fraction_name: str | None,
 ) -> tuple[Any, str | None]:
-    """Return one population selection, falling back to the global selection."""
+    """Return one population's tracer-method selection, falling back to the global selection.
+
+    Sediment fraction selection lives under the population's own tracer method
+    config (e.g. ``tracer_methods.macdonald.sediment_fraction_index``), next to
+    other transport-field options like ``use_transport_fields``, since it only
+    makes sense for methods that read multi-fraction transport fields.
+    """
     if not isinstance(population_config, Mapping):
         return default_fraction_index, default_fraction_name
 
-    population_fraction_name = population_config.get('sediment_fraction_name')
-    if population_fraction_name:
-        return population_config.get('sediment_fraction_index', 0), str(population_fraction_name)
+    tracer_methods = population_config.get('tracer_methods')
+    method_config = tracer_methods.get(method_name) if isinstance(tracer_methods, Mapping) else None
+    if not isinstance(method_config, Mapping):
+        return default_fraction_index, default_fraction_name
 
-    if 'sediment_fraction_index' in population_config:
-        return population_config.get('sediment_fraction_index'), None
+    method_fraction_name = method_config.get('sediment_fraction_name')
+    if method_fraction_name:
+        return method_config.get('sediment_fraction_index', 0), str(method_fraction_name)
+
+    if 'sediment_fraction_index' in method_config:
+        return method_config.get('sediment_fraction_index'), None
 
     return default_fraction_index, default_fraction_name
 

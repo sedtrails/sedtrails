@@ -144,6 +144,17 @@ class FormatPlugin(BaseFormatPlugin):
         seconds_since_ref = time_info['seconds_since_reference']
         self.reference_date = time_info['reference_date']
 
+        # Detect the real sediment fraction count (e.g. DFM's nSedTot dimension)
+        # from the raw mapped arrays, before the singleton-axis squeeze below can
+        # ambiguously reshuffle which axis is time vs. fraction for a
+        # single-timestep chunk.
+        fractions = 1
+        for candidate_name in ('bed_load_transport_x', 'suspended_transport_x', 'sediment_concentration'):
+            candidate_values = mapped_data.get(candidate_name)
+            if isinstance(candidate_values, np.ndarray) and candidate_values.ndim >= 3:
+                fractions = int(candidate_values.shape[1])
+                break
+
         # TODO: DFM slicing can introduce an extra leading singleton dimension; remove only that axis.
         for key, value in mapped_data.items():
             if isinstance(value, np.ndarray) and value.ndim > 2 and value.shape[0] == 1:
@@ -210,7 +221,7 @@ class FormatPlugin(BaseFormatPlugin):
             y=mapped_data['y'],
             bed_level=mapped_data['bed_level'],
             depth_avg_flow_velocity=depth_avg_flow_velocity,
-            fractions=1,  # Default to 1 fraction
+            fractions=fractions,
             bed_load_transport=bed_load_transport,
             suspended_transport=suspended_transport,
             water_depth=mapped_data['water_depth'],

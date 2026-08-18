@@ -167,3 +167,46 @@ def test_convert_squeezes_leading_singleton_axis_only(tmp_path, monkeypatch):
 
     assert sedtrails_data.depth_avg_flow_velocity['x'].shape == (1, 2)
     assert sedtrails_data.bed_level.shape == (1, 2)
+
+
+def test_convert_reports_actual_sediment_fraction_count(tmp_path, monkeypatch):
+    """SedtrailsData.fractions must reflect DFM's nSedTot, not a hardcoded 1."""
+    input_file = tmp_path / 'input.nc'
+    input_file.touch()
+    plugin = FormatPlugin(str(input_file))
+    monkeypatch.setattr(plugin, 'load', lambda: None)
+    monkeypatch.setattr(
+        plugin,
+        '_get_time_info',
+        lambda dataset, reference_date: {
+            'seconds_since_reference': np.array([0.0, 60.0]),
+            'reference_date': np.datetime64('1970-01-01T00:00:00'),
+        },
+    )
+    monkeypatch.setattr(plugin, '_decompress_time', lambda time_info: time_info)
+    monkeypatch.setattr(plugin, '_calculate_time_slice', lambda current_time, reading_interval, time_info: (None, None))
+
+    two_times_by_node = np.arange(4.0).reshape(2, 2)
+    # Six fractions (matching DFM's nSedTot), only on the transport variables.
+    six_fractions = np.arange(24.0).reshape(2, 6, 2)
+    mapped_data = {
+        'x': np.array([0.0, 1.0]),
+        'y': np.array([0.0, 0.0]),
+        'bed_level': two_times_by_node + 10.0,
+        'flow_velocity_x': two_times_by_node + 1.0,
+        'flow_velocity_y': two_times_by_node,
+        'bed_load_transport_x': six_fractions + 0.1,
+        'bed_load_transport_y': six_fractions,
+        'suspended_transport_x': six_fractions + 0.2,
+        'suspended_transport_y': six_fractions,
+        'water_depth': two_times_by_node + 2.0,
+        'mean_bed_shear_stress': two_times_by_node + 0.5,
+        'max_bed_shear_stress': two_times_by_node + 0.8,
+        'sediment_concentration': six_fractions + 0.01,
+    }
+    monkeypatch.setattr(plugin, '_map_dfm_variables', lambda time_info, time_start_idx, time_end_idx: mapped_data)
+
+    sedtrails_data = plugin.convert()
+
+    assert sedtrails_data.fractions == 6
+    assert sedtrails_data.bed_load_transport['x'].shape == (2, 6, 2)

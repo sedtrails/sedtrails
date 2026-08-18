@@ -217,41 +217,58 @@ def test_population_schema_rejects_non_boolean_remove_permanently_buried(tmp_pat
 
 
 def test_population_schema_accepts_sediment_fraction_index(tmp_path):
-    """Accept per-population sediment fraction selection by index."""
+    """Accept per-tracer-method sediment fraction selection by index."""
     config = _base_config()
-    config['particles']['populations'][0]['sediment_fraction_index'] = 2
+    config['particles']['populations'][0]['tracer_methods']['vanwesten']['sediment_fraction_index'] = 2
 
     validated = _validate_config(tmp_path, config)
 
-    assert validated['particles']['populations'][0]['sediment_fraction_index'] == 2
+    assert validated['particles']['populations'][0]['tracer_methods']['vanwesten']['sediment_fraction_index'] == 2
 
 
 def test_population_schema_rejects_negative_sediment_fraction_index(tmp_path):
-    """Reject invalid negative per-population sediment fraction index values."""
+    """Reject invalid negative per-tracer-method sediment fraction index values."""
     config = _base_config()
-    config['particles']['populations'][0]['sediment_fraction_index'] = -1
+    config['particles']['populations'][0]['tracer_methods']['vanwesten']['sediment_fraction_index'] = -1
 
     with pytest.raises(YamlValidationError, match='YAML config validation error'):
         _validate_config(tmp_path, config)
 
 
 def test_population_schema_leaves_fraction_index_unset_without_an_explicit_override(tmp_path):
-    """Leave absent population selection available for a global default."""
+    """Leave absent tracer-method selection available for a global default."""
     config = _base_config()
 
     validated = _validate_config(tmp_path, config)
 
-    assert 'sediment_fraction_index' not in validated['particles']['populations'][0]
+    assert 'sediment_fraction_index' not in validated['particles']['populations'][0]['tracer_methods']['vanwesten']
 
 
 def test_population_schema_accepts_sediment_fraction_name(tmp_path):
-    """Accept per-population sediment fraction selection by label."""
+    """Accept per-tracer-method sediment fraction selection by label."""
     config = _base_config()
-    config['particles']['populations'][0]['sediment_fraction_name'] = 'sediment300_nat'
+    config['particles']['populations'][0]['tracer_methods']['vanwesten']['sediment_fraction_name'] = 'sediment300_nat'
 
     validated = _validate_config(tmp_path, config)
 
-    assert validated['particles']['populations'][0]['sediment_fraction_name'] == 'sediment300_nat'
+    assert (
+        validated['particles']['populations'][0]['tracer_methods']['vanwesten']['sediment_fraction_name']
+        == 'sediment300_nat'
+    )
+
+
+def test_population_schema_rejects_sediment_fraction_index_for_soulsby(tmp_path):
+    """Soulsby computes its own transport and does not read multi-fraction fields."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'soulsby': {
+            'flow_field_name': ['bed_load_velocity'],
+            'sediment_fraction_index': 0,
+        }
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
 
 
 @pytest.mark.parametrize('method', ['none', 'brownian'])
