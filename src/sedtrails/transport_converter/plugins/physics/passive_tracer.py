@@ -8,7 +8,7 @@ from sedtrails.transport_converter.plugins import BasePhysicsPlugin
 logger = logging.getLogger(__name__)
 
 
-class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the PhysicsPlugin
+class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the PhysicsPlugin
     """
     Plugin for passive tracer calculations.
     """

@@ -18,6 +18,32 @@ from sedtrails.simulation_orchestrator.runtime_plan import validate_population_r
 from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
 
+def test_markov_settling_samples_selected_current_shear():
+    """Peak shear must not suppress the Markov deposition transition."""
+    requested_fields = []
+
+    class Retriever:
+        def get_scalar_field_bounds(self, time, name):
+            requested_fields.append(name)
+            return np.array([1.0])
+
+    physics_config = SimpleNamespace(deposition={'method': 'markov_settling'})
+    tracer_plan = SimpleNamespace(
+        converter=SimpleNamespace(grain_properties={'settling_velocity': 0.01})
+    )
+
+    Simulation._macdonald_2d_deposition_parameters(
+        physics_config,
+        tracer_plan,
+        Retriever(),
+        0.0,
+        {'magnitude': np.array([1.0])},
+    )
+
+    assert 'selected_shear_velocity' in requested_fields
+    assert 'max_shear_velocity' not in requested_fields
+
+
 class _FakePopulation:
     """Minimal population double for permanent-burial integration tests."""
 
@@ -538,27 +564,31 @@ class TestSimulationManagerTimeConfig:
         assert Simulation._is_output_sample_due(sample_time, next_output_time, end_time) is expected
 
     @pytest.mark.parametrize(
-        'method_name,transport_probability_method,expected',
+        'method_name,transport_probability_method,method_config,expected',
         [
-            ('vanwesten', 'stochastic_transport', True),
-            ('vanwesten', 'reduced_velocity', True),
-            ('vanwesten', 'no_probability', True),
-            ('soulsby', 'no_probability', True),
-            ('passive_tracer', 'no_probability', True),
-            ('soulsby', 'reduced_velocity', False),
-            ('passive_tracer', 'stochastic_transport', False),
+            ('vanwesten', 'stochastic_transport', {}, True),
+            ('vanwesten', 'reduced_velocity', {}, True),
+            ('vanwesten', 'no_probability', {}, True),
+            ('soulsby', 'no_probability', {}, True),
+            ('passive_tracer', 'no_probability', {}, True),
+            ('soulsby', 'reduced_velocity', {}, False),
+            ('passive_tracer', 'stochastic_transport', {}, False),
+            ('macdonald', 'no_probability', {'computationType': '2D'}, True),
+            ('macdonald', 'no_probability', {'computationType': 'Q3D'}, False),
         ],
     )
     def test_should_update_bed_level_after_movement_policy(
         self,
         method_name,
         transport_probability_method,
+        method_config,
         expected,
     ):
         """Post-move bed-level updates should follow tracer and transport policy rules."""
         tracer_plan = SimpleNamespace(
             method_name=method_name,
             transport_probability_method=transport_probability_method,
+            method_config=method_config,
         )
 
         assert Simulation._should_update_bed_level_after_movement(tracer_plan) is expected

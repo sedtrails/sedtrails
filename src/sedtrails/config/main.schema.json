@@ -71,6 +71,10 @@
         "vanwesten": {
           "type": "object",
           "properties": {}
+        },
+        "macdonald": {
+          "type": "object",
+          "properties": {}
         }
       }
     },

@@ -70,7 +70,10 @@ dev = [
 [tool.hatch.version]
 path = "src/sedtrails/__version__.py"
 [tool.hatch.build]
-include = ["src/sedtrails/config/schema.json"]
+include = [
+  "src/sedtrails/config/schema.json",
+  "src/sedtrails/transport_converter/plugins/physics/macdonald_z_over_h_lookup.nc",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sedtrails"]

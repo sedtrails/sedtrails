@@ -28,6 +28,16 @@ def test_population_schema_requires_flow_field_name(tmp_path):
         _validate_config(tmp_path, config)
 
 
+@pytest.mark.parametrize('macdonald_config', [{}, {'flow_field_name': []}])
+def test_population_schema_requires_nonempty_macdonald_flow_field(tmp_path, macdonald_config):
+    """MacDonald needs at least one registered velocity field for advection."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {'macdonald': macdonald_config}
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
 def test_population_schema_accepts_one_method_with_flow_fields(tmp_path):
     """Accept a valid single tracer method with flow field names."""
     config = _base_config()
@@ -178,6 +188,15 @@ def test_population_schema_rejects_inline_poly_with_too_few_vertices(tmp_path, s
         _validate_config(tmp_path, config)
 
 
+def test_population_schema_accepts_constant_burial_depth(tmp_path):
+    """Accept configured constant burial depth values."""
+    config = _base_config()
+    config['particles']['populations'][0]['seeding']['burial_depth'] = {'constant': 1.25}
+
+    validated = _validate_config(tmp_path, config)
+
+    assert validated['particles']['populations'][0]['seeding']['burial_depth'] == {'constant': 1.25}
+
 def test_population_schema_accepts_remove_permanently_buried_boolean(tmp_path):
     """Accept the permanent-burial optimization flag when it is boolean."""
     config = _base_config()
@@ -198,41 +217,58 @@ def test_population_schema_rejects_non_boolean_remove_permanently_buried(tmp_pat
 
 
 def test_population_schema_accepts_sediment_fraction_index(tmp_path):
-    """Accept per-population sediment fraction selection by index."""
+    """Accept per-tracer-method sediment fraction selection by index."""
     config = _base_config()
-    config['particles']['populations'][0]['sediment_fraction_index'] = 2
+    config['particles']['populations'][0]['tracer_methods']['vanwesten']['sediment_fraction_index'] = 2
 
     validated = _validate_config(tmp_path, config)
 
-    assert validated['particles']['populations'][0]['sediment_fraction_index'] == 2
+    assert validated['particles']['populations'][0]['tracer_methods']['vanwesten']['sediment_fraction_index'] == 2
 
 
 def test_population_schema_rejects_negative_sediment_fraction_index(tmp_path):
-    """Reject invalid negative per-population sediment fraction index values."""
+    """Reject invalid negative per-tracer-method sediment fraction index values."""
     config = _base_config()
-    config['particles']['populations'][0]['sediment_fraction_index'] = -1
+    config['particles']['populations'][0]['tracer_methods']['vanwesten']['sediment_fraction_index'] = -1
 
     with pytest.raises(YamlValidationError, match='YAML config validation error'):
         _validate_config(tmp_path, config)
 
 
 def test_population_schema_leaves_fraction_index_unset_without_an_explicit_override(tmp_path):
-    """Leave absent population selection available for a global default."""
+    """Leave absent tracer-method selection available for a global default."""
     config = _base_config()
 
     validated = _validate_config(tmp_path, config)
 
-    assert 'sediment_fraction_index' not in validated['particles']['populations'][0]
+    assert 'sediment_fraction_index' not in validated['particles']['populations'][0]['tracer_methods']['vanwesten']
 
 
 def test_population_schema_accepts_sediment_fraction_name(tmp_path):
-    """Accept per-population sediment fraction selection by label."""
+    """Accept per-tracer-method sediment fraction selection by label."""
     config = _base_config()
-    config['particles']['populations'][0]['sediment_fraction_name'] = 'sediment300_nat'
+    config['particles']['populations'][0]['tracer_methods']['vanwesten']['sediment_fraction_name'] = 'sediment300_nat'
 
     validated = _validate_config(tmp_path, config)
 
-    assert validated['particles']['populations'][0]['sediment_fraction_name'] == 'sediment300_nat'
+    assert (
+        validated['particles']['populations'][0]['tracer_methods']['vanwesten']['sediment_fraction_name']
+        == 'sediment300_nat'
+    )
+
+
+def test_population_schema_rejects_sediment_fraction_index_for_soulsby(tmp_path):
+    """Soulsby computes its own transport and does not read multi-fraction fields."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'soulsby': {
+            'flow_field_name': ['bed_load_velocity'],
+            'sediment_fraction_index': 0,
+        }
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
 
 
 @pytest.mark.parametrize('method', ['none', 'brownian'])
@@ -266,6 +302,44 @@ def test_population_schema_rejects_invalid_diffusion_config(tmp_path, diffusion)
 
     with pytest.raises(YamlValidationError, match='YAML config validation error'):
         _validate_config(tmp_path, config)
+
+
+@pytest.mark.parametrize('mode', ['height_above_bed', 'absolute_z'])
+def test_population_schema_requires_vertical_position_value(tmp_path, mode):
+    """Height and absolute-z modes require their numeric vertical value."""
+    config = _base_config()
+    config['particles']['populations'][0]['seeding']['vertical_position'] = {'mode': mode}
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+@pytest.mark.parametrize('mode', ['burial_depth', 'bed', 'centroid_on_release'])
+def test_population_schema_rejects_unused_vertical_position_value(tmp_path, mode):
+    """Modes without a direct numeric height must not silently ignore value."""
+    config = _base_config()
+    config['particles']['populations'][0]['seeding']['vertical_position'] = {
+        'mode': mode,
+        'value': 0.1,
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+@pytest.mark.parametrize('mode', ['height_above_bed', 'absolute_z'])
+def test_population_schema_accepts_vertical_position_value(tmp_path, mode):
+    """Height and absolute-z modes accept a numeric vertical value."""
+    config = _base_config()
+    config['particles']['populations'][0]['seeding']['vertical_position'] = {
+        'mode': mode,
+        'value': 0.1,
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    vertical_position = validated['particles']['populations'][0]['seeding']['vertical_position']
+    assert vertical_position == {'mode': mode, 'value': pytest.approx(0.1)}
 
 
 def _validate_config(tmp_path, config):
@@ -317,3 +391,198 @@ def _base_config():
             ]
         }
     }
+
+
+def test_population_schema_accepts_macdonald_2d_deposition_options(tmp_path):
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': '2D',
+            'entrainment': {
+                'method': 'entrainment_frequency',
+                'probability_law': 'linear',
+            },
+            'deposition': {
+                'method': 'markov_settling',
+                'settling_height_field': 'water_depth',
+                'minimum_settling_height': 0.002,
+            },
+        }
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    macdonald = validated['particles']['populations'][0]['tracer_methods']['macdonald']
+    assert macdonald['entrainment'] == {
+        'method': 'entrainment_frequency',
+        'probability_law': 'linear',
+    }
+    deposition = macdonald['deposition']
+    assert deposition == {
+        'method': 'markov_settling',
+        'settling_height_field': 'water_depth',
+        'minimum_settling_height': pytest.approx(0.002),
+    }
+
+
+@pytest.mark.parametrize('computation_type', ['2D', 'Q3D'])
+def test_population_schema_accepts_implemented_macdonald_computation_types(
+    tmp_path,
+    computation_type,
+):
+    """Accept only MacDonald modes implemented by the physics plugin."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': computation_type,
+        }
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    method = validated['particles']['populations'][0]['tracer_methods']['macdonald']
+    assert method['computationType'] == computation_type
+
+
+@pytest.mark.parametrize('computation_type', ['3D', 'q3d', 'unsupported'])
+def test_population_schema_rejects_unimplemented_macdonald_computation_types(
+    tmp_path,
+    computation_type,
+):
+    """Reject modes that would fail only after physics conversion."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': computation_type,
+        }
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+def test_population_schema_accepts_q3d_vertical_diffusion_factor(tmp_path):
+    """Accept a nonnegative dimensionless Q3D vertical diffusion factor."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': 'Q3D',
+            'q3d_vertical_diffusion_factor': 0.2,
+        }
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    method = validated['particles']['populations'][0]['tracer_methods']['macdonald']
+    assert method['q3d_vertical_diffusion_factor'] == pytest.approx(0.2)
+
+
+def test_population_schema_rejects_negative_q3d_vertical_diffusion_factor(tmp_path):
+    """Reject negative Q3D vertical diffusivity scaling."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': 'Q3D',
+            'q3d_vertical_diffusion_factor': -0.1,
+        }
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+@pytest.mark.parametrize('factor', [0.0, 0.2])
+def test_population_schema_accepts_q3d_horizontal_diffusion_factor(tmp_path, factor):
+    """Accept a nonnegative horizontal Q3D diffusion factor."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': 'Q3D',
+            'q3d_horizontal_diffusion_factor': factor,
+        }
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    method = validated['particles']['populations'][0]['tracer_methods']['macdonald']
+    assert method['q3d_horizontal_diffusion_factor'] == pytest.approx(factor)
+
+
+def test_population_schema_rejects_negative_q3d_horizontal_diffusion_factor(tmp_path):
+    """Reject negative horizontal Q3D diffusion scaling."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': 'Q3D',
+            'q3d_horizontal_diffusion_factor': -0.1,
+        }
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+def test_population_schema_rejects_max_shear_for_macdonald_profiles(tmp_path):
+    """Maximum shear cannot be selected for advection or diffusion physics."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': 'Q3D',
+            'shear_velocity_source': 'max',
+        }
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+@pytest.mark.parametrize(
+    'entrainment',
+    [
+        {'method': 'threshold'},
+        {'method': 'entrainment_frequency', 'probability_law': 'unsupported'},
+        {'method': 'shields_threshold', 'probability_law': 'poisson'},
+        {'method': 'non_zero_particle_velocity', 'probability_law': 'linear'},
+    ],
+)
+def test_population_schema_rejects_invalid_macdonald_2d_entrainment(tmp_path, entrainment):
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': '2D',
+            'entrainment': entrainment,
+        }
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+@pytest.mark.parametrize(
+    'deposition',
+    [
+        {'method': 'threshold'},
+        {'method': 'markov_settling', 'settling_height_field': 'total_transport_centroid_elevation'},
+        {'method': 'markov_settling', 'minimum_settling_height': 0.0},
+    ],
+)
+def test_population_schema_rejects_invalid_macdonald_2d_deposition(tmp_path, deposition):
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'computationType': '2D',
+            'deposition': deposition,
+        }
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)

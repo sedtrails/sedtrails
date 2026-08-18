@@ -474,8 +474,11 @@ class Timer:
                 return
             max_velocity = max(max_velocity, 1e-4)
             cfl_timestep = self.cfl_condition * min_resolution / max_velocity
+            configured_timestep = self.simulation_time.time_step.seconds
+            if configured_timestep is not None and configured_timestep > 0:
+                cfl_timestep = min(cfl_timestep, configured_timestep)
 
-            # Ensure CFL timestep doesn't exceed sedtrails data timestep when valid
+            # Ensure CFL timestep doesn't exceed sedtrails data timestep when valid.
             if data_timestep is not None and data_timestep > 0:
                 cfl_timestep = min(cfl_timestep, data_timestep)
 

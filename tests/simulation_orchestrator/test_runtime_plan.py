@@ -141,6 +141,22 @@ def test_passive_example_preflight_does_not_invent_burial_depth():
     validate_population_runtime_configurations(population_configs)
 
 
+def test_macdonald_example_uses_registered_centroid_velocity():
+    """Build a runtime plan from the shipped MacDonald example."""
+    repository_root = Path(__file__).resolve().parents[2]
+    config_path = repository_root / 'examples' / 'sedtrails-example-macdonald.yaml'
+    config = YAMLConfigValidator().validate_yaml(str(config_path))
+    population_configs = config['particles']['populations']
+
+    runtime_plan = build_population_runtime_plans(
+        population_configs,
+        [object()],
+        {},
+    )[0]
+
+    assert runtime_plan.tracer.flow_field_names == ('centroid_particle_velocity',)
+
+
 def test_passive_tracer_rejects_non_default_transport_probability_methods():
     """Passive tracer should fail fast when stochastic/reduced probability modes are configured."""
     population_config = _population_config(
@@ -255,6 +271,23 @@ def test_missing_flow_field_name_raises_configuration_error():
         build_population_runtime_plans([population_config], [object()], {})
 
 
+@pytest.mark.parametrize('transport_probability', ['stochastic_transport', 'reduced_velocity'])
+def test_macdonald_rejects_unsupported_transport_probability(transport_probability):
+    """MacDonald must not create a zero mixing layer for burial probability modes."""
+    population_config = _population_config(
+        {
+            'macdonald': {
+                'flow_field_name': ['centroid_particle_velocity'],
+                'computationType': '2D',
+            }
+        },
+        transport_probability=transport_probability,
+    )
+
+    with pytest.raises(ConfigurationError, match='Only "no_probability"'):
+        build_population_runtime_plans([population_config], [object()], {})
+
+
 def test_population_count_mismatch_raises_configuration_error():
     """Raise a configuration error when seeded and configured population counts differ."""
     population_config = _population_config({'vanwesten': {'flow_field_name': ['bed_load_velocity']}})
@@ -278,6 +311,42 @@ def test_required_physics_fields_are_method_specific_and_unique():
     )
 
 
+def test_macdonald_required_fields_include_default_transition_inputs():
+    """Preserve fields consumed by default MacDonald 2D transitions."""
+    fields = required_physics_fields(
+        'macdonald',
+        ['centroid_particle_velocity'],
+        {'computationType': '2D'},
+    )
+
+    assert 'max_shields_number' in fields
+
+
+@pytest.mark.parametrize(
+    ('settling_height_field', 'expected_field'),
+    [
+        (None, 'suspended_transport_centroid_elevation'),
+        ('water_depth', 'water_depth'),
+    ],
+)
+def test_macdonald_required_fields_include_markov_settling_height(
+    settling_height_field,
+    expected_field,
+):
+    """Preserve the configured MacDonald Markov settling-height field."""
+    deposition = {'method': 'markov_settling'}
+    if settling_height_field is not None:
+        deposition['settling_height_field'] = settling_height_field
+
+    fields = required_physics_fields(
+        'macdonald',
+        ['centroid_particle_velocity'],
+        {'computationType': '2D', 'deposition': deposition},
+    )
+
+    assert expected_field in fields
+
+
 def test_build_plan_sedtrails_data_copies_only_required_physics_fields():
     """Copy only required converted physics fields into plan-local sedtrails data."""
     source_data = _FakeSedtrailsData()
@@ -297,8 +366,8 @@ def test_build_plan_sedtrails_data_copies_only_required_physics_fields():
     assert source_data.get_physics_fields() == []
     assert plan_data.get_physics_fields() == ['bed_load_velocity', 'mixing_layer_thickness']
     assert not plan_data.has_physics_field('ignored_field')
-    assert plan_data.bed_load_velocity is not converter.generated_velocity
-    assert plan_data.bed_load_velocity['x'] is not converter.generated_velocity['x']
+    assert plan_data.bed_load_velocity is converter.generated_velocity
+    assert plan_data.bed_load_velocity['x'] is converter.generated_velocity['x']
     np.testing.assert_array_equal(plan_data.bed_load_velocity['x'], np.array([1.0, 2.0]))
 
 
@@ -353,7 +422,7 @@ def test_build_plan_sedtrails_data_selects_population_fraction_before_conversion
     plan_data = build_plan_sedtrails_data(
         source_data,
         tracer_plan,
-        population_config={'sediment_fraction_index': 2},
+        population_config={'tracer_methods': {'vanwesten': {'sediment_fraction_index': 2}}},
     )
 
     assert converter.saw_fraction_shape == (1, 2)
@@ -384,32 +453,49 @@ def test_build_plan_sedtrails_data_rejects_out_of_bounds_population_fraction():
         build_plan_sedtrails_data(
             source_data,
             tracer_plan,
-            population_config={'sediment_fraction_index': 3},
+            population_config={'tracer_methods': {'vanwesten': {'sediment_fraction_index': 3}}},
         )
 
 
-def test_population_fraction_selection_uses_global_default_and_population_override():
-    """Resolve one population choice before applying a global default."""
+def test_population_fraction_selection_uses_global_default_and_tracer_method_override():
+    """Resolve one tracer method's choice before applying a global default."""
     global_selection = _resolve_fraction_selection(
         {},
+        method_name='vanwesten',
         default_fraction_index=2,
         default_fraction_name=None,
     )
     assert global_selection == (2, None)
 
     index_selection = _resolve_fraction_selection(
-        {'sediment_fraction_index': 2},
+        {'tracer_methods': {'vanwesten': {'sediment_fraction_index': 2}}},
+        method_name='vanwesten',
         default_fraction_index=0,
         default_fraction_name='sediment100_nat',
     )
     assert index_selection == (2, None)
 
     name_selection = _resolve_fraction_selection(
-        {'sediment_fraction_name': 'sediment300_nat', 'sediment_fraction_index': 0},
+        {
+            'tracer_methods': {
+                'vanwesten': {'sediment_fraction_name': 'sediment300_nat', 'sediment_fraction_index': 0}
+            }
+        },
+        method_name='vanwesten',
         default_fraction_index=2,
         default_fraction_name='sediment100_nat',
     )
     assert name_selection == (0, 'sediment300_nat')
+
+    # A different tracer method's config (e.g. soulsby, which doesn't support
+    # fraction selection at all) must not leak into the lookup.
+    other_method_selection = _resolve_fraction_selection(
+        {'tracer_methods': {'macdonald': {'sediment_fraction_index': 2}}},
+        method_name='vanwesten',
+        default_fraction_index=1,
+        default_fraction_name=None,
+    )
+    assert other_method_selection == (1, None)
 
 
 def test_fraction_selection_preserves_component_shapes_when_one_component_is_missing():
@@ -455,7 +541,7 @@ def test_build_plan_sedtrails_data_selects_population_fraction_by_name():
     plan_data = build_plan_sedtrails_data(
         source_data,
         tracer_plan,
-        population_config={'sediment_fraction_name': 'sediment200_nat'},
+        population_config={'tracer_methods': {'vanwesten': {'sediment_fraction_name': 'sediment200_nat'}}},
     )
 
     assert converter.saw_fraction_shape == (1, 1)
@@ -487,7 +573,7 @@ def test_build_plan_sedtrails_data_reports_namcon_labels_for_invalid_name():
         build_plan_sedtrails_data(
             source_data,
             tracer_plan,
-            population_config={'sediment_fraction_name': 'not_a_fraction'},
+            population_config={'tracer_methods': {'vanwesten': {'sediment_fraction_name': 'not_a_fraction'}}},
         )
 
 
@@ -517,8 +603,12 @@ def test_build_plan_sedtrails_data_requires_index_when_labels_unavailable():
             source_data,
             tracer_plan,
             population_config={
-                'sediment_fraction_name': 'sediment300_nat',
-                'sediment_fraction_index': 2,
+                'tracer_methods': {
+                    'vanwesten': {
+                        'sediment_fraction_name': 'sediment300_nat',
+                        'sediment_fraction_index': 2,
+                    }
+                }
             },
         )
 

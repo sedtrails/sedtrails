@@ -404,24 +404,19 @@ class GridGeometry:
                 raise ValueError(f'field arrays must have {n_nodes} values, got {values.size}')
             field_values.append(values)
 
-        simplices = self.locate_points(x_values, y_values, simplex_ids)
-        stacked_fields = np.vstack(field_values)
-        output_values, refreshed_simplices = _interpolate_fields_at_simplices_numba(
-            stacked_fields,
-            simplices,
-            x_values.ravel(),
-            y_values.ravel(),
-            self.triangles,
-            self.p0_x,
-            self.p0_y,
-            self.inv00,
-            self.inv01,
-            self.inv10,
-            self.inv11,
-            TRIANGLE_TOLERANCE,
+        refreshed_simplices, weights = self.barycentric_weights_with_simplex(
+            x_values,
+            y_values,
+            simplex_ids,
         )
-        outputs = tuple(output_values[i].copy() for i in range(output_values.shape[0]))
-        return outputs, refreshed_simplices
+        outputs = [np.full(x_values.size, np.nan, dtype=np.float64) for _ in field_values]
+        valid = refreshed_simplices >= 0
+        if np.any(valid):
+            vertices = self.triangles[refreshed_simplices[valid]]
+            valid_weights = weights[valid]
+            for output, values in zip(outputs, field_values, strict=True):
+                output[valid] = np.einsum('ij,ij->i', values[vertices], valid_weights)
+        return tuple(outputs), refreshed_simplices
 
     def update_particles(self, x0, y0, grid_u, grid_v, dt, igeo=0):
         """

@@ -536,13 +536,31 @@ class FormatPlugin(BaseFormatPlugin):
         time_slice: slice,
         num_times: int,
         select_fraction_dims: bool = True,
+        require_depth_averaged: bool = False,
     ) -> np.ndarray:
         """Read one Delft3D variable over the requested time window."""
         if self.input_data is None:
             raise ValueError('Dataset not loaded. Call load() first.')
 
+        source_variable = self.input_data[variable_name]
+        vertical_dims = {
+            'KMAXOUT_RESTR',
+            'KMAXOUT',
+            'SIG_LYR',
+            'nlyr',
+            'layer',
+        }
+        multilayer_dims = [dim for dim in source_variable.dims if dim in vertical_dims and source_variable.sizes[dim] > 1]
+        if require_depth_averaged and multilayer_dims:
+            dimensions = ', '.join(f'{dim}={source_variable.sizes[dim]}' for dim in multilayer_dims)
+            raise ValueError(
+                f"Variable '{variable_name}' contains multiple vertical layers ({dimensions}), but SedTRAILS "
+                'requires depth-averaged flow velocity. Provide a depth-averaged velocity variable or preprocess '
+                'the layers with thickness weighting.'
+            )
+
         variable = self._select_first_dims(
-            self.input_data[variable_name],
+            source_variable,
             select_fraction_dims=select_fraction_dims,
         )
         if 'time' in variable.dims:
@@ -613,6 +631,7 @@ class FormatPlugin(BaseFormatPlugin):
         time_slice: slice,
         num_times: int,
         select_fraction_dims: bool,
+        require_depth_averaged: bool = False,
         u_wet_mask: np.ndarray | None = None,
         v_wet_mask: np.ndarray | None = None,
         cos_angle: np.ndarray | None = None,
@@ -628,6 +647,7 @@ class FormatPlugin(BaseFormatPlugin):
                 time_slice=time_slice,
                 num_times=num_times,
                 select_fraction_dims=select_fraction_dims,
+                require_depth_averaged=require_depth_averaged,
             )
             if u_variable in self.input_data
             else None
@@ -638,6 +658,7 @@ class FormatPlugin(BaseFormatPlugin):
                 time_slice=time_slice,
                 num_times=num_times,
                 select_fraction_dims=select_fraction_dims,
+                require_depth_averaged=require_depth_averaged,
             )
             if v_variable in self.input_data
             else None
@@ -858,6 +879,7 @@ class FormatPlugin(BaseFormatPlugin):
                 time_slice=time_slice,
                 num_times=num_times,
                 select_fraction_dims=not preserve_fraction_dims,
+                require_depth_averaged=key == 'flow_velocity',
                 u_wet_mask=u_wet_mask,
                 v_wet_mask=v_wet_mask,
                 cos_angle=cos_angle,

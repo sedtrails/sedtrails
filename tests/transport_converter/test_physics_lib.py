@@ -30,6 +30,7 @@ from numpy.testing import assert_allclose
 from sedtrails.transport_converter.physics_lib import (
     MixingLayerMethod,
     SuspendedVelocityMethod,
+    calculate_equilibrium_bedform_height,
     compute_bed_load_velocity,
     compute_directions_from_magnitude,
     compute_grain_properties,
@@ -39,6 +40,30 @@ from sedtrails.transport_converter.physics_lib import (
     compute_suspended_velocity,
     compute_transport_layer_thickness,
 )
+
+
+def test_equilibrium_bedform_height_accepts_scalar_inputs():
+    """Scalar inputs should produce the same finite result as one-element arrays."""
+    scalar = calculate_equilibrium_bedform_height(2.0, 1.0, 0.0002, 5.0)
+    array = calculate_equilibrium_bedform_height(np.array([2.0]), 1.0, 0.0002, 5.0)
+
+    assert isinstance(scalar, float)
+    assert scalar == pytest.approx(array[0])
+    assert scalar > 0.0
+
+
+def test_equilibrium_bedform_height_broadcasts_all_inputs():
+    """Spatial critical Shields and grain size arrays should broadcast safely."""
+    result = calculate_equilibrium_bedform_height(
+        theta_max=np.array([2.0, 2.0, 2.0]),
+        theta_cr=np.array([1.0, 0.0, 3.0]),
+        grain_diameter=np.array([0.0002, 0.0003, 0.0004]),
+        water_depth=5.0,
+    )
+
+    assert result.shape == (3,)
+    assert result[0] > 0.0
+    np.testing.assert_array_equal(result[1:], 0.0)
 
 
 class TestComputeGrainProperties:

@@ -168,6 +168,92 @@ class TestNetCDFWriterStreaming:
         )
         handle.close()
 
+    def test_record_writes_minimal_q3d_fields(self, writer, population):
+        population.particles['z_p'] = np.array([0.2, 0.3, 0.4])
+        population.particles['z_burial'] = np.array([0.9, 0.8, 1.0])
+        population.particles['first_substep_horizontal_particle_velocity'] = np.array([1.0, 2.0, 3.0])
+        population.particles['q3d_motion_substeps'] = np.array([2, 2, 2])
+        population.particles['status_suspended'] = np.array([True, False, True])
+        population.particles['status_deposited'] = np.array([False, True, False])
+        population.particles['status_available_for_entrainment'] = np.array([False, True, False])
+        population.particles['status_entrained_now'] = np.array([True, False, False])
+        population.particles['status_deposited_now'] = np.array([False, True, False])
+        handle = writer.open_output(
+            'stream.nc', self.N_SLOTS, self.N_PARTICLES,
+            self.N_POPULATIONS, self.N_FLOWFIELDS, [population], ['vel'],
+        )
+
+        writer.record_output(handle, [population], slot_idx=0, current_time=0.0)
+
+        np.testing.assert_allclose(handle['z_p'][0, :], population.particles['z_p'])
+        np.testing.assert_allclose(handle['z_burial'][0, :], population.particles['z_burial'])
+        np.testing.assert_allclose(
+            handle['first_substep_horizontal_particle_velocity'][0, :],
+            population.particles['first_substep_horizontal_particle_velocity'],
+        )
+        np.testing.assert_array_equal(
+            handle['q3d_motion_substeps'][0, :],
+            population.particles['q3d_motion_substeps'],
+        )
+        for status_name in (
+            'status_suspended',
+            'status_deposited',
+            'status_available_for_entrainment',
+            'status_entrained_now',
+            'status_deposited_now',
+        ):
+            np.testing.assert_array_equal(
+                handle[status_name][0, :],
+                population.particles[status_name],
+            )
+        assert not any(name.startswith('is_') for name in handle.variables)
+        assert 'first_substep_water_depth' not in handle.variables
+        handle.close()
+
+    def test_missing_q3d_integer_fields_use_fill_value(self, writer, population):
+        """Non-Q3D populations should not be labelled with real Q3D values."""
+        handle = writer.open_output(
+            'stream.nc', self.N_SLOTS, self.N_PARTICLES,
+            self.N_POPULATIONS, self.N_FLOWFIELDS, [population], ['vel'],
+        )
+
+        writer.record_output(handle, [population], slot_idx=0, current_time=0.0)
+
+        for field_name in ('q3d_vertical_update_scheme_code', 'q3d_motion_substeps'):
+            values = handle[field_name][0, :]
+            assert np.all(np.ma.getmaskarray(values))
+            assert handle[field_name]._FillValue == np.int32(-1)
+        handle.close()
+
+    def test_full_q3d_diagnostics_are_opt_in(self, writer, population):
+        population.particles['first_substep_water_depth'] = np.array([4.0, 5.0, 6.0])
+        handle = writer.open_output(
+            'stream.nc', self.N_SLOTS, self.N_PARTICLES,
+            self.N_POPULATIONS, self.N_FLOWFIELDS, [population], ['vel'],
+            q3d_diagnostics='full',
+        )
+
+        writer.record_output(handle, [population], slot_idx=0, current_time=0.0)
+
+        np.testing.assert_allclose(
+            handle['first_substep_water_depth'][0, :],
+            population.particles['first_substep_water_depth'],
+        )
+        handle.close()
+
+    def test_q3d_diagnostics_can_be_disabled(self, writer, population):
+        """Non-Q3D output should not allocate Q3D-only trajectory variables."""
+        handle = writer.open_output(
+            'stream.nc', self.N_SLOTS, self.N_PARTICLES,
+            self.N_POPULATIONS, self.N_FLOWFIELDS, [population], ['vel'],
+            q3d_diagnostics='none',
+        )
+
+        assert 'q3d_first_substep_z_p' not in handle.variables
+        assert 'q3d_motion_substeps' not in handle.variables
+        assert 'vertical_position_initialized' in handle.variables
+        handle.close()
+
     def test_unwritten_slots_are_fill_values(self, writer, population):
         """Slots not yet written should contain the declared fill value, not zeros."""
         handle = writer.open_output(
@@ -252,6 +338,22 @@ class TestNetCDFWriterStreaming:
         np.testing.assert_array_equal(ds['population_name'].values, ['test_pop'])
         np.testing.assert_array_equal(ds['population_particle_type'].values, ['sand'])
         np.testing.assert_array_equal(ds['flowfield_name'].values, [''])
+        ds.close()
+
+    def test_checkpoint_missing_q3d_integer_fields_are_missing(self, writer, population):
+        """Compact output should preserve missing Q3D metadata as fill values."""
+        path = writer.write_checkpoint(
+            'sedtrails_checkpoint.nc',
+            [population],
+            current_time=123.0,
+            reference_date='2020-01-01 00:00:00',
+            time_units='seconds since 2020-01-01 00:00:00',
+        )
+
+        ds = xr.open_dataset(path, engine='netcdf4')
+        for field_name in ('q3d_vertical_update_scheme_code', 'q3d_motion_substeps'):
+            assert np.all(ds[field_name].isnull())
+            assert ds[field_name].encoding['_FillValue'] == np.int32(-1)
         ds.close()
 
     def test_write_end_positions_stores_compact_result_state(self, writer, population):

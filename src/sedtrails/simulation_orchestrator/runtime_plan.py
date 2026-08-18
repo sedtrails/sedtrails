@@ -13,7 +13,7 @@ from sedtrails.transport_converter.physics_converter import PhysicsConfig, Physi
 
 
 DEFAULT_PASSIVE_TRACER_FLOW_FIELDS = ('depth_avg_flow_velocity',)
-SUPPORTED_TRACER_METHODS = frozenset({'passive_tracer', 'soulsby', 'vanwesten'})
+SUPPORTED_TRACER_METHODS = frozenset({'macdonald', 'passive_tracer', 'soulsby', 'vanwesten'})
 DEFAULT_TRANSPORT_PROBABILITY_METHOD = 'no_probability'
 
 
@@ -93,15 +93,14 @@ def validate_population_runtime_configurations(
         tracer_methods = population_config.get('tracer_methods')
         if not isinstance(tracer_methods, Mapping) or len(tracer_methods) != 1:
             continue
-        if 'passive_tracer' not in tracer_methods:
-            continue
-
+        method_name = next(iter(tracer_methods))
         transport_probability_method = population_config.get(
             'transport_probability', DEFAULT_TRANSPORT_PROBABILITY_METHOD
         )
-        _validate_passive_tracer_configuration(
+        _validate_transport_probability_configuration(
             population_index,
             population_config,
+            method_name,
             transport_probability_method,
         )
 
@@ -145,8 +144,9 @@ def build_plan_sedtrails_data(
     tracer_plan : TracerRuntimePlan
         Runtime plan for the tracer population.
     population_config : Mapping[str, Any], optional
-        Configuration for the population. Its sediment fraction selection takes
-        precedence over the input-model defaults.
+        Configuration for the population. Its tracer method's sediment fraction
+        selection (e.g. ``tracer_methods.macdonald.sediment_fraction_index``)
+        takes precedence over the input-model defaults.
     default_fraction_index : int, default 0
         Input-model fallback sediment fraction index.
     default_fraction_name : str, optional
@@ -162,6 +162,7 @@ def build_plan_sedtrails_data(
     fraction_selected_data = _select_population_fraction_data(
         sedtrails_data,
         population_config=population_config,
+        method_name=tracer_plan.method_name,
         default_fraction_index=default_fraction_index,
         default_fraction_name=default_fraction_name,
     )
@@ -172,12 +173,33 @@ def build_plan_sedtrails_data(
         transport_probability_method=tracer_plan.transport_probability_method,
     )
 
-    plan_data = _shallow_sedtrails_data_clone(fraction_selected_data)
+    return _copy_required_plan_fields(fraction_selected_data, working_data, tracer_plan)
+
+
+def add_plan_timestep_physics(
+    sedtrails_data: Any,
+    tracer_plan: TracerRuntimePlan,
+    current_timestep: float,
+) -> Any:
+    """
+    Add timestep-dependent plan physics and return a clone with required fields preserved.
+    """
+
+    working_data = _shallow_sedtrails_data_clone(sedtrails_data)
+    tracer_plan.converter.convert_timestep_physics(
+        sedtrails_data=working_data,
+        current_timestep=current_timestep,
+    )
+
+    return _copy_required_plan_fields(sedtrails_data, working_data, tracer_plan)
+
+
+def _copy_required_plan_fields(sedtrails_data: Any, working_data: Any, tracer_plan: TracerRuntimePlan) -> Any:
+    plan_data = _shallow_sedtrails_data_clone(sedtrails_data)
     for field_name in tracer_plan.required_physics_fields:
         if working_data.has_physics_field(field_name):
-            plan_data.add_physics_field(field_name, _copy_physics_value(getattr(working_data, field_name)))
+            plan_data.add_physics_field(field_name, getattr(working_data, field_name))
     return plan_data
-
 
 def _build_population_runtime_plan(
     population_index: int,
@@ -209,12 +231,12 @@ def _build_population_runtime_plan(
     transport_probability_method = population_config.get(
         'transport_probability', DEFAULT_TRANSPORT_PROBABILITY_METHOD
     )
-    if method_name == 'passive_tracer':
-        _validate_passive_tracer_configuration(
-            population_index,
-            population_config,
-            transport_probability_method,
-        )
+    _validate_transport_probability_configuration(
+        population_index,
+        population_config,
+        method_name,
+        transport_probability_method,
+    )
     physics_config = build_physics_config(base_physics_config, population_config, method_name, method_config)
     tracer_config = {method_name: dict(method_config)}
     converter = PhysicsConverter(physics_config, tracer_config)
@@ -228,7 +250,7 @@ def _build_population_runtime_plan(
             method_config=method_config,
             flow_field_names=flow_field_names,
             transport_probability_method=transport_probability_method,
-            required_physics_fields=required_physics_fields(method_name, flow_field_names),
+            required_physics_fields=required_physics_fields(method_name, flow_field_names, method_config),
             converter=converter,
         ),
     )
@@ -275,7 +297,11 @@ def build_physics_config(
     return PhysicsConfig.from_dict(config=base_config, tracer_config={method_name: dict(method_config)})
 
 
-def required_physics_fields(method_name: str, flow_field_names: Sequence[str]) -> tuple[str, ...]:
+def required_physics_fields(
+    method_name: str,
+    flow_field_names: Sequence[str],
+    method_config: Mapping[str, Any] | None = None,
+) -> tuple[str, ...]:
     """
     Return physics fields that must be preserved for a method plan.
 
@@ -306,6 +332,49 @@ def required_physics_fields(method_name: str, flow_field_names: Sequence[str]) -
     if method_name == 'soulsby':
         return tuple(_unique_preserving_order((*flow_field_names, 'mixing_layer_thickness', 'soulsby_a', 'soulsby_b')))
 
+    if method_name == 'macdonald':
+        method_config = method_config or {}
+        computation_type = str(method_config.get('computationType', '2D')).upper()
+        fields = (
+            *flow_field_names,
+            'mixing_layer_thickness',
+            'max_shields_number',
+            'particle_advection_velocity',
+            'max_shear_velocity',
+            'mean_shear_velocity',
+            'selected_shear_velocity',
+            'selected_bed_shear_stress',
+            'rouse_number',
+            'skin_roughness_height',
+            'profile_roughness_height',
+            'total_transport_centroid_elevation',
+            'effective_chezy_coefficient',
+            'chezy_current_shear_velocity',
+            'chezy_equivalent_roughness_height',
+        )
+        entrainment_config = method_config.get('entrainment', {}) or {}
+        entrainment_method = str(entrainment_config.get('method', 'shields_threshold')).lower().replace('-', '_')
+        if entrainment_method == 'entrainment_frequency':
+            fields = (*fields, 'macdonald_entrainment_frequency')
+        deposition_config = method_config.get('deposition', {}) or {}
+        deposition_method = str(deposition_config.get('method', 'shields_threshold')).lower().replace('-', '_')
+        if computation_type == '2D' and deposition_method == 'markov_settling':
+            fields = (
+                *fields,
+                deposition_config.get(
+                    'settling_height_field',
+                    'suspended_transport_centroid_elevation',
+                ),
+            )
+        if computation_type == 'Q3D':
+            fields = (
+                *fields,
+                'q3d_velocity_deficit_coefficient',
+                'q3d_vertical_velocity_gradient',
+                'turbulent_shields_number',
+                'q3d_entrainment_height_above_bed',
+            )
+        return tuple(_unique_preserving_order(fields))
     if method_name == 'passive_tracer':
         return tuple(_unique_preserving_order(flow_field_names))
 
@@ -361,6 +430,27 @@ def _validate_passive_tracer_configuration(
         )
 
 
+def _validate_transport_probability_configuration(
+    population_index: int,
+    population_config: Mapping[str, Any],
+    method_name: str,
+    transport_probability_method: str,
+) -> None:
+    """Validate method-specific transport-probability support."""
+    if method_name == 'passive_tracer':
+        _validate_passive_tracer_configuration(
+            population_index,
+            population_config,
+            transport_probability_method,
+        )
+    elif method_name == 'macdonald' and transport_probability_method != DEFAULT_TRANSPORT_PROBABILITY_METHOD:
+        raise ConfigurationError(
+            f'Population {population_index} uses tracer method "macdonald" with '
+            f'transport_probability={transport_probability_method!r}. Only "no_probability" is currently '
+            'supported for MacDonald.'
+        )
+
+
 def _physics_config_to_dict(config: PhysicsConfig | Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(config, PhysicsConfig):
         return asdict(config)
@@ -382,22 +472,15 @@ def _unique_preserving_order(values: Sequence[str] | Any) -> list[str]:
 def _shallow_sedtrails_data_clone(sedtrails_data: Any) -> Any:
     cloned_data = copy.copy(sedtrails_data)
     cloned_data._physics_fields = {}
+    for field_name, value in getattr(sedtrails_data, '_physics_fields', {}).items():
+        cloned_data.add_physics_field(field_name, value)
     return cloned_data
-
-
-def _copy_physics_value(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {key: _copy_physics_value(item) for key, item in value.items()}
-    if isinstance(value, np.ndarray):
-        return np.array(value, copy=True)
-    if hasattr(value, 'copy'):
-        return value.copy()
-    return copy.deepcopy(value)
 
 
 def _select_population_fraction_data(
     sedtrails_data: Any,
     population_config: Mapping[str, Any] | None,
+    method_name: str,
     default_fraction_index: int,
     default_fraction_name: str | None,
 ) -> Any:
@@ -408,6 +491,7 @@ def _select_population_fraction_data(
 
     selected_fraction_index, selected_fraction_name = _resolve_fraction_selection(
         population_config,
+        method_name=method_name,
         default_fraction_index=default_fraction_index,
         default_fraction_name=default_fraction_name,
     )
@@ -422,7 +506,9 @@ def _select_population_fraction_data(
                 'particles:\n'
                 '  populations:\n'
                 '    - name: your_population_name\n'
-                '      sediment_fraction_index: 0'
+                f'      tracer_methods:\n'
+                f'        {method_name}:\n'
+                '          sediment_fraction_index: 0'
             )
         else:
             normalized_labels = [str(label).strip().lower() for label in available_labels]
@@ -463,19 +549,31 @@ def _select_population_fraction_data(
 def _resolve_fraction_selection(
     population_config: Mapping[str, Any] | None,
     *,
+    method_name: str,
     default_fraction_index: int,
     default_fraction_name: str | None,
 ) -> tuple[Any, str | None]:
-    """Return one population selection, falling back to the global selection."""
+    """Return one population's tracer-method selection, falling back to the global selection.
+
+    Sediment fraction selection lives under the population's own tracer method
+    config (e.g. ``tracer_methods.macdonald.sediment_fraction_index``), next to
+    other transport-field options like ``use_transport_fields``, since it only
+    makes sense for methods that read multi-fraction transport fields.
+    """
     if not isinstance(population_config, Mapping):
         return default_fraction_index, default_fraction_name
 
-    population_fraction_name = population_config.get('sediment_fraction_name')
-    if population_fraction_name:
-        return population_config.get('sediment_fraction_index', 0), str(population_fraction_name)
+    tracer_methods = population_config.get('tracer_methods')
+    method_config = tracer_methods.get(method_name) if isinstance(tracer_methods, Mapping) else None
+    if not isinstance(method_config, Mapping):
+        return default_fraction_index, default_fraction_name
 
-    if 'sediment_fraction_index' in population_config:
-        return population_config.get('sediment_fraction_index'), None
+    method_fraction_name = method_config.get('sediment_fraction_name')
+    if method_fraction_name:
+        return method_config.get('sediment_fraction_index', 0), str(method_fraction_name)
+
+    if 'sediment_fraction_index' in method_config:
+        return method_config.get('sediment_fraction_index'), None
 
     return default_fraction_index, default_fraction_name
 

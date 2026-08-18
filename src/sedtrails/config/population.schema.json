@@ -69,6 +69,15 @@
                     },
                     "description": "flow field name for van Westen method used in particle computation"
                 },
+                "sediment_fraction_index": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Zero-based sediment fraction index used for this population's transport fields when input transport contains multiple fractions (e.g. Delft3D-FM nSedTot or Delft3D4 LSED/LSEDTOT)."
+                },
+                "sediment_fraction_name": {
+                    "type": "string",
+                    "description": "Sediment fraction label used for this population's transport fields when labels are available (takes precedence over sediment_fraction_index)."
+                },
                 "beta": {
                     "type": "number",
                     "default": 0.2,
@@ -85,6 +94,148 @@
                 "flow_field_name"
             ],
             "description": "van Westen method for particle tracking"
+        },
+        "macdonald_method": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "flow_field_name": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "flow field name for MacDonald method used in particle computation"
+                },
+                "computationType": {
+                    "type": "string",
+                    "enum": ["2D", "Q3D"],
+                    "default": "2D",
+                    "description": "Type of implemented MacDonald computation: depth-averaged 2D or quasi-3D Q3D."
+                },
+				"use_transport_fields": {
+				  "type": "string",
+				  "enum": ["model-native", "SoulsbyvanRijn1997"],
+				  "default": "model-native",
+				  "description": "Select which transport fields are used for particle transport. 'model-native' uses transport velocity fields from Delft3D-FM; 'SoulsbyvanRijn1997' computes Soulsby-vanRijn transports."
+				},
+				"sediment_fraction_index": {
+				  "type": "integer",
+				  "minimum": 0,
+				  "description": "Zero-based sediment fraction index used for this population's transport fields when input transport contains multiple fractions (e.g. Delft3D-FM nSedTot or Delft3D4 LSED/LSEDTOT)."
+				},
+				"sediment_fraction_name": {
+				  "type": "string",
+				  "description": "Sediment fraction label used for this population's transport fields when labels are available (takes precedence over sediment_fraction_index)."
+				},
+                "entrainment": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "method": {
+                      "type": "string",
+                      "enum": ["shields_threshold", "non_zero_particle_velocity", "entrainment_frequency"],
+                      "default": "shields_threshold",
+                      "description": "MacDonald 2D and Q3D bed-to-suspension transition rule. shields_threshold applies the critical Shields criterion; non_zero_particle_velocity makes every eligible deposited particle available and lets its calculated transport velocity determine motion; entrainment_frequency uses the configured probability law."
+                    },
+                    "probability_law": {
+                      "type": "string",
+                      "enum": ["poisson", "linear"],
+                      "description": "Optional probability conversion used only with method entrainment_frequency. If omitted, poisson is used. poisson uses 1-exp(-f_e*dt); linear uses min(f_e*dt, 1)."
+                    }
+                  },
+                  "dependentSchemas": {
+                    "probability_law": {
+                      "properties": {
+                        "method": {"const": "entrainment_frequency"}
+                      },
+                      "required": ["method"]
+                    }
+                  },
+                  "default": {
+                    "method": "shields_threshold"
+                  },
+                  "description": "Shared entrainment configuration used by MacDonald 2D and Q3D."
+                },
+                "deposition": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "method": {
+                      "type": "string",
+                      "enum": ["shields_threshold", "markov_settling"],
+                      "default": "shields_threshold",
+                      "description": "MacDonald 2D deposition rule. shields_threshold deposits when local Shields mobility is at or below critical or particle velocity is zero. markov_settling uses the memoryless settling transition probability 1-exp(-nu*dt)."
+                    },
+                    "settling_height_field": {
+                      "type": "string",
+                      "enum": ["suspended_transport_centroid_elevation", "water_depth"],
+                      "default": "suspended_transport_centroid_elevation",
+                      "description": "Settling distance h used by markov_settling: the suspended-load centroid elevation or the full local water depth."
+                    },
+                    "minimum_settling_height": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 0.001,
+                      "description": "Positive lower bound [m] applied to the selected settling height in the Markov transition-rate calculation."
+                    }
+                  },
+                  "default": {
+                    "method": "shields_threshold",
+                    "settling_height_field": "suspended_transport_centroid_elevation",
+                    "minimum_settling_height": 0.001
+                  },
+                  "description": "Deposition configuration used by MacDonald 2D."
+                },
+				"max_suspended_velocity_factor": {
+				  "type": ["number", "null"],
+				  "default": 1.0,
+				  "description": "Optional cap on suspended-load advection velocity, expressed as a multiple of the depth-averaged flow velocity. If null, no capping is applied."
+				},
+				"q3d_horizontal_diffusion_enabled": {
+				  "type": "boolean",
+				  "default": true,
+				  "description": "If false, disable Q3D horizontal turbulent diffusion and its random-walk velocity components without changing geometric-scheme vertical diffusion."
+				},
+				"q3d_horizontal_diffusion_factor": {
+				  "type": "number",
+				  "minimum": 0.0,
+				  "default": 0.15,
+				  "description": "Dimensionless Q3D horizontal turbulent diffusion factor."
+				},
+				"q3d_vertical_diffusion_factor": {
+				  "type": "number",
+				  "minimum": 0.0,
+				  "default": 0.15,
+				  "description": "Dimensionless Q3D vertical diffusion factor. SedTRAILS uses a depth-scaled variant of MacDonald Eq. 49 so water depth supplies the length scale required for diffusivity units of m^2/s."
+				},
+				"q3d_vertical_update_scheme": {
+				  "type": "string",
+				  "enum": ["geometric", "centroid_floor", "rouse_profile", "rouse_sample"],
+				  "default": "geometric",
+				  "description": "Q3D vertical position update scheme. geometric applies the bed-change correction z_p,new = z_p,old + w dt + bed_old - bed_new; centroid_floor applies settling only in absolute z and prevents suspended particles from falling below the new total-transport centroid; rouse_sample samples the new height above bed from a Rouse-shaped distribution using the MacDonald rouse_number field."
+				},
+				"q3d_motion_substeps": {
+				  "type": "integer",
+				  "minimum": 1,
+				  "default": 1,
+				  "description": "Number of Q3D horizontal/vertical particle motion substeps per outer particle timestep. A value of 1 gives the original single-step update."
+				},
+				"q3d_save_first_substep_diagnostics": {
+				  "type": "boolean",
+				  "default": false,
+				  "description": "If true, store Q3D hydraulic and diffusion fields sampled at the first motion substep."
+				},
+				"export_diagnostic_fields": {
+				  "type": "boolean",
+				  "default": false,
+				  "description": "If true, also compute and export MacDonald diagnostic-only fields that are not read by any part of the transport/entrainment/deposition pipeline: grid-level fields shared by 2D and Q3D (e.g. shear_velocity_ratio, suspended_transport_ratio, bedload_velocity, chezy diagnostics) and, for Q3D, the grid-level diffusion and vertical-velocity fields that are redundant with the particle-level Q3D calculation. Leave false to reduce memory use on larger simulations."
+				}
+            },
+            "required": [
+                "flow_field_name"
+            ],
+            "description": "Macdonald method for particle tracking"
         },
         "soulsby_method": {
             "type": "object",
@@ -211,6 +362,9 @@
                 "soulsby": {
                     "$ref": "#/$defs/soulsby_method"
                 },
+                "macdonald": {
+                    "$ref": "#/$defs/macdonald_method"
+                },
                 "passive_tracer": {
                     "$ref": "#/$defs/passive_method"
                 }
@@ -236,15 +390,6 @@
             "default": "no_probability",
             "description": "Method for applying transport probability: 'no_probability' (passive/always transport), 'stochastic_transport' (probabilistic transport per timestep), 'reduced_velocity' (velocity field reduced by probability)"
         },
-        "sediment_fraction_index": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "Zero-based sediment fraction index used for this population when input transport contains multiple fractions (e.g. Delft3D4 LSED/LSEDTOT)."
-        },
-        "sediment_fraction_name": {
-            "type": "string",
-            "description": "Sediment fraction label used for this population when labels are available (takes precedence over sediment_fraction_index)."
-        },
         "seeding": {
             "type": "object",
             "additionalProperties": false,
@@ -261,18 +406,99 @@
                         "constant": {
                             "type": "number",
                             "description": "constant burial depth in meters."
-                        }
+                    }
                     },
                     "oneOf": [
                         {
-                            "required": [
-                                "random"
-                            ]
+                            "type": "number",
+                            "minimum": 0
                         },
                         {
-                            "required": [
-                                "constant"
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "random": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "default": 1.0,
+                                    "description": "maximum depth from bed level (surface) for random burial depth in meters."
+                                },
+                                "constant": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "default": 1.0,
+                                    "description": "constant burial depth in meters."
+                                }
+                            },
+                            "oneOf": [
+                                {
+                                    "required": [
+                                        "random"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "constant"
+                                    ]
+                                }
                             ]
+                        }
+                    ]
+                },
+                "vertical_position": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Optional initial vertical position of particles. Resolved after bed level and water depth are known.",
+                    "default": {
+                        "mode": "burial_depth"
+                    },
+                    "properties": {
+                        "mode": {
+                            "type": "string",
+                            "enum": [
+                                "burial_depth",
+                                "bed",
+                                "height_above_bed",
+                                "absolute_z",
+                                "centroid_on_release"
+                            ],
+                            "default": "burial_depth",
+                            "description": "Vertical initialization mode: use configured burial_depth, bed level, a height above bed, an absolute model z, or the Q3D centroid/entrainment height at release."
+                        },
+                        "value": {
+                            "type": "number",
+                            "description": "Vertical value for height_above_bed [m] or absolute_z [m in model vertical datum]."
+                        }
+                    },
+                    "required": [
+                        "mode"
+                    ],
+                    "allOf": [
+                        {
+                            "if": {
+                                "properties": {
+                                    "mode": {
+                                        "enum": ["height_above_bed", "absolute_z"]
+                                    }
+                                }
+                            },
+                            "then": {
+                                "required": ["value"]
+                            }
+                        },
+                        {
+                            "if": {
+                                "properties": {
+                                    "mode": {
+                                        "enum": ["burial_depth", "bed", "centroid_on_release"]
+                                    }
+                                }
+                            },
+                            "then": {
+                                "not": {
+                                    "required": ["value"]
+                                }
+                            }
                         }
                     ]
                 },

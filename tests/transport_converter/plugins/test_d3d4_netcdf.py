@@ -641,6 +641,30 @@ def test_filters_kcs_inactive_faces_from_conversion_and_seeding(tmp_path: Path) 
     np.testing.assert_array_equal(seed_y, data.y)
 
 
+def test_map_vector_pair_rejects_layer_velocity_as_depth_average(tmp_path: Path) -> None:
+    """Delft3D layer zero must not be reported as depth-averaged velocity."""
+    input_file = tmp_path / 'layered_velocity.nc'
+    input_file.write_text('')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = xr.Dataset(
+        {
+            'U1': (('time', 'KMAXOUT_RESTR', 'M', 'N'), np.ones((1, 2, 1, 1))),
+            'V1': (('time', 'KMAXOUT_RESTR', 'M', 'N'), np.ones((1, 2, 1, 1))),
+        }
+    )
+
+    with pytest.raises(ValueError, match='requires depth-averaged flow velocity'):
+        plugin._map_vector_pair(
+            u_variable='U1',
+            v_variable='V1',
+            grid_shape=(1, 1),
+            time_slice=slice(None),
+            num_times=1,
+            select_fraction_dims=True,
+            require_depth_averaged=True,
+        )
+
+
 @pytest.mark.parametrize('metadata_store', ['attrs', 'encoding'])
 def test_decompresses_numeric_cf_time_using_shared_seconds_utility(tmp_path: Path, metadata_store: str) -> None:
     """Morfac decompression must not mix numeric source time with decoded datetimes."""

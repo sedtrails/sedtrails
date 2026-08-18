@@ -53,6 +53,67 @@ def test_get_max_exposure_depth_fields_handles_static_fields(tmp_path, monkeypat
     np.testing.assert_allclose(max_bss, [2.0, 4.0])
 
 
+def test_map_dfm_variables_rejects_layer_velocity_as_depth_average(tmp_path, monkeypatch):
+    """A single selected layer must not be reported as depth-averaged velocity."""
+    dataset = xr.Dataset(
+        {
+            'net_xcc': ('mesh2d_nFaces', np.array([0.0, 1.0])),
+            'net_ycc': ('mesh2d_nFaces', np.array([0.0, 0.0])),
+            'sea_water_x_velocity': (
+                ('time', 'layer', 'mesh2d_nFaces'),
+                np.ones((1, 2, 2)),
+            ),
+        }
+    )
+    plugin = _plugin_with_dataset(tmp_path, monkeypatch, dataset)
+    plugin.load()
+    monkeypatch.setattr(plugin, '_active_triangular_connectivity', lambda x, y: np.array([[0, 1, 1]]))
+
+    with pytest.raises(ValueError, match='requires depth-averaged flow velocity'):
+        plugin._map_dfm_variables({'num_times': 1}, None, None)
+
+
+def test_map_dfm_variables_rejects_static_layer_velocity_as_depth_average(tmp_path, monkeypatch):
+    """Static multilayer velocity must not bypass depth-average validation."""
+    dataset = xr.Dataset(
+        {
+            'net_xcc': ('mesh2d_nFaces', np.array([0.0, 1.0])),
+            'net_ycc': ('mesh2d_nFaces', np.array([0.0, 0.0])),
+            'sea_water_x_velocity': (
+                ('layer', 'mesh2d_nFaces'),
+                np.ones((2, 2)),
+            ),
+        }
+    )
+    plugin = _plugin_with_dataset(tmp_path, monkeypatch, dataset)
+    plugin.load()
+    monkeypatch.setattr(plugin, '_active_triangular_connectivity', lambda x, y: np.array([[0, 1, 1]]))
+
+    with pytest.raises(ValueError, match='requires depth-averaged flow velocity'):
+        plugin._map_dfm_variables({'num_times': 1}, None, None)
+
+
+def test_map_dfm_variables_squeezes_static_singleton_velocity_layer(tmp_path, monkeypatch):
+    """A validated singleton layer should not survive time broadcasting."""
+    dataset = xr.Dataset(
+        {
+            'net_xcc': ('mesh2d_nFaces', np.array([0.0, 1.0])),
+            'net_ycc': ('mesh2d_nFaces', np.array([0.0, 0.0])),
+            'sea_water_x_velocity': (
+                ('layer', 'mesh2d_nFaces'),
+                np.ones((1, 2)),
+            ),
+        }
+    )
+    plugin = _plugin_with_dataset(tmp_path, monkeypatch, dataset)
+    plugin.load()
+    monkeypatch.setattr(plugin, '_active_triangular_connectivity', lambda x, y: np.array([[0, 1, 1]]))
+
+    mapped = plugin._map_dfm_variables({'num_times': 3}, None, None)
+
+    assert mapped['flow_velocity_x'].shape == (3, 2)
+
+
 @pytest.mark.parametrize('missing_variable', ['bedlevel', 'max_bss_magnitude'])
 def test_get_max_exposure_depth_fields_requires_inputs(tmp_path, monkeypatch, missing_variable):
     """Missing exposure-input variables should fail with clear KeyErrors."""
@@ -106,3 +167,46 @@ def test_convert_squeezes_leading_singleton_axis_only(tmp_path, monkeypatch):
 
     assert sedtrails_data.depth_avg_flow_velocity['x'].shape == (1, 2)
     assert sedtrails_data.bed_level.shape == (1, 2)
+
+
+def test_convert_reports_actual_sediment_fraction_count(tmp_path, monkeypatch):
+    """SedtrailsData.fractions must reflect DFM's nSedTot, not a hardcoded 1."""
+    input_file = tmp_path / 'input.nc'
+    input_file.touch()
+    plugin = FormatPlugin(str(input_file))
+    monkeypatch.setattr(plugin, 'load', lambda: None)
+    monkeypatch.setattr(
+        plugin,
+        '_get_time_info',
+        lambda dataset, reference_date: {
+            'seconds_since_reference': np.array([0.0, 60.0]),
+            'reference_date': np.datetime64('1970-01-01T00:00:00'),
+        },
+    )
+    monkeypatch.setattr(plugin, '_decompress_time', lambda time_info: time_info)
+    monkeypatch.setattr(plugin, '_calculate_time_slice', lambda current_time, reading_interval, time_info: (None, None))
+
+    two_times_by_node = np.arange(4.0).reshape(2, 2)
+    # Six fractions (matching DFM's nSedTot), only on the transport variables.
+    six_fractions = np.arange(24.0).reshape(2, 6, 2)
+    mapped_data = {
+        'x': np.array([0.0, 1.0]),
+        'y': np.array([0.0, 0.0]),
+        'bed_level': two_times_by_node + 10.0,
+        'flow_velocity_x': two_times_by_node + 1.0,
+        'flow_velocity_y': two_times_by_node,
+        'bed_load_transport_x': six_fractions + 0.1,
+        'bed_load_transport_y': six_fractions,
+        'suspended_transport_x': six_fractions + 0.2,
+        'suspended_transport_y': six_fractions,
+        'water_depth': two_times_by_node + 2.0,
+        'mean_bed_shear_stress': two_times_by_node + 0.5,
+        'max_bed_shear_stress': two_times_by_node + 0.8,
+        'sediment_concentration': six_fractions + 0.01,
+    }
+    monkeypatch.setattr(plugin, '_map_dfm_variables', lambda time_info, time_start_idx, time_end_idx: mapped_data)
+
+    sedtrails_data = plugin.convert()
+
+    assert sedtrails_data.fractions == 6
+    assert sedtrails_data.bed_load_transport['x'].shape == (2, 6, 2)

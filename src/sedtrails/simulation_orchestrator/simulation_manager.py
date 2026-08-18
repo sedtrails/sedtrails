@@ -19,6 +19,7 @@ from sedtrails.particle_tracer.timer import Duration, Time, Timer
 from sedtrails.pathway_visualizer import SimulationDashboard
 from sedtrails.simulation_orchestrator.global_logger import log_simulation_state, setup_logging
 from sedtrails.simulation_orchestrator.runtime_plan import (
+    add_plan_timestep_physics,
     build_plan_sedtrails_data,
     build_population_runtime_plans,
     unique_flow_field_names,
@@ -129,11 +130,13 @@ class Simulation:
             self.logger.info('Profiling enabled via SEDTRAILS_PROFILE')
 
     @staticmethod
+
     def _is_profile_enabled() -> bool:
         """Return whether lightweight simulation profiling is enabled."""
         return os.environ.get('SEDTRAILS_PROFILE', '').strip().lower() in {'1', 'true', 'yes', 'on'}
 
     @contextmanager
+
     def _profile_section(self, name: str):
         """Measure a section when profiling is enabled."""
         if not self._profile_enabled:
@@ -179,6 +182,7 @@ class Simulation:
             )
 
     @staticmethod
+
     def _particle_status_mask(population, status_name: str) -> np.ndarray:
         particles = getattr(population, 'particles', {})
         status = particles.get(status_name)
@@ -188,14 +192,17 @@ class Simulation:
         return np.asarray(status, dtype=bool)
 
     @classmethod
+
     def _left_domain_mask(cls, population) -> np.ndarray:
         return cls._particle_status_mask(population, 'status_left_domain')
 
     @classmethod
+
     def _beached_mask(cls, population) -> np.ndarray:
         return cls._particle_status_mask(population, 'status_beached')
 
     @staticmethod
+
     def _population_name(population, fallback_index: int) -> str:
         config = getattr(population, 'population_config', {}) or {}
         if isinstance(config, dict):
@@ -408,11 +415,13 @@ class Simulation:
         return Duration(update_interval).seconds
 
     @staticmethod
+
     def _missing_particle_field_like(particle_x: np.ndarray) -> np.ndarray:
         """Return a same-shaped NaN particle field for unavailable dashboard data."""
         return np.full(np.asarray(particle_x).shape, np.nan, dtype=float)
 
     @classmethod
+
     def _dashboard_particle_data(cls, population) -> dict[str, np.ndarray]:
         """Build dashboard particle arrays from a population."""
         particle_x = population.particles['x']
@@ -454,6 +463,7 @@ class Simulation:
         )
 
     @staticmethod
+
     def _needs_sedtrails_reload(sedtrails_data, current_time_seconds: float) -> bool:
         """Return whether the current time is outside the loaded SedTRAILS data chunk."""
         if sedtrails_data is None:
@@ -466,6 +476,7 @@ class Simulation:
         return current_time_seconds < times[0] or current_time_seconds > times[-1]
 
     @staticmethod
+
     def _is_after_loaded_sedtrails_data(sedtrails_data, current_time_seconds: float) -> bool:
         """Return whether current time is after the last timestamp in the loaded data."""
         if sedtrails_data is None:
@@ -478,6 +489,7 @@ class Simulation:
         return current_time_seconds > times[-1]
 
     @classmethod
+
     def _should_attempt_sedtrails_reload(
         cls, sedtrails_data, current_time_seconds: float, input_data_exhausted: bool
     ) -> bool:
@@ -485,6 +497,7 @@ class Simulation:
         return not input_data_exhausted and cls._needs_sedtrails_reload(sedtrails_data, current_time_seconds)
 
     @staticmethod
+
     def _map_eulerian_field_time(
         current_time_seconds: float,
         repeat_eulerian_fields: bool,
@@ -509,6 +522,7 @@ class Simulation:
         return start + ((current_time_seconds - start) % cycle_duration)
 
     @staticmethod
+
     def _validate_simulation_start_matches_input(
         simulation_time: Time,
         input_time_bounds: tuple[float, float] | None,
@@ -532,6 +546,7 @@ class Simulation:
         )
 
     @classmethod
+
     def _validate_simulation_time_matches_input(cls, simulation_time: Time, sedtrails_data) -> None:
         """Backward-compatible validation helper for loaded SedTRAILS data."""
         times = np.asarray(sedtrails_data.times, dtype=float)
@@ -584,6 +599,7 @@ class Simulation:
         return sync_interval_seconds
 
     @staticmethod
+
     def _sync_every_n_writes(save_interval_seconds: int | float, sync_interval_seconds: int | float) -> int:
         """Convert save/sync durations to a streaming writer cadence."""
         if save_interval_seconds <= 0:
@@ -640,6 +656,7 @@ class Simulation:
         }
 
     @classmethod
+
     def _estimate_netcdf_payload_bytes(
         cls,
         n_particles: int,
@@ -657,6 +674,7 @@ class Simulation:
         return max(0, int(n_particles)) * max(1, int(n_output_slots)) * bytes_per_particle_slot
 
     @classmethod
+
     def _resolve_output_netcdf_options(
         cls,
         netcdf_options: dict[str, Any],
@@ -770,6 +788,7 @@ class Simulation:
         )
 
     @staticmethod
+
     def _estimate_output_timesteps(simulation_time: Time, save_interval_seconds: int | float) -> int:
         """Count output slots for initial, scheduled, and final trajectory samples."""
         if save_interval_seconds <= 0:
@@ -786,6 +805,7 @@ class Simulation:
         return max(1, count)
 
     @staticmethod
+
     def _next_scheduled_output_time(
         simulation_time: Time,
         save_interval_seconds: int | float,
@@ -795,6 +815,7 @@ class Simulation:
         return float(min(simulation_time.start + output_index * float(save_interval_seconds), simulation_time.end))
 
     @staticmethod
+
     def _limit_timestep_to_output_schedule(
         current_time: int | float,
         current_timestep: int | float,
@@ -807,6 +828,7 @@ class Simulation:
         return float(current_timestep)
 
     @staticmethod
+
     def _is_output_sample_due(
         sample_time: int | float,
         next_output_time: int | float,
@@ -825,15 +847,22 @@ class Simulation:
         - Also run for any tracer configured with ``no_probability`` so
           particle ``z`` follows bed level after movement (passive/soulsby included).
 
-        Future quasi-3D tracers can introduce exceptions here when vertical
-        position is solved independently from bed level.
+        MacDonald Q3D is excluded because it solves and stores its own absolute
+        vertical position and height above bed during particle motion.
         """
+        if tracer_plan.method_name == 'macdonald':
+            method_config = getattr(tracer_plan, 'method_config', {}) or {}
+            computation_type = str(method_config.get('computationType', '2D')).upper()
+            if computation_type == 'Q3D':
+                return False
+
         return (
             tracer_plan.method_name == 'vanwesten'
             or tracer_plan.transport_probability_method == 'no_probability'
         )
 
     @staticmethod
+
     def _initialize_population_output_status(populations, current_time: int | float) -> None:
         """Populate required status arrays before the initial trajectory sample is written."""
         for population in populations:
@@ -864,6 +893,101 @@ class Simulation:
                 & np.asarray(particles['status_released'], dtype=bool)
                 & np.asarray(particles['status_transported'], dtype=bool)
             )
+
+    @staticmethod
+
+    def _requires_macdonald_timestep_physics(physics_config) -> bool:
+        computation_type = str(getattr(physics_config, 'computationType', '2D')).upper()
+        if computation_type == 'Q3D':
+            return True
+        entrainment_config = getattr(physics_config, 'entrainment', {}) or {}
+        entrainment_method = str(
+            entrainment_config.get('method', 'shields_threshold')
+        ).lower().replace('-', '_')
+        return computation_type == '2D' and entrainment_method == 'entrainment_frequency'
+
+    @staticmethod
+    def _macdonald_2d_deposition_parameters(
+        physics_config,
+        tracer_plan,
+        retriever,
+        field_time_seconds,
+        particle_velocity_field,
+    ) -> tuple[str, dict[str, Any], dict[str, Any]]:
+        """Resolve old-position sampling fields and deposition inputs."""
+        deposition_config = getattr(physics_config, 'deposition', {}) or {}
+        deposition_method = str(
+            deposition_config.get('method', 'shields_threshold')
+        ).lower().replace('-', '_')
+        if deposition_method != 'markov_settling':
+            sampling_kwargs = {
+                'particle_velocity_field': particle_velocity_field,
+                'shields_number_field': retriever.get_scalar_field_bounds(
+                    field_time_seconds,
+                    'max_shields_number',
+                ),
+            }
+            return deposition_method, sampling_kwargs, {}
+
+        sampling_kwargs = {}
+        settling_height_name = deposition_config.get(
+            'settling_height_field',
+            'suspended_transport_centroid_elevation',
+        )
+        sampling_kwargs.update(
+            {
+                'settling_height_field': retriever.get_scalar_field_bounds(
+                    field_time_seconds,
+                    settling_height_name,
+                ),
+                'shear_velocity_field': retriever.get_scalar_field_bounds(
+                    field_time_seconds,
+                    'selected_shear_velocity',
+                ),
+            }
+        )
+        deposition_kwargs = {
+            'settling_velocity': tracer_plan.converter.grain_properties.get('settling_velocity'),
+            'minimum_settling_height': deposition_config.get(
+                'minimum_settling_height',
+                0.001,
+            ),
+        }
+        return deposition_method, sampling_kwargs, deposition_kwargs
+
+    @staticmethod
+
+    def _macdonald_2d_entrainment_parameters(
+        physics_config,
+        retriever,
+        field_time_seconds,
+        particle_velocity_field,
+    ) -> tuple[str, str, dict[str, Any]]:
+        """Resolve MacDonald 2D entrainment method and old-position fields."""
+        entrainment_config = getattr(physics_config, 'entrainment', {}) or {}
+        method = str(
+            entrainment_config.get('method', 'shields_threshold')
+        ).lower().replace('-', '_')
+        probability_law = str(
+            entrainment_config.get('probability_law', 'poisson')
+        ).lower().replace('-', '_')
+        if method == 'entrainment_frequency':
+            sampling_kwargs = {
+                'entrainment_frequency_field': retriever.get_scalar_field_bounds(
+                    field_time_seconds,
+                    'macdonald_entrainment_frequency',
+                )
+            }
+        elif method == 'non_zero_particle_velocity':
+            sampling_kwargs = {'particle_velocity_field': particle_velocity_field}
+        else:
+            sampling_kwargs = {
+                'shields_number_field': retriever.get_scalar_field_bounds(
+                    field_time_seconds,
+                    'max_shields_number',
+                ),
+            }
+        return method, probability_law, sampling_kwargs
 
     def _get_format_config(self):
         """
@@ -899,6 +1023,7 @@ class Simulation:
         return domain_config
 
     @staticmethod
+
     def _resolve_polygon_files(pol_files, config_dir: Path) -> list[str]:
         """Resolve one or more polygon file paths relative to the config file."""
 
@@ -1019,6 +1144,7 @@ class Simulation:
             pop.remove_permanently_buried_particles(max_erosion + max_mixing)
 
     @property
+
     def config(self):
         """
         Returns the full configuration settings for the simulation.
@@ -1033,6 +1159,7 @@ class Simulation:
         return self._controller.get_config()  # delagates to the controller
 
     @property
+
     def populations_config(self):
         """
         Returns the configuration paramters for 'populations'.
@@ -1047,6 +1174,7 @@ class Simulation:
         return self._populations_config
 
     @property
+
     def start_time(self):
         """
         Get the start time parameter for the simulation.
@@ -1061,6 +1189,7 @@ class Simulation:
         return self._start_time
 
     @property
+
     def flow_field(self) -> SedtrailsData:
         """
         Returns input flow field data in SedtrailsData format.
@@ -1238,6 +1367,7 @@ class Simulation:
                 'working_directory': os.getcwd(),
             },
         )
+
         # Create SedTrails dataset using DataManager's writer (composition)
         total_particles = sum([len(pop.particles['x']) for pop in populations])
         store_tracks = self._output_store_tracks()
@@ -1252,6 +1382,23 @@ class Simulation:
             n_output_slots,
             store_tracks,
         )
+        q3d_runtime_plans = [
+            plan
+            for plan in runtime_plans
+            if plan.tracer.method_name == 'macdonald'
+            and str(getattr(plan.tracer.converter.config, 'computationType', '2D')).upper() == 'Q3D'
+        ]
+        if not q3d_runtime_plans:
+            q3d_diagnostics = 'none'
+        elif any(
+            bool(getattr(plan.tracer.converter.config, 'q3d_save_first_substep_diagnostics', False))
+            for plan in q3d_runtime_plans
+        ):
+            q3d_diagnostics = 'full'
+        else:
+            q3d_diagnostics = 'minimal'
+        netcdf_options['q3d_diagnostics'] = q3d_diagnostics
+        checkpoint_options.setdefault('writer_kwargs', {})['q3d_diagnostics'] = q3d_diagnostics
 
         self._initialize_population_output_status(populations, timer.current)
         nc_handle = None
@@ -1285,23 +1432,6 @@ class Simulation:
             nc_handle['time'].units = nc_handle.time_units
             nc_handle['time'].reference_date = nc_handle.reference_date
 
-            # Store the seeded initial state before the first physics update.
-            with self._profile_section('record_output'):
-                nc_handle = self.data_manager.writer.record_output(nc_handle, populations, slot_idx, timer.current)
-            last_saved_time = timer.current
-            slot_idx += 1
-            self._maybe_write_checkpoint(
-                populations,
-                timer.current,
-                simulation_time,
-                slot_idx,
-                checkpoint_options,
-            )
-            next_output_time = self._next_scheduled_output_time(
-                simulation_time,
-                save_interval_seconds,
-                slot_idx,
-            )
         else:
             self.logger.info(
                 'End-position output enabled: final state will be written to %s',
@@ -1350,6 +1480,57 @@ class Simulation:
                             )
                             input_exhaustion_warning_logged = True
 
+                if store_tracks and slot_idx == 0:
+                    for runtime_plan in runtime_plans:
+                        if runtime_plan.tracer.method_name != 'macdonald':
+                            continue
+                        population = runtime_plan.population
+                        retriever = plan_retrievers[runtime_plan.population_index]
+                        bed_level = retriever.get_scalar_field_bounds(field_time_seconds, 'bed_level')
+                        population.update_information(
+                            current_time=timer.current,
+                            mixing_depth=None,
+                            bed_level=bed_level,
+                            transport_probability=1.0,
+                        )
+                        population.update_status()
+                        computation_type = str(
+                            getattr(runtime_plan.tracer.converter.config, 'computationType', '2D')
+                        ).upper()
+                        if computation_type == 'Q3D':
+                            population.initialize_macdonald_q3d_release_state(
+                                bed_level,
+                                retriever.get_scalar_field_bounds(field_time_seconds, 'water_depth'),
+                                retriever.get_scalar_field_bounds(
+                                    field_time_seconds,
+                                    'total_transport_centroid_elevation',
+                                ),
+                            )
+                        else:
+                            population.initialize_macdonald_2d_release_state()
+
+                    with self._profile_section('record_output'):
+                        nc_handle = self.data_manager.writer.record_output(
+                            nc_handle,
+                            populations,
+                            slot_idx,
+                            timer.current,
+                        )
+                    last_saved_time = timer.current
+                    slot_idx += 1
+                    self._maybe_write_checkpoint(
+                        populations,
+                        timer.current,
+                        simulation_time,
+                        slot_idx,
+                        checkpoint_options,
+                    )
+                    next_output_time = self._next_scheduled_output_time(
+                        simulation_time,
+                        save_interval_seconds,
+                        slot_idx,
+                    )
+
                 # TODO: integrate loop over flow fields into CFL Condition
                 # Collect flow fields for CFL computation
                 max_velocity = 0.0
@@ -1382,6 +1563,25 @@ class Simulation:
                             f'at simulation time {timer.current}.'
                         )
 
+                plan_retrievers = {
+                    runtime_plan.population_index: (
+                        FieldDataRetriever(
+                            add_plan_timestep_physics(
+                                plan_retrievers[runtime_plan.population_index].sedtrails_data,
+                                runtime_plan.tracer,
+                                current_timestep=timer.current_timestep,
+                            )
+                        )
+                        if (
+                            runtime_plan.tracer.method_name == 'macdonald'
+                            and self._requires_macdonald_timestep_physics(
+                                runtime_plan.tracer.converter.config
+                            )
+                        )
+                        else plan_retrievers[runtime_plan.population_index]
+                    )
+                    for runtime_plan in runtime_plans
+                }
                 # Main loop
                 dashboard_flow_field = None
                 plot_interval_seconds = None
@@ -1413,6 +1613,7 @@ class Simulation:
                             transport_prob = 1.0
 
                         with self._profile_section('update_information'):
+                            # saves the previous bed level, current bed level, mixing depth and transport probability per particle
                             population.update_information(
                                 current_time=timer.current,
                                 mixing_depth=mixing_depth,
@@ -1426,9 +1627,25 @@ class Simulation:
                                 with self._profile_section('update_burial_depth'):
                                     population.update_burial_depth()
 
+                        physics_config = tracer_plan.converter.config
+                        macdonald_computation_type = str(
+                            getattr(physics_config, 'computationType', '2D')
+                        ).upper()
+                        is_macdonald_q3d = (
+                            tracer_plan.method_name == 'macdonald'
+                            and macdonald_computation_type == 'Q3D'
+                        )
+                        is_macdonald_2d = (
+                            tracer_plan.method_name == 'macdonald'
+                            and macdonald_computation_type == '2D'
+                        )
 
                         with self._profile_section('update_status'):
                             population.update_status()
+
+                        if is_macdonald_2d:
+                            with self._profile_section('initialize_macdonald_2d_release_state'):
+                                population.initialize_macdonald_2d_release_state()
 
                         with self._profile_section('get_flow_field_bounds.update_position'):
                             flow_field = retriever.get_flow_field_bounds(field_time_seconds, flow_field_name)
@@ -1440,8 +1657,135 @@ class Simulation:
                             with self._profile_section('get_flow_field.dashboard'):
                                 dashboard_flow_field = retriever.get_flow_field(field_time_seconds, flow_field_name)
 
-                        with self._profile_section('update_position'):
-                            population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
+                        if is_macdonald_q3d:
+                            def scalar_field(name, _retriever=retriever, _field_time_seconds=field_time_seconds):
+                                return _retriever.get_scalar_field_bounds(_field_time_seconds, name)
+
+                            def config_value(name, default, _physics_config=physics_config):
+                                return getattr(_physics_config, name, default)
+
+                            entrainment_config = config_value('entrainment', {}) or {}
+                            entrainment_method = str(
+                                entrainment_config.get('method', 'shields_threshold')
+                            ).lower().replace('-', '_')
+                            entrainment_method_key = entrainment_method
+                            entrainment_frequency = (
+                                scalar_field('macdonald_entrainment_frequency')
+                                if entrainment_method_key in {'entrainment_frequency', 'frequency'}
+                                else None
+                            )
+
+                            with self._profile_section('update_q3d_particle_position'):
+                                population.update_q3d_particle_position(
+                                    current_timestep=timer.current_timestep,
+                                    centroid_flow_field=flow_field,
+                                    hydrodynamic_flow_field=retriever.get_flow_field_bounds(field_time_seconds,'depth_avg_flow_velocity'),
+                                    bed_level_field=bed_level,
+                                    max_shear_velocity=scalar_field('max_shear_velocity'),
+                                    selected_shear_velocity=scalar_field('selected_shear_velocity'),
+                                    profile_roughness_height=scalar_field('profile_roughness_height'),
+                                    total_transport_centroid_elevation=scalar_field('total_transport_centroid_elevation'),
+                                    q3d_velocity_deficit_coefficient=scalar_field('q3d_velocity_deficit_coefficient'),
+                                    q3d_vertical_velocity_gradient=scalar_field('q3d_vertical_velocity_gradient'),
+                                    turbulent_shields_number=scalar_field('turbulent_shields_number'),
+                                    critical_shields_number=tracer_plan.converter.grain_properties.get('critical_shields'),
+                                    settling_velocity=tracer_plan.converter.grain_properties.get('settling_velocity'),
+                                    water_depth=scalar_field('water_depth'),
+                                    skin_roughness_height=scalar_field('skin_roughness_height'),
+                                    entrainment_height_above_bed=scalar_field('q3d_entrainment_height_above_bed'),
+                                    rouse_number=scalar_field('rouse_number'),
+                                    K_Et=config_value('q3d_horizontal_diffusion_factor', 0.15),
+                                    K_Ev=config_value('q3d_vertical_diffusion_factor', 0.15),
+                                    q3d_horizontal_diffusion_enabled=config_value(
+                                        'q3d_horizontal_diffusion_enabled',
+                                        True,
+                                    ),
+                                    entrainment_method=entrainment_method,
+                                    entrainment_frequency=entrainment_frequency,
+                                    entrainment_probability_law=entrainment_config.get(
+                                        'probability_law',
+                                        'poisson',
+                                    ),
+                                    q3d_vertical_update_scheme=config_value('q3d_vertical_update_scheme', 'geometric'),
+                                    q3d_motion_substeps=config_value('q3d_motion_substeps', 1),
+                                    q3d_save_first_substep_diagnostics=config_value(
+                                        'q3d_save_first_substep_diagnostics',
+                                        False,
+                                    ),
+                                    q3d_diagnostics=(
+                                        'full'
+                                        if config_value('q3d_save_first_substep_diagnostics', False)
+                                        else 'minimal'
+                                    ),
+                                )
+                        else:
+                            if is_macdonald_2d:
+                                deposition_method, deposition_sampling, deposition_kwargs = (
+                                    self._macdonald_2d_deposition_parameters(
+                                        physics_config,
+                                        tracer_plan,
+                                        retriever,
+                                        field_time_seconds,
+                                        flow_field,
+                                    )
+                                )
+                                (
+                                    entrainment_method,
+                                    entrainment_probability_law,
+                                    entrainment_sampling,
+                                ) = self._macdonald_2d_entrainment_parameters(
+                                    physics_config,
+                                    retriever,
+                                    field_time_seconds,
+                                    flow_field,
+                                )
+                                sampling_kwargs = {**deposition_sampling, **entrainment_sampling}
+                                with self._profile_section('sample_macdonald_2d_transition_fields'):
+                                    population.sample_macdonald_2d_transition_fields(
+                                        **sampling_kwargs,
+                                    )
+                                deposition_call_kwargs = {
+                                    'method': deposition_method,
+                                    'critical_shields_number': tracer_plan.converter.grain_properties.get(
+                                        'critical_shields'
+                                    ),
+                                    'current_timestep': timer.current_timestep,
+                                    **deposition_kwargs,
+                                }
+                                with self._profile_section('update_macdonald_2d_entrainment'):
+                                    population.update_macdonald_2d_entrainment(
+                                        method=entrainment_method,
+                                        probability_law=entrainment_probability_law,
+                                        critical_shields_number=tracer_plan.converter.grain_properties.get(
+                                            'critical_shields'
+                                        ),
+                                        current_timestep=timer.current_timestep,
+                                    )
+
+                                if deposition_method == 'shields_threshold':
+                                    with self._profile_section('update_macdonald_2d_deposition'):
+                                        population.update_macdonald_2d_deposition(
+                                            **deposition_call_kwargs,
+                                        )
+                            else: # if its not macdonald 2d, then its a standard 2d tracer, so we move all eligible particles
+                                # Standard 2D tracers move every generally eligible particle.
+                                population.particles['status_mobile'] = np.asarray(
+                                    population.particles['status_eligible'],
+                                    dtype=bool,
+                                ).copy()
+
+                            with self._profile_section('update_position'):
+                                population.update_position(
+                                    flow_field=flow_field,
+                                    current_timestep=timer.current_timestep,
+                                )
+
+                            if is_macdonald_2d and deposition_method == 'markov_settling':
+                                with self._profile_section('update_macdonald_2d_deposition'):
+                                    population.update_macdonald_2d_deposition(
+                                        **deposition_call_kwargs,
+                                    )
+
                         self._report_new_domain_exits(
                             population,
                             runtime_plan.population_index,
