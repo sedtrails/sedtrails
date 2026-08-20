@@ -46,6 +46,42 @@ def main(
     pass
 
 
+# Subcommand to launch the local GUI (lives in the repository's sedtrails-gui/ folder).
+@app.command('gui')
+def gui_cmd():
+    """
+    Launch the SedTRAILS GUI.
+
+    Runs sedtrails-gui/sedtrails_gui.py with the current Python interpreter,
+    looking in the current directory, the repository the installed sedtrails
+    package comes from (editable install), or next to that repository.
+    Stop the GUI with Ctrl+C.
+    """
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parents[4]  # .../src/sedtrails/application_interfaces/cli/main.py
+    candidates = [
+        Path.cwd() / 'sedtrails_gui.py',
+        Path.cwd() / 'sedtrails-gui' / 'sedtrails_gui.py',
+        repo / 'sedtrails-gui' / 'sedtrails_gui.py',
+        repo.parent / 'sedtrails-gui' / 'sedtrails_gui.py',
+    ]
+    for gui in candidates:
+        if gui.is_file():
+            typer.echo(f'Starting SedTRAILS GUI: {gui}')
+            try:
+                rc = subprocess.run([sys.executable, str(gui)]).returncode
+            except KeyboardInterrupt:
+                rc = 0
+            raise typer.Exit(code=rc)
+    typer.echo(
+        'sedtrails-gui not found. Check out the GUI branch (git checkout bvw/gui) '
+        'or run this command from a folder containing sedtrails-gui/.'
+    )
+    raise typer.Exit(code=1)
+
+
 # Subcommand to run a simulation; it also validates the configuration.
 @app.command('run')
 def run_simulation_cmd(
