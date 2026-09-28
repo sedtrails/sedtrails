@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import time
+import copy
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
@@ -14,6 +15,11 @@ from sedtrails.application_interfaces.configuration_controller import Configurat
 from sedtrails.data_manager import DataManager
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer import ParticleSeeder
+from sedtrails.particle_tracer.particle_seeder import (
+    DEFAULT_RELEASE_START,
+    _release_time_to_seconds,
+    release_status_mask,
+)
 from sedtrails.particle_tracer.coordinate_transform import CoordinateTransform
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever  # Updated import
 from sedtrails.particle_tracer.particle import Particle
@@ -480,6 +486,7 @@ class Simulation:
             time_step=Duration(self._controller.get('time.timestep')),
             read_input_interval=Duration(self._controller.get('inputs.read_interval')),
             reference_date=self._controller.get('general.input_model.reference_date', '1970-01-01 00:00:00'),
+            reverse_tracking=bool(self._controller.get('time.reverse_tracking', False)),
         )
 
     @staticmethod
@@ -505,6 +512,29 @@ class Simulation:
             return False
 
         return current_time_seconds > times[-1]
+
+    @staticmethod
+    def _is_before_loaded_sedtrails_data(sedtrails_data, current_time_seconds: float) -> bool:
+        """Return whether current time is before the first timestamp in the loaded data."""
+        if sedtrails_data is None:
+            return False
+
+        times = np.asarray(sedtrails_data.times)
+        if times.size == 0:
+            return False
+
+        return current_time_seconds < times[0]
+
+    @classmethod
+    def _is_outside_loaded_sedtrails_data(cls, sedtrails_data, current_time_seconds: float) -> bool:
+        """Return whether current time falls outside the loaded data timestamps."""
+        return cls._is_before_loaded_sedtrails_data(
+            sedtrails_data,
+            current_time_seconds,
+        ) or cls._is_after_loaded_sedtrails_data(
+            sedtrails_data,
+            current_time_seconds,
+        )
 
     @classmethod
     def _should_attempt_sedtrails_reload(
@@ -532,10 +562,99 @@ class Simulation:
 
         start, end = input_time_bounds
         cycle_duration = end - start
-        if cycle_duration <= 0 or current_time_seconds <= end:
+        if cycle_duration <= 0:
+            return current_time_seconds
+        if start <= current_time_seconds <= end:
             return current_time_seconds
 
         return start + ((current_time_seconds - start) % cycle_duration)
+
+    @staticmethod
+    def _reverse_cache_key(cache_key):
+        """Return a cache identity that cannot collide with forward vector fields."""
+        if cache_key is None:
+            return None
+        return ('reverse_tracking', cache_key)
+
+    @classmethod
+    def _reverse_flow_field(cls, flow_field: dict) -> dict:
+        """Return a shallow copy of a vector flow field with advection reversed."""
+        reversed_field = copy.copy(flow_field)
+        generations = flow_field.get('cache_generation')
+        if isinstance(generations, dict):
+            reversed_field['cache_generation'] = {
+                key: cls._reverse_cache_key(value)
+                for key, value in generations.items()
+            }
+        elif generations is not None:
+            reversed_field['cache_generation'] = cls._reverse_cache_key(generations)
+
+        if 'lower' in flow_field and 'upper' in flow_field:
+            reversed_field['lower'] = dict(flow_field['lower'])
+            reversed_field['upper'] = dict(flow_field['upper'])
+            reversed_field['lower']['u'] = -flow_field['lower']['u']
+            reversed_field['lower']['v'] = -flow_field['lower']['v']
+            reversed_field['upper']['u'] = -flow_field['upper']['u']
+            reversed_field['upper']['v'] = -flow_field['upper']['v']
+            return reversed_field
+
+        reversed_field['u'] = -flow_field['u']
+        reversed_field['v'] = -flow_field['v']
+        return reversed_field
+
+    @staticmethod
+    def _effective_population_diffusion_coefficient(population_config: dict) -> float:
+        """Return the active horizontal diffusion coefficient for a population."""
+        diffusion_config = population_config.get('diffusion', {})
+        if diffusion_config is None:
+            diffusion_config = {}
+        if not isinstance(diffusion_config, dict):
+            return 0.0
+        if diffusion_config.get('method', 'brownian') == 'none':
+            return 0.0
+        characteristics = population_config.get('characteristics', {})
+        legacy_value = 0.0
+        if isinstance(characteristics, dict):
+            legacy_value = characteristics.get('diffusion_coefficient', 0.0)
+        return float(diffusion_config.get('coefficient', legacy_value) or 0.0)
+
+    @classmethod
+    def _validate_reverse_tracking_configuration(
+        cls,
+        reverse_tracking: bool,
+        population_configs: list[dict],
+        simulation_time: Time | None = None,
+    ) -> None:
+        """Validate constraints that are specific to reverse particle tracking."""
+        if not reverse_tracking:
+            return
+
+        for population_index, population_config in enumerate(population_configs):
+            coefficient = cls._effective_population_diffusion_coefficient(population_config)
+            if coefficient > 0.0:
+                name = population_config.get('name', f'population_{population_index + 1}')
+                raise ConfigurationError(
+                    'time.reverse_tracking=true is incompatible with diffusion.coefficient > 0.0. '
+                    'Reverse stochastic diffusion requires an adjoint/weighted stochastic model and is not '
+                    f'implemented. Population {name!r} has effective diffusion coefficient {coefficient:g}.'
+                )
+            if simulation_time is None:
+                continue
+
+            seeding_config = population_config.get('seeding', {})
+            release_start = seeding_config.get('release_start', DEFAULT_RELEASE_START)
+            if release_start == DEFAULT_RELEASE_START:
+                continue
+
+            release_seconds = _release_time_to_seconds(release_start, simulation_time.reference_date)
+            simulation_start = float(simulation_time.start)
+            if release_seconds > simulation_start:
+                name = population_config.get('name', f'population_{population_index + 1}')
+                raise ConfigurationError(
+                    'time.reverse_tracking=true requires seeding.release_start to be at or before time.start. '
+                    f'Population {name!r} has release_start={release_start!r}, which is later than '
+                    f'time.start={getattr(simulation_time, "_start", simulation_start)!r}.'
+                )
 
     @staticmethod
     def _validate_simulation_start_matches_input(
@@ -864,7 +983,10 @@ class Simulation:
         output_index: int,
     ) -> float:
         """Return the next scheduled output time, capped at the simulation end."""
-        return float(min(simulation_time.start + output_index * float(save_interval_seconds), simulation_time.end))
+        direction = Simulation._simulation_time_direction(simulation_time)
+        duration_seconds = Simulation._simulation_duration_seconds(simulation_time)
+        elapsed_seconds = min(output_index * float(save_interval_seconds), duration_seconds)
+        return float(simulation_time.start + direction * elapsed_seconds)
 
     @staticmethod
     def _limit_timestep_to_output_schedule(
@@ -873,7 +995,7 @@ class Simulation:
         next_output_time: int | float,
     ) -> float:
         """Shorten a CFL step only when it would cross the next output boundary."""
-        remaining_to_output = float(next_output_time) - float(current_time)
+        remaining_to_output = abs(float(next_output_time) - float(current_time))
         if 0.0 < remaining_to_output < float(current_timestep):
             return remaining_to_output
         return float(current_timestep)
@@ -883,10 +1005,32 @@ class Simulation:
         sample_time: int | float,
         next_output_time: int | float,
         end_time: int | float,
+        direction: int | None = None,
     ) -> bool:
         """Return whether a trajectory sample should be stored at this time."""
         tolerance = 1.0e-9
-        return sample_time + tolerance >= next_output_time or sample_time + tolerance >= end_time
+        if direction is None:
+            direction = -1 if float(end_time) < float(next_output_time) else 1
+        if direction > 0:
+            return sample_time + tolerance >= next_output_time or sample_time + tolerance >= end_time
+        return sample_time - tolerance <= next_output_time or sample_time - tolerance <= end_time
+
+    @staticmethod
+    def _simulation_time_direction(simulation_time) -> int:
+        """Return the signed direction for Time-like objects."""
+        direction = getattr(simulation_time, 'direction', None)
+        if direction is not None:
+            return int(direction)
+        return 1 if float(simulation_time.end) >= float(simulation_time.start) else -1
+
+    @staticmethod
+    def _simulation_duration_seconds(simulation_time) -> float:
+        """Return the absolute duration for Time-like objects."""
+        duration = getattr(simulation_time, 'duration', None)
+        seconds = getattr(duration, 'seconds', None)
+        if seconds is not None:
+            return float(seconds)
+        return abs(float(simulation_time.end) - float(simulation_time.start))
 
     @staticmethod
     def _should_update_bed_level_after_movement(tracer_plan) -> bool:
@@ -906,7 +1050,11 @@ class Simulation:
         )
 
     @staticmethod
-    def _initialize_population_output_status(populations, current_time: int | float) -> None:
+    def _initialize_population_output_status(
+        populations,
+        current_time: int | float,
+        time_direction: int = 1,
+    ) -> None:
         """Populate required status arrays before the initial trajectory sample is written."""
         for population in populations:
             particles = population.particles
@@ -927,7 +1075,11 @@ class Simulation:
                 if release_time is None:
                     particles['status_released'] = np.ones(n_particles, dtype=bool)
                 else:
-                    particles['status_released'] = float(current_time) >= np.asarray(release_time, dtype=float)
+                    particles['status_released'] = release_status_mask(
+                        current_time,
+                        release_time,
+                        time_direction,
+                    )
 
             particles['status_mobile'] = (
                 np.asarray(particles['status_domain'], dtype=bool)
@@ -1338,9 +1490,11 @@ class Simulation:
 
         populations_config = self._controller.get('particles.populations', [])
         validate_population_runtime_configurations(populations_config)
+        reverse_tracking = bool(self._controller.get('time.reverse_tracking', False))
 
         # Time configuration
         simulation_time = self._create_simulation_time()
+        self._validate_reverse_tracking_configuration(reverse_tracking, populations_config, simulation_time)
 
         timer = Timer(simulation_time=simulation_time, cfl_condition=self._controller.get('time.cfl_condition'))
         repeat_eulerian_fields = self._controller.get('inputs.repeat_eulerian_fields', False)
@@ -1348,9 +1502,13 @@ class Simulation:
         self._validate_simulation_start_matches_input(simulation_time, input_time_bounds)
         if repeat_eulerian_fields and input_time_bounds is not None:
             self.logger.info(
-                'Repeating Eulerian flow fields from %.3fs after forcing end %.3fs',
+                'Repeating Eulerian flow fields over forcing window %.3fs to %.3fs',
                 input_time_bounds[0],
                 input_time_bounds[1],
+            )
+        if reverse_tracking:
+            self.logger.info(
+                'Reverse particle tracking enabled: advective vector fields are sign-reversed during integration.'
             )
 
         # Load only x/y field coordinates needed for the population seeder.
@@ -1439,10 +1597,13 @@ class Simulation:
         coordinate_metadata = self._coordinate_output_metadata(getattr(seeding_field_data, 'metadata', None))
         if populations:
             coordinate_metadata.update(populations[0].grid_geometry.coordinate_transform.metadata())
+        coordinate_metadata['reverse_tracking'] = bool(reverse_tracking)
+        coordinate_metadata['time_direction'] = 'reverse' if reverse_tracking else 'forward'
         netcdf_options['coordinate_metadata'] = coordinate_metadata
         checkpoint_options.setdefault('writer_kwargs', {})['coordinate_metadata'] = coordinate_metadata
 
-        self._initialize_population_output_status(populations, timer.current)
+        direction = self._simulation_time_direction(simulation_time)
+        self._initialize_population_output_status(populations, timer.current, direction)
         nc_handle = None
         slot_idx = 0
         last_saved_time = None
@@ -1470,6 +1631,8 @@ class Simulation:
             nc_handle.time_units = f'seconds since {simulation_time.reference_date}'
             nc_handle.time_start = self._controller.get('time.start')
             nc_handle.time_end_seconds_since_reference_date = float(simulation_time.end)
+            nc_handle.reverse_tracking = int(bool(reverse_tracking))
+            nc_handle.time_direction = 'reverse' if reverse_tracking else 'forward'
             nc_handle.outputs_save_interval_seconds = float(save_interval_seconds)
             nc_handle['time'].units = nc_handle.time_units
             nc_handle['time'].reference_date = nc_handle.reference_date
@@ -1504,7 +1667,7 @@ class Simulation:
         plan_retrievers = {}
         dashboard_flow_field = None
         try:
-            while not timer.stop and timer.current < simulation_time.end:
+            while not timer.stop and timer.should_continue():
                 # Check if current time is within loaded SedTRAILS data
                 current_time_seconds = timer.current
                 field_time_seconds = self._map_eulerian_field_time(
@@ -1514,14 +1677,6 @@ class Simulation:
                 )
                 if self._should_attempt_sedtrails_reload(sedtrails_data, field_time_seconds, input_data_exhausted):
                     self.clear_geodetic_velocity_caches(populations)
-                    # Avoid recreating SedTRAILS data if current time is before the first time step
-                    if (
-                        sedtrails_data is not None
-                        and field_time_seconds < sedtrails_data.times[0]
-                        and not repeat_eulerian_fields
-                    ):
-                        timer.advance()
-                        continue
                     if sedtrails_data is not None:
                         # Release the previous forcing graph before materializing
                         # the replacement window. Loop locals otherwise retain
@@ -1547,14 +1702,21 @@ class Simulation:
                         )
                     plan_retrievers = self._build_plan_retrievers(sedtrails_data, runtime_plans)
 
-                    if self._is_after_loaded_sedtrails_data(sedtrails_data, field_time_seconds):
+                    if self._is_outside_loaded_sedtrails_data(sedtrails_data, field_time_seconds):
                         input_data_exhausted = True
                         if not input_exhaustion_warning_logged:
+                            times = np.asarray(sedtrails_data.times, dtype=float)
+                            side = 'beyond the final' if field_time_seconds > times[-1] else 'before the first'
+                            reused = 'last' if field_time_seconds > times[-1] else 'first'
                             self.logger.warning(
-                                'Simulation time %.3fs is beyond the final input field timestamp %.3fs; '
-                                'reusing the last available fields for remaining timesteps.',
+                                'Simulation time %.3fs maps to %.3fs, which is %s input field timestamp '
+                                '[%.3fs, %.3fs]; reusing the %s available fields for remaining timesteps.',
                                 current_time_seconds,
-                                float(np.asarray(sedtrails_data.times)[-1]),
+                                field_time_seconds,
+                                side,
+                                times[0],
+                                times[-1],
+                                reused,
                             )
                             input_exhaustion_warning_logged = True
 
@@ -1577,7 +1739,7 @@ class Simulation:
                         getattr(sedtrails_data.metadata, 'min_resolution_m', sedtrails_data.metadata.min_resolution),
                         sedtrails_data.metadata.timestep,
                     )
-                    timer.current_timestep = min(timer.current_timestep, simulation_time.end - timer.current)
+                    timer.current_timestep = min(timer.current_timestep, timer.remaining_seconds())
                     if store_tracks and slot_idx < n_output_slots:
                         timer.current_timestep = self._limit_timestep_to_output_schedule(
                             timer.current,
@@ -1636,10 +1798,12 @@ class Simulation:
 
 
                         with self._profile_section('update_status'):
-                            population.update_status()
+                            population.update_status(time_direction=direction)
 
                         with self._profile_section('get_flow_field_bounds.update_position'):
                             flow_field = retriever.get_flow_field_bounds(field_time_seconds, flow_field_name)
+                        if reverse_tracking:
+                            flow_field = self._reverse_flow_field(flow_field)
                         if (
                             dashboard_update_due
                             and runtime_plan.population_index == 0
@@ -1704,7 +1868,12 @@ class Simulation:
                     store_tracks
                     and nc_handle is not None
                     and slot_idx < n_output_slots
-                    and self._is_output_sample_due(timer.current, next_output_time, simulation_time.end)
+                    and self._is_output_sample_due(
+                        timer.current,
+                        next_output_time,
+                        simulation_time.end,
+                        simulation_time.direction,
+                    )
                 ):
                     with self._profile_section('record_output'):
                         nc_handle = self.data_manager.writer.record_output(
@@ -1728,7 +1897,7 @@ class Simulation:
 
                 # Update progress bar
                 if simulation_time.duration.seconds > 0:  # Avoid undefined progress when duration is zero
-                    elapsed_time = timer.current - simulation_time.start
+                    elapsed_time = abs(timer.current - simulation_time.start)
                     progress_percent = (elapsed_time / simulation_time.duration.seconds) * 100
                     pbar.update(progress_percent - pbar.n)  # increment by delta
                 else:
@@ -1749,7 +1918,7 @@ class Simulation:
 
             if store_tracks:
                 # Save final particle state if simulation ended between two save boundaries
-                if last_saved_time is None or timer.current > last_saved_time:
+                if last_saved_time is None or abs(timer.current - last_saved_time) > 1.0e-9:
                     if slot_idx < n_output_slots:
                         nc_handle = self.data_manager.writer.record_output(
                             nc_handle, populations, slot_idx, timer.current)

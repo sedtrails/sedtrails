@@ -416,6 +416,11 @@
           "type": "number",
           "default": 0.7,
           "description": "CFL condition for adaptive timestep calculation. If 0, timestep is not adapted."
+        },
+        "reverse_tracking": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, integrate particle advection backward in time by reversing advective velocities. Diffusion coefficients greater than zero are not supported for reverse tracking."
         }
       },
       "required": [

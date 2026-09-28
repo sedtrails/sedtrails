@@ -68,6 +68,7 @@ time:
   timestep: 60S
   duration: 1D
   cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
+  reverse_tracking: false
 particles:
   populations:
     - name: population_1
@@ -121,6 +122,20 @@ visualization:
     enable: true
     update_interval: 1H
 ```
+
+### Reverse Tracking
+
+Set `time.reverse_tracking: true` to integrate particles backward from the configured `time.start`. SedTRAILS keeps the timestep positive, steps the simulation clock backward for `time.duration`, and reverses advective vector fields at sampling time. This applies to all tracer modes because the time direction is handled outside the tracer-specific field selection.
+
+Particle release timing follows the same integration direction: in reverse runs, particles are released once the backward-moving simulation clock reaches or passes `seeding.release_start`. For backtracking from observed end positions, set `seeding.release_start` equal to `time.start`. A reverse run raises a configuration error if `seeding.release_start` is later than `time.start`.
+
+Reverse tracking is deterministic advection-only. SedTRAILS raises a configuration error if any population has active diffusion with coefficient greater than zero, because backward stochastic diffusion needs an adjoint or weighted stochastic formulation rather than simple velocity reversal.
+
+For source-attribution studies, treat backward results as sensitivity-tested estimates. Reijnders et al. (2026) show that numerical errors can be amplified differently in forward and backward runs in non-zero-divergence flows, especially around convergent and divergent zones. Recommended checks are:
+- run paired forward/backward trajectory tests from a subset of particles (e.g., `tests\reverse_tracking\test_reverse_tracking.py`)
+- repeat key cases with smaller timesteps or stricter CFL settings
+- be cautious when interpreting long reverse runs near strong gradients, convergent trapping zones, divergent source regions, surface boundary effects, or highly clustered final particle sets
+- document the numerical scheme, timestep, Eulerian forcing interval, and whether `inputs.repeat_eulerian_fields` was used
 
 ### Choosing a Tracer Mode
 

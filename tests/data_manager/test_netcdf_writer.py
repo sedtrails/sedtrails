@@ -191,6 +191,26 @@ class TestNetCDFWriterStreaming:
         assert handle['y'].standard_name == 'latitude'
         handle.close()
 
+    def test_open_writes_reverse_tracking_metadata(self, writer, population):
+        """Trajectory files should preserve reverse-time metadata."""
+        handle = writer.open_output(
+            'stream_reverse.nc',
+            self.N_SLOTS,
+            self.N_PARTICLES,
+            self.N_POPULATIONS,
+            self.N_FLOWFIELDS,
+            [population],
+            ['vel'],
+            coordinate_metadata={
+                'reverse_tracking': True,
+                'time_direction': 'reverse',
+            },
+        )
+
+        assert handle.reverse_tracking == 1
+        assert handle.time_direction == 'reverse'
+        handle.close()
+
     def test_open_strips_geographic_crs_metadata_for_projected_coordinates(self, writer, population):
         """Projected trajectory files should not inherit geographic CRS defaults."""
         handle = writer.open_output(
@@ -436,6 +456,26 @@ class TestNetCDFWriterStreaming:
         np.testing.assert_array_equal(ds['population_name'].values, ['test_pop'])
         np.testing.assert_array_equal(ds['population_particle_type'].values, ['sand'])
         np.testing.assert_array_equal(ds['flowfield_name'].values, [''])
+        ds.close()
+
+    def test_write_end_positions_preserves_reverse_tracking_metadata(self, writer, population):
+        """Compact end-position results should identify reverse-time runs."""
+        path = writer.write_end_positions(
+            'sedtrails_results_reverse.nc',
+            [population],
+            current_time=-456.0,
+            reference_date='2020-01-01 00:00:00',
+            time_units='seconds since 2020-01-01 00:00:00',
+            coordinate_metadata={
+                'reverse_tracking': True,
+                'time_direction': 'reverse',
+            },
+        )
+
+        ds = xr.open_dataset(path, engine='netcdf4')
+        assert ds.attrs['reverse_tracking'] == 1
+        assert ds.attrs['time_direction'] == 'reverse'
+        assert float(ds['time'].values) == pytest.approx(-456.0)
         ds.close()
 
     def test_write_end_positions_inverse_projects_geographic_runtime_coordinates(self, writer, population):

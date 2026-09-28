@@ -455,8 +455,8 @@ def plot_trajectories_cmd(
         '-o',
         help=(
             'Output target. If this is an existing directory, the plot is written as '
-            '"particle_trajectories.png" inside it. Otherwise, this is treated as a '
-            'filename. If omitted, defaults to "particle_trajectories.png" in the '
+            '"particle_trajectories.png" inside it. Bare filenames are written in the '
+            'NetCDF file directory. If omitted, defaults to "particle_trajectories.png" in the '
             'NetCDF file directory. Pass "." to write in the current working directory.'
         ),
     ),
@@ -500,6 +500,46 @@ def plot_trajectories_cmd(
         '--show/--no-show',
         help='Display the figure window. Defaults to no window when saving to a file.',
     ),
+    animate_gif: bool = typer.Option(
+        False,
+        '--animate-gif/--no-animate-gif',
+        help='Also save an animated GIF with moving particles and trailing paths.',
+    ),
+    gif_output: str | None = typer.Option(
+        None,
+        '--gif-output',
+        help='GIF output path. Defaults to the static plot path with a .gif suffix.',
+    ),
+    gif_fps: int = typer.Option(
+        10,
+        '--gif-fps',
+        help='Frames per second for the trajectory GIF.',
+    ),
+    gif_dpi: int = typer.Option(
+        120,
+        '--gif-dpi',
+        help='DPI used to render GIF frames.',
+    ),
+    gif_frame_stride: int = typer.Option(
+        1,
+        '--gif-frame-stride',
+        help='Save one GIF frame every N output timesteps. First and last timesteps are always included.',
+    ),
+    gif_time_order: str = typer.Option(
+        'chronological',
+        '--gif-time-order',
+        help='GIF playback order: chronological or simulation. Chronological sorts by timestamp.',
+    ),
+    gif_max_size_warning_mb: float = typer.Option(
+        20.0,
+        '--gif-max-size-warning-mb',
+        help='Prompt before saving when the projected GIF frame buffer exceeds this size.',
+    ),
+    gif_confirm_large: bool | None = typer.Option(
+        None,
+        '--yes-large-gif/--no-large-gif',
+        help='Override the large-GIF prompt. By default SedTRAILS asks and defaults to no.',
+    ),
 ):
     """
     Plot particle trajectories from a SedTRAILS netCDF results file.
@@ -526,6 +566,22 @@ def plot_trajectories_cmd(
         Panels to draw.
     show : bool | None
         Whether to display the figure.
+    animate_gif : bool
+        Whether to save an animated GIF.
+    gif_output : str | None
+        GIF output path.
+    gif_fps : int
+        Frames per second for the GIF animation.
+    gif_dpi : int
+        DPI used to render GIF frames.
+    gif_frame_stride : int
+        Save one GIF frame every N output timesteps.
+    gif_time_order : str
+        GIF playback order.
+    gif_max_size_warning_mb : float
+        Prompt threshold for the projected GIF frame buffer.
+    gif_confirm_large : bool | None
+        Override the large-GIF prompt.
     """
     from sedtrails.application_interfaces.api import plot_trajectories
 
@@ -541,6 +597,14 @@ def plot_trajectories_cmd(
             marker_size=marker_size,
             panels=panels,
             show=show,
+            animate_gif=animate_gif,
+            gif_output=gif_output,
+            gif_fps=gif_fps,
+            gif_dpi=gif_dpi,
+            gif_frame_stride=gif_frame_stride,
+            gif_time_order=gif_time_order,
+            gif_max_size_warning_mb=gif_max_size_warning_mb,
+            gif_confirm_large=gif_confirm_large,
         )
         if show is True:
             typer.echo('Plot displayed successfully')

@@ -8,8 +8,13 @@ import pytest
 import xarray as xr
 
 from sedtrails.pathway_visualizer.trajectories import (
+    _confirm_large_gif,
     _distance_line_segments,
+    _gif_frame_indices,
+    _gif_playback_indices,
+    _gif_trail_indices,
     _line_segments,
+    _resolve_gif_output_file,
     _sample_dataset,
     _select_sample_indices,
     _trajectory_arrays,
@@ -228,6 +233,158 @@ def test_plot_trajectories_output_file_skips_show_by_default(tmp_path, monkeypat
     assert not show_called
 
 
+def test_confirm_large_gif_defaults_to_no(monkeypatch, tmp_path):
+    monkeypatch.setattr('builtins.input', lambda _: '')
+
+    assert not _confirm_large_gif(tmp_path / 'large.gif', 21.0, 20.0, None)
+
+
+def test_confirm_large_gif_accepts_yes_response(monkeypatch, tmp_path):
+    monkeypatch.setattr('builtins.input', lambda _: 'y')
+
+    assert _confirm_large_gif(tmp_path / 'large.gif', 21.0, 20.0, None)
+
+
+def test_gif_frame_indices_respect_stride_and_include_last():
+    indices = _gif_frame_indices(289, frame_stride=20)
+
+    np.testing.assert_array_equal(indices, np.array([0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 240, 260, 280, 288]))
+
+
+def test_gif_frame_indices_can_play_reverse_output_chronologically():
+    indices = _gif_frame_indices(
+        5,
+        frame_stride=2,
+        time_values=np.array([40.0, 30.0, 20.0, 10.0, 0.0]),
+    )
+
+    np.testing.assert_array_equal(indices, np.array([4, 2, 0]))
+
+
+def test_gif_trails_use_all_available_timesteps_between_strided_reverse_frames():
+    playback_indices = _gif_playback_indices(
+        5,
+        time_values=np.array([40.0, 30.0, 20.0, 10.0, 0.0]),
+    )
+    frame_indices = _gif_frame_indices(
+        5,
+        frame_stride=2,
+        time_values=np.array([40.0, 30.0, 20.0, 10.0, 0.0]),
+    )
+
+    np.testing.assert_array_equal(frame_indices, np.array([4, 2, 0]))
+    np.testing.assert_array_equal(_gif_trail_indices(playback_indices, frame_indices[1]), np.array([4, 3, 2]))
+
+
+def test_gif_frame_indices_can_preserve_simulation_order():
+    indices = _gif_frame_indices(
+        5,
+        frame_stride=2,
+        time_values=np.array([40.0, 30.0, 20.0, 10.0, 0.0]),
+        time_order='simulation',
+    )
+
+    np.testing.assert_array_equal(indices, np.array([0, 2, 4]))
+
+
+def test_gif_trails_use_all_available_timesteps_between_strided_simulation_frames():
+    playback_indices = _gif_playback_indices(
+        5,
+        time_values=np.array([40.0, 30.0, 20.0, 10.0, 0.0]),
+        time_order='simulation',
+    )
+    frame_indices = _gif_frame_indices(
+        5,
+        frame_stride=2,
+        time_values=np.array([40.0, 30.0, 20.0, 10.0, 0.0]),
+        time_order='simulation',
+    )
+
+    np.testing.assert_array_equal(frame_indices, np.array([0, 2, 4]))
+    np.testing.assert_array_equal(_gif_trail_indices(playback_indices, frame_indices[1]), np.array([0, 1, 2]))
+
+
+def test_gif_frame_indices_validate_stride():
+    with pytest.raises(ValueError, match='gif_frame_stride'):
+        _gif_frame_indices(3, frame_stride=0)
+
+
+def test_plot_trajectories_can_save_optional_gif(tmp_path, monkeypatch):
+    import sedtrails.pathway_visualizer.trajectories as trajectory_module
+
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_timesteps', 'n_particles'), np.array([[0.0], [1.0], [2.0]])),
+            'y': (('n_timesteps', 'n_particles'), np.array([[0.0], [0.5], [1.0]])),
+            'time': (('n_timesteps',), np.array([0.0, 60.0, 120.0])),
+        },
+        coords={
+            'n_particles': np.arange(1),
+            'n_timesteps': np.arange(3),
+        },
+    )
+    observed = {}
+
+    def fake_save_gif(sampled_ds, output, **kwargs):
+        observed['sampled_ds'] = sampled_ds
+        observed['output'] = output
+        observed['kwargs'] = kwargs
+        return output
+
+    monkeypatch.setattr(trajectory_module, 'save_trajectory_gif', fake_save_gif)
+
+    plot_trajectories(
+        ds,
+        output=tmp_path / 'trajectories.png',
+        animate_gif=True,
+        gif_fps=6,
+        gif_dpi=90,
+        gif_frame_stride=2,
+        gif_time_order='simulation',
+        gif_confirm_large=True,
+    )
+
+    assert observed['sampled_ds'].sizes['n_timesteps'] == 3
+    assert observed['output'] == tmp_path / 'trajectories.gif'
+    assert observed['kwargs']['fps'] == 6
+    assert observed['kwargs']['dpi'] == 90
+    assert observed['kwargs']['frame_stride'] == 2
+    assert observed['kwargs']['time_order'] == 'simulation'
+    assert observed['kwargs']['confirm_large_gif'] is True
+
+
+def test_plot_trajectories_bare_output_filename_resolves_next_to_source(tmp_path, monkeypatch):
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_timesteps', 'n_particles'), np.array([[0.0], [1.0]])),
+            'y': (('n_timesteps', 'n_particles'), np.array([[0.0], [1.0]])),
+            'time': (('n_timesteps',), np.array([0.0, 60.0])),
+        },
+        coords={
+            'n_particles': np.arange(1),
+            'n_timesteps': np.arange(2),
+        },
+    )
+    source_dir = tmp_path / 'source'
+    current_dir = tmp_path / 'current'
+    source_dir.mkdir()
+    current_dir.mkdir()
+    ds.encoding['source'] = str(source_dir / 'results.nc')
+    monkeypatch.chdir(current_dir)
+    monkeypatch.setattr('matplotlib.pyplot.show', lambda: None)
+
+    plot_trajectories(ds, output='trajectories.png')
+
+    assert (source_dir / 'trajectories.png').exists()
+    assert not (current_dir / 'trajectories.png').exists()
+
+
+def test_resolve_gif_output_bare_filename_uses_static_output_directory(tmp_path):
+    gif_path = _resolve_gif_output_file(tmp_path / 'source' / 'trajectories.png', 'custom.gif')
+
+    assert gif_path == tmp_path / 'source' / 'custom.gif'
+
+
 def test_plot_trajectories_saves_next_to_source_file_by_default(tmp_path, monkeypatch):
     ds = xr.Dataset(
         data_vars={
@@ -303,7 +460,7 @@ def test_plot_trajectories_output_existing_directory_uses_default_filename(tmp_p
     assert (output_dir / 'particle_trajectories.png').exists()
 
 
-def test_plot_trajectories_draws_spatial_panel_by_default(monkeypatch):
+def test_plot_trajectories_draws_spatial_panel_by_default(monkeypatch, tmp_path):
     ds = xr.Dataset(
         data_vars={
             'x': (('n_timesteps', 'n_particles'), np.array([[0.0, 0.0], [1.0, 1.5], [2.0, 3.0]])),
@@ -315,6 +472,7 @@ def test_plot_trajectories_draws_spatial_panel_by_default(monkeypatch):
             'n_timesteps': np.arange(3),
         },
     )
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr('matplotlib.pyplot.show', lambda: None)
 
     fig, axes = plot_trajectories(ds)
@@ -327,7 +485,7 @@ def test_plot_trajectories_draws_spatial_panel_by_default(monkeypatch):
         plt.close(fig)
 
 
-def test_plot_trajectories_can_draw_all_panels(monkeypatch):
+def test_plot_trajectories_can_draw_all_panels(monkeypatch, tmp_path):
     ds = xr.Dataset(
         data_vars={
             'x': (('n_timesteps', 'n_particles'), np.array([[0.0, 0.0], [1.0, 1.5], [2.0, 3.0]])),
@@ -342,6 +500,7 @@ def test_plot_trajectories_can_draw_all_panels(monkeypatch):
             'n_populations': np.arange(2),
         },
     )
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr('matplotlib.pyplot.show', lambda: None)
 
     fig, axes = plot_trajectories(ds, panels='all', marker_size=8)
@@ -536,7 +695,7 @@ def test_sample_dataset_caps_particle_selection_to_the_point_budget():
     np.testing.assert_array_equal(sampled['time'].values, np.array([0.0, 10.0]))
 
 
-def test_plotting_public_entrypoints_preserve_existing_positional_arguments(monkeypatch):
+def test_plotting_public_entrypoints_preserve_existing_positional_arguments(monkeypatch, tmp_path):
     """Adding the point budget must not shift established positional parameters."""
     from sedtrails.application_interfaces import api as api_module
     import sedtrails.pathway_visualizer as visualizer_module
@@ -548,6 +707,7 @@ def test_plotting_public_entrypoints_preserve_existing_positional_arguments(monk
             'time': (('n_timesteps',), np.array([0.0, 60.0])),
         }
     )
+    monkeypatch.chdir(tmp_path)
     fig, _ = plot_trajectories(ds, None, 1, None, 0, 'none', 7.0, 'spatial', False)
     plt.close(fig)
 

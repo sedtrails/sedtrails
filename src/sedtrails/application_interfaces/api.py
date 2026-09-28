@@ -293,6 +293,14 @@ def plot_trajectories(
     panels: str = 'spatial',
     show: bool | None = None,
     max_plot_points: int | None = 2_000_000,
+    animate_gif: bool = False,
+    gif_output: str | None = None,
+    gif_fps: int = 10,
+    gif_dpi: int = 120,
+    gif_frame_stride: int = 1,
+    gif_time_order: str = 'chronological',
+    gif_max_size_warning_mb: float = 20.0,
+    gif_confirm_large: bool | None = None,
 ) -> None:
     """
     Plot particle trajectories from a SedTRAILS NetCDF results file.
@@ -303,9 +311,9 @@ def plot_trajectories(
         Path to the SedTRAILS NetCDF results file.
     output : str, optional
         Output target. If ``output`` is an existing directory, the plot is
-        written as ``particle_trajectories.png`` inside it. Otherwise,
-        ``output`` is treated as a filename. If omitted, the default output
-        is ``particle_trajectories.png`` in the NetCDF file directory.
+        written as ``particle_trajectories.png`` inside it. Bare filenames are
+        written beside the NetCDF file. If omitted, the default output is
+        ``particle_trajectories.png`` in the NetCDF file directory.
     max_particles : int, optional
         Maximum number of particles to plot. Mutually exclusive with
         ``sample_fraction``.
@@ -329,6 +337,28 @@ def plot_trajectories(
     show : bool, optional
         Whether to display the figure. Defaults to display-only when no output
         path is requested.
+    animate_gif : bool, optional
+        Also save an animated GIF of the sampled trajectories.
+    gif_output : str, optional
+        GIF output path. If omitted, the GIF uses the static plot path with a
+        ``.gif`` suffix.
+    gif_fps : int, optional
+        Frames per second for the GIF animation.
+    gif_dpi : int, optional
+        DPI used to render GIF frames.
+    gif_frame_stride : int, optional
+        Save one GIF frame every N output timesteps. The first and last
+        timestep are always included.
+    gif_time_order : {'chronological', 'simulation'}, optional
+        GIF playback order. ``chronological`` sorts frames by timestamp,
+        which makes reverse-tracking output play from earlier to later times;
+        ``simulation`` preserves the stored integration order.
+    gif_max_size_warning_mb : float, optional
+        Prompt before saving when the projected GIF frame buffer exceeds this
+        size in MiB.
+    gif_confirm_large : bool, optional
+        Override the large-GIF prompt. ``True`` saves, ``False`` skips, and
+        ``None`` prompts when needed.
 
     Examples
     --------
@@ -357,6 +387,14 @@ def plot_trajectories(
             marker_size=marker_size,
             panels=panels,
             show=show,
+            animate_gif=animate_gif,
+            gif_output=gif_output,
+            gif_fps=gif_fps,
+            gif_dpi=gif_dpi,
+            gif_frame_stride=gif_frame_stride,
+            gif_time_order=gif_time_order,
+            gif_max_size_warning_mb=gif_max_size_warning_mb,
+            gif_confirm_large=gif_confirm_large,
         )
     finally:
         ds.close()

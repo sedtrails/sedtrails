@@ -19,6 +19,7 @@ docs/apidocs/sedtrails/*
 
 # Analytical benchmark outputs
 tests/analytical/output/
+tests/reverse_tracking/output/
 
 
 # Mac OS X metadata files

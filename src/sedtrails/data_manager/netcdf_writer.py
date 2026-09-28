@@ -202,6 +202,8 @@ class NetCDFWriter:
             'velocity_basis',
             'horizontal_distance_units',
             'min_resolution_m',
+            'reverse_tracking',
+            'time_direction',
         ]
         if coordinate_system == 'geographic':
             metadata_keys.extend([
@@ -214,6 +216,8 @@ class NetCDFWriter:
         for key in metadata_keys:
             value = metadata.get(key)
             if value is not None:
+                if isinstance(value, bool):
+                    value = int(value)
                 setattr(ds, key, value)
         if 'x' in ds.variables:
             for key, value in x_attrs.items():

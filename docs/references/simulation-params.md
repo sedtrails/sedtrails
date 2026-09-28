@@ -219,6 +219,7 @@ Controls simulation timing and time-stepping.
 | `duration`      | string | Optional     | `0D12H25M0S` | Total simulation duration (format: `DDdHHhMMmSSs`). If omitted, runs until end of flow field data.             |
 | `timestep`      | string | **Required** | `30S`        | Base time step for particle tracking (format: `DDdHHhMMmSSs`). Example: `30S` for 30 seconds.                  |
 | `cfl_condition` | number | Optional     | `0.7`        | CFL condition for adaptive time-stepping (0-1). Set to `0` to disable adaptive time-stepping.                  |
+| `reverse_tracking` | boolean | Optional | `false` | If true, integrate advection backward by reversing vector velocities. Diffusion coefficients greater than zero are rejected. |
 
 **Duration Format Examples:**
 - `30S` - 30 seconds
@@ -235,7 +236,10 @@ time:
   duration: "30D"
   timestep: "30S"
   cfl_condition: 0.7
+  reverse_tracking: false
 ```
+
+Reverse tracking is deterministic advection-only. SedTRAILS rejects active diffusion in reverse mode because simple velocity reversal is not a valid backward stochastic diffusion model. For source-attribution studies, test sensitivity to timestep, CFL settings, forcing interval, and duration, especially near strong gradients, convergent zones, divergent zones, surface boundary effects, and clustered final particle sets. Paired forward/backward runs on a representative particle subset are recommended to diagnose numerical stability bias.
 
 ---
 

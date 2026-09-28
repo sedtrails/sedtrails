@@ -8,16 +8,18 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
+from matplotlib.animation import FuncAnimation, PillowWriter
+from matplotlib.collections import LineCollection
 from sedtrails.particle_tracer.geodetic_geometry import (
     EARTH_MEAN_RADIUS_M,
     spherical_distance,
 )
-from matplotlib.collections import LineCollection
 
 
 DEFAULT_MAX_PLOT_PARTICLES = 10_000
 DEFAULT_MAX_PLOT_POINTS = 2_000_000
 DEFAULT_RENDER_PARTICLE_CHUNK = 256
+DEFAULT_GIF_SIZE_WARNING_MB = 20.0
 
 
 def _decode_netcdf_name(raw_value) -> str:
@@ -642,20 +644,118 @@ def _add_endpoint_markers(ax, starts, ends, *, colors, markers: str, marker_size
 def _resolve_output_file(ds: xr.Dataset, output: str | Path | None) -> Path:
     """Resolve a trajectory-plot output path.
 
-    ``None`` selects the NetCDF source directory. Any supplied path is used
-    literally, so ``'.'`` selects the current working directory.
+    ``None`` selects the NetCDF source directory. Bare relative filenames are
+    also resolved beside the NetCDF file. Use ``'.'`` to select the current
+    working directory explicitly.
     """
     default_name = 'particle_trajectories.png'
+    source_file = ds.encoding.get('source', '.')
+    source_dir = Path(source_file).parent
 
     if output is not None:
         output_path = Path(output)
         if output_path.is_dir():
             return output_path / default_name
+        if not output_path.is_absolute() and output_path.parent == Path('.'):
+            return source_dir / output_path.name
         return output_path
 
-    source_file = ds.encoding.get('source', '.')
-    source_dir = Path(source_file).parent
     return source_dir / default_name
+
+
+def _resolve_gif_output_file(static_output_path: Path, gif_output: str | Path | None) -> Path:
+    default_name = 'particle_trajectories.gif'
+    if gif_output is None:
+        return static_output_path.with_suffix('.gif')
+
+    gif_path = Path(gif_output)
+    if gif_path.is_dir():
+        return gif_path / default_name
+    if not gif_path.is_absolute() and gif_path.parent == Path('.'):
+        gif_path = static_output_path.parent / gif_path.name
+    if gif_path.suffix.lower() != '.gif':
+        return gif_path.with_suffix('.gif')
+    return gif_path
+
+
+def _estimate_animation_frame_buffer_mb(fig, n_frames: int, dpi: int | float) -> float:
+    width_in, height_in = fig.get_size_inches()
+    pixels = max(1, int(width_in * dpi)) * max(1, int(height_in * dpi))
+    return pixels * 3 * max(1, int(n_frames)) / (1024.0 * 1024.0)
+
+
+def _gif_playback_indices(
+    n_timesteps: int,
+    time_values: np.ndarray | None = None,
+    time_order: str = 'chronological',
+) -> np.ndarray:
+    """Return all timestep indices in GIF playback order."""
+    if n_timesteps < 1:
+        raise ValueError("'n_timesteps' must be at least 1.")
+    if time_order not in {'chronological', 'simulation'}:
+        raise ValueError("'gif_time_order' must be either 'chronological' or 'simulation'.")
+
+    if time_order == 'chronological' and time_values is not None:
+        values = np.asarray(time_values, dtype=float)
+        if values.size != n_timesteps:
+            raise ValueError("'time_values' length must match 'n_timesteps'.")
+        finite = np.isfinite(values)
+        finite_order = np.flatnonzero(finite)[np.argsort(values[finite], kind='stable')]
+        missing_order = np.flatnonzero(~finite)
+        ordered_indices = np.concatenate((finite_order, missing_order))
+    else:
+        ordered_indices = np.arange(n_timesteps, dtype=int)
+
+    return ordered_indices.astype(int, copy=False)
+
+
+def _gif_frame_indices(
+    n_timesteps: int,
+    frame_stride: int = 1,
+    time_values: np.ndarray | None = None,
+    time_order: str = 'chronological',
+) -> np.ndarray:
+    """Return rendered GIF timestep indices in playback order, including both endpoints."""
+    if frame_stride < 1:
+        raise ValueError("'gif_frame_stride' must be at least 1.")
+
+    ordered_indices = _gif_playback_indices(n_timesteps, time_values, time_order)
+    selection = ordered_indices[:: int(frame_stride)]
+    if selection.size == 0 or selection[0] != ordered_indices[0]:
+        selection = np.insert(selection, 0, ordered_indices[0])
+    if selection[-1] != ordered_indices[-1]:
+        selection = np.append(selection, ordered_indices[-1])
+    return selection.astype(int, copy=False)
+
+
+def _gif_trail_indices(playback_indices: np.ndarray, frame_index: int) -> np.ndarray:
+    """Return all playback timestep indices up to and including a rendered frame."""
+    matches = np.flatnonzero(np.asarray(playback_indices, dtype=int) == int(frame_index))
+    if matches.size == 0:
+        raise ValueError("'frame_index' must be present in 'playback_indices'.")
+    return playback_indices[: matches[0] + 1]
+
+
+def _confirm_large_gif(
+    output_path: Path,
+    projected_size_mb: float,
+    threshold_mb: float,
+    confirm_large_gif: bool | None,
+) -> bool:
+    if projected_size_mb <= threshold_mb:
+        return True
+    if confirm_large_gif is not None:
+        return bool(confirm_large_gif)
+
+    prompt = (
+        f'Projected GIF render buffer is {projected_size_mb:.1f} MB, which is larger than '
+        f'{threshold_mb:g} MB. Create {output_path}? [y/N]: '
+    )
+    try:
+        response = input(prompt)
+    except EOFError:
+        return False
+    return response.strip().lower() in {'y', 'yes'}
 
 
 def _normalize_panels(panels: str | list[str] | tuple[str, ...]) -> list[str]:
@@ -698,6 +798,139 @@ def _create_panel_axes(panels: list[str]):
     return fig, axes_by_panel
 
 
+def save_trajectory_gif(
+    ds: xr.Dataset,
+    output: str | Path,
+    *,
+    fps: int = 10,
+    dpi: int = 120,
+    marker_size: float = 12.0,
+    frame_stride: int = 1,
+    time_order: str = 'chronological',
+    max_size_warning_mb: float = DEFAULT_GIF_SIZE_WARNING_MB,
+    confirm_large_gif: bool | None = None,
+) -> Path | None:
+    """Save an animated GIF of particle trajectories with moving particles and trails."""
+    if fps <= 0:
+        raise ValueError("'gif_fps' must be greater than 0.")
+    if dpi <= 0:
+        raise ValueError("'gif_dpi' must be greater than 0.")
+    if marker_size <= 0:
+        raise ValueError("'marker_size' must be greater than 0.")
+    if frame_stride < 1:
+        raise ValueError("'gif_frame_stride' must be at least 1.")
+    if time_order not in {'chronological', 'simulation'}:
+        raise ValueError("'gif_time_order' must be either 'chronological' or 'simulation'.")
+    if max_size_warning_mb <= 0:
+        raise ValueError("'gif_max_size_warning_mb' must be greater than 0.")
+
+    n_particles, n_timesteps = _trajectory_shape(ds)
+    time_values = _trajectory_time_values(ds, n_timesteps)
+    playback_indices = _gif_playback_indices(n_timesteps, time_values, time_order)
+    frame_indices = _gif_frame_indices(n_timesteps, frame_stride, time_values, time_order)
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    geographic = str(ds.attrs.get('coordinate_system', 'projected')).lower() in {
+        'geographic',
+        'spherical',
+        'lonlat',
+        'longlat',
+        'latitude_longitude',
+    }
+
+    fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+    projected_size_mb = _estimate_animation_frame_buffer_mb(fig, len(frame_indices), dpi)
+    if not _confirm_large_gif(output_path, projected_size_mb, max_size_warning_mb, confirm_large_gif):
+        plt.close(fig)
+        print(f'GIF skipped: projected render buffer was {projected_size_mb:.1f} MB.')
+        return None
+
+    x_data, y_data, time_data = _trajectory_arrays(ds)
+    colors = np.asarray(_particle_colors(n_particles))
+    finite = np.isfinite(x_data) & np.isfinite(y_data)
+    finite_x = x_data[finite]
+    finite_y = y_data[finite]
+    if finite_x.size == 0 or finite_y.size == 0:
+        plt.close(fig)
+        raise ValueError('No finite trajectory coordinates are available for GIF animation.')
+
+    x_min = float(np.nanmin(finite_x))
+    x_max = float(np.nanmax(finite_x))
+    y_min = float(np.nanmin(finite_y))
+    y_max = float(np.nanmax(finite_y))
+    x_pad = max((x_max - x_min) * 0.05, 1.0)
+    y_pad = max((y_max - y_min) * 0.05, 1.0)
+
+    ax.set_xlim(x_min - x_pad, x_max + x_pad)
+    ax.set_ylim(y_min - y_pad, y_max + y_pad)
+    ax.set_xlabel('Longitude [degrees east]' if geographic else 'X [m]')
+    ax.set_ylabel('Latitude [degrees north]' if geographic else 'Y [m]')
+    ax.grid(True, alpha=0.3)
+    if not geographic:
+        ax.set_aspect('equal', adjustable='box')
+
+    trail_collection = LineCollection([], alpha=0.7, linewidths=1)
+    ax.add_collection(trail_collection)
+    particles = ax.scatter(
+        [],
+        [],
+        s=marker_size,
+        edgecolor='black',
+        linewidth=0.4,
+        zorder=5,
+    )
+    title = ax.set_title('')
+
+    def _time_label(frame_index: int) -> str:
+        frame_times = time_data[:, frame_index]
+        finite_times = frame_times[np.isfinite(frame_times)]
+        if finite_times.size == 0:
+            return f'timestep {frame_index}'
+        return f't = {float(finite_times[0]):.0f} s'
+
+    def _update(playback_position: int):
+        frame_index = int(frame_indices[playback_position])
+        trail_indices = _gif_trail_indices(playback_indices, frame_index)
+        segments, segment_indices, _, _, _ = _line_segments(
+            x_data[:, trail_indices],
+            y_data[:, trail_indices],
+            geographic=geographic,
+        )
+        trail_collection.set_segments(segments)
+        if len(segment_indices):
+            trail_collection.set_color(colors[segment_indices])
+        else:
+            trail_collection.set_color([])
+
+        active = finite[:, frame_index]
+        if np.any(active):
+            particles.set_offsets(np.column_stack((x_data[active, frame_index], y_data[active, frame_index])))
+            particles.set_facecolors(colors[active])
+        else:
+            particles.set_offsets(np.empty((0, 2)))
+            particles.set_facecolors(np.empty((0, 4)))
+        title.set_text(
+            f'Particle trajectories ({playback_position + 1}/{len(frame_indices)}, '
+            f'timestep {frame_index + 1}/{n_timesteps}, {_time_label(frame_index)})'
+        )
+        return trail_collection, particles, title
+
+    animation = FuncAnimation(
+        fig,
+        _update,
+        frames=len(frame_indices),
+        interval=1000.0 / float(fps),
+        blit=False,
+    )
+    try:
+        animation.save(output_path, writer=PillowWriter(fps=int(fps)), dpi=dpi)
+    finally:
+        plt.close(fig)
+    print(f'GIF saved to: {output_path}')
+    return output_path
+
+
 def plot_trajectories(
     ds,
     output=None,
@@ -709,6 +942,14 @@ def plot_trajectories(
     panels: str | list[str] | tuple[str, ...] = 'spatial',
     show: bool | None = None,
     max_plot_points: int | None = DEFAULT_MAX_PLOT_POINTS,
+    animate_gif: bool = False,
+    gif_output: str | Path | None = None,
+    gif_fps: int = 10,
+    gif_dpi: int = 120,
+    gif_frame_stride: int = 1,
+    gif_time_order: str = 'chronological',
+    gif_max_size_warning_mb: float = DEFAULT_GIF_SIZE_WARNING_MB,
+    gif_confirm_large: bool | None = None,
 ):
     """Plot particle trajectories from a SedTRAILS dataset.
 
@@ -745,6 +986,26 @@ def plot_trajectories(
         ``distance``, ``population``, and ``population-distance``.
     show : bool or None, optional
         Whether to display the figure. By default, figures are not shown.
+    animate_gif : bool, optional
+        If true, also save an animated GIF of the sampled spatial trajectories.
+    gif_output : str or pathlib.Path, optional
+        GIF output path. If omitted, the GIF uses the static plot path with a
+        ``.gif`` suffix.
+    gif_fps : int, optional
+        Frames per second for the GIF animation.
+    gif_dpi : int, optional
+        DPI used to render GIF frames.
+    gif_frame_stride : int, optional
+        Save one GIF frame every N output timesteps. The first and last
+        timestep are always included.
+    gif_time_order : {'chronological', 'simulation'}, optional
+        GIF playback order. ``chronological`` sorts frames by timestamp;
+        ``simulation`` preserves the stored integration order.
+    gif_max_size_warning_mb : float, optional
+        Prompt before saving when the projected frame buffer exceeds this size.
+    gif_confirm_large : bool or None, optional
+        Override the large-GIF prompt. ``True`` always saves, ``False`` skips,
+        and ``None`` prompts when needed.
 
     Returns
     -------
@@ -1006,6 +1267,20 @@ def plot_trajectories(
                 ax4.legend()
                 ax4.autoscale()
             ax4.grid(True, alpha=0.3)
+
+    if animate_gif:
+        gif_path = _resolve_gif_output_file(output_path, gif_output)
+        save_trajectory_gif(
+            sampled_ds,
+            gif_path,
+            fps=gif_fps,
+            dpi=gif_dpi,
+            marker_size=marker_size,
+            frame_stride=gif_frame_stride,
+            time_order=gif_time_order,
+            max_size_warning_mb=gif_max_size_warning_mb,
+            confirm_large_gif=gif_confirm_large,
+        )
 
     plt.tight_layout()
     # Save plot if requested

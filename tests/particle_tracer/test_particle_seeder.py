@@ -2902,6 +2902,22 @@ class TestRemovePermanentlyBuriedParticles:
         assert population.particles['status_mobile'].tolist() == [True]
         np.testing.assert_array_equal(population.particles['release_time'], np.array([600.0]))
 
+    def test_update_status_respects_release_time_in_reverse(self):
+        population = _single_particle_population(release_start='1970-01-01 00:10:00')
+        population.particles['transport_probability'] = np.ones_like(population.particles['x'])
+
+        population._current_time = 601.0
+        population.update_status(time_direction=-1)
+
+        assert population.particles['status_released'].tolist() == [False]
+        assert population.particles['status_mobile'].tolist() == [False]
+
+        population._current_time = 599.0
+        population.update_status(time_direction=-1)
+
+        assert population.particles['status_released'].tolist() == [True]
+        assert population.particles['status_mobile'].tolist() == [True]
+
     def test_invalid_release_time_raises_date_format_error(self):
         with pytest.raises(DateFormatError):
             _single_particle_population(release_start='1970/01/01 00:10:00')

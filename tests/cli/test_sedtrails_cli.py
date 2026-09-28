@@ -161,7 +161,54 @@ class TestSedtrailsCLI:
             marker_size=3.0,
             panels='spatial',
             show=None,
+            animate_gif=False,
+            gif_output=None,
+            gif_fps=10,
+            gif_dpi=120,
+            gif_frame_stride=1,
+            gif_time_order='chronological',
+            gif_max_size_warning_mb=20.0,
+            gif_confirm_large=None,
         )
+
+    def test_viz_trajectories_passes_gif_options(self, runner, cli_command, tmp_path, monkeypatch):
+        """Test trajectory GIF visualization settings."""
+        monkeypatch.chdir(tmp_path)
+
+        with patch('sedtrails.application_interfaces.api.plot_trajectories') as mock_plot_trajectories:
+            result = runner.invoke(
+                cli_command,
+                [
+                    'viz',
+                    'trajectories',
+                    '--animate-gif',
+                    '--gif-output',
+                    'tracks.gif',
+                    '--gif-fps',
+                    '8',
+                    '--gif-dpi',
+                    '100',
+                    '--gif-frame-stride',
+                    '20',
+                    '--gif-time-order',
+                    'simulation',
+                    '--gif-max-size-warning-mb',
+                    '25',
+                    '--yes-large-gif',
+                ],
+            )
+
+        assert result.exit_code == 0
+        mock_plot_trajectories.assert_called_once()
+        kwargs = mock_plot_trajectories.call_args.kwargs
+        assert kwargs['animate_gif'] is True
+        assert kwargs['gif_output'] == 'tracks.gif'
+        assert kwargs['gif_fps'] == 8
+        assert kwargs['gif_dpi'] == 100
+        assert kwargs['gif_frame_stride'] == 20
+        assert kwargs['gif_time_order'] == 'simulation'
+        assert kwargs['gif_max_size_warning_mb'] == 25.0
+        assert kwargs['gif_confirm_large'] is True
 
     def test_run_simulation_error(self, runner, cli_command, sample_config_data, mock_run_simulation, tmp_path, monkeypatch):
         """Test run when simulation fails."""

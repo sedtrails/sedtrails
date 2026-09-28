@@ -158,6 +158,93 @@ class TestSimulationManagerPreflight:
         with pytest.raises(ConfigurationError, match='seeding.burial_depth'):
             manager._run_impl()
 
+    def test_reverse_tracking_rejects_active_population_diffusion(self):
+        """Reverse stochastic diffusion should fail during preflight."""
+        populations_config = [
+            {
+                'name': 'passive',
+                'diffusion': {'method': 'brownian', 'coefficient': 0.1},
+            }
+        ]
+
+        with pytest.raises(ConfigurationError, match='reverse_tracking=true.*diffusion'):
+            Simulation._validate_reverse_tracking_configuration(True, populations_config)
+
+    def test_reverse_tracking_rejects_legacy_population_diffusion(self):
+        """Legacy passive diffusion configuration should also be rejected."""
+        populations_config = [
+            {
+                'name': 'passive',
+                'characteristics': {'diffusion_coefficient': 0.1},
+            }
+        ]
+
+        with pytest.raises(ConfigurationError, match='effective diffusion coefficient 0.1'):
+            Simulation._validate_reverse_tracking_configuration(True, populations_config)
+
+    def test_reverse_tracking_allows_disabled_diffusion_with_nonzero_stored_coefficient(self):
+        """A disabled diffusion method should not block deterministic backtracking."""
+        populations_config = [
+            {
+                'name': 'passive',
+                'diffusion': {'method': 'none', 'coefficient': 1.0},
+            }
+        ]
+
+        Simulation._validate_reverse_tracking_configuration(True, populations_config)
+
+    def test_reverse_tracking_allows_release_at_simulation_start(self):
+        """Backtracking from an observed endpoint should allow immediate release."""
+        populations_config = [
+            {
+                'name': 'passive',
+                'seeding': {'release_start': '2016-09-22 19:20:00'},
+            }
+        ]
+        simulation_time = Time(
+            _start='2016-09-22 19:20:00',
+            duration=Duration('1D'),
+            reference_date='1970-01-01',
+            reverse_tracking=True,
+        )
+
+        Simulation._validate_reverse_tracking_configuration(True, populations_config, simulation_time)
+
+    def test_reverse_tracking_allows_release_before_simulation_start(self):
+        """Reverse runs may delay release until the backward clock reaches release_start."""
+        populations_config = [
+            {
+                'name': 'passive',
+                'seeding': {'release_start': '2016-09-22 19:10:00'},
+            }
+        ]
+        simulation_time = Time(
+            _start='2016-09-22 19:20:00',
+            duration=Duration('1D'),
+            reference_date='1970-01-01',
+            reverse_tracking=True,
+        )
+
+        Simulation._validate_reverse_tracking_configuration(True, populations_config, simulation_time)
+
+    def test_reverse_tracking_rejects_release_after_simulation_start(self):
+        """Reverse runs cannot release particles after the configured start time."""
+        populations_config = [
+            {
+                'name': 'passive',
+                'seeding': {'release_start': '2016-09-22 19:30:00'},
+            }
+        ]
+        simulation_time = Time(
+            _start='2016-09-22 19:20:00',
+            duration=Duration('1D'),
+            reference_date='1970-01-01',
+            reverse_tracking=True,
+        )
+
+        with pytest.raises(ConfigurationError, match='release_start.*at or before time.start'):
+            Simulation._validate_reverse_tracking_configuration(True, populations_config, simulation_time)
+
     @pytest.mark.parametrize('example_name', ['config.example_sfincs.yaml', 'sedtrails-example-passive.yaml'])
     def test_passive_examples_pass_runtime_preflight(self, example_name):
         """Committed passive examples must satisfy their runtime-only constraints."""
@@ -424,6 +511,31 @@ class TestSimulationManagerTimeConfig:
         assert simulation_time.reference_date == '2024-05-01'
         assert simulation_time.start == 0
 
+    def test_simulation_time_includes_reverse_tracking_flag(self):
+        """The config key should be passed into the simulation time object."""
+
+        class Controller:
+            values = {
+                'time.start': '2024-05-01 06:00:00',
+                'time.duration': '1H',
+                'time.timestep': '60S',
+                'time.reverse_tracking': True,
+                'inputs.read_interval': '30M',
+                'general.input_model.reference_date': '2024-05-01',
+            }
+
+            def get(self, key, default=None):
+                return self.values.get(key, default)
+
+        manager = object.__new__(Simulation)
+        manager._controller = Controller()
+
+        simulation_time = manager._create_simulation_time()
+
+        assert simulation_time.reverse_tracking is True
+        assert simulation_time.direction == -1
+        assert simulation_time.end == 5 * 3600
+
     @pytest.mark.parametrize('current_time', [0.0, 6011.0, 7200.0])
     def test_loaded_chunk_is_reused_through_final_interpolation_interval(self, current_time):
         """A loaded chunk remains valid until current time moves beyond its last timestamp."""
@@ -450,6 +562,15 @@ class TestSimulationManagerTimeConfig:
 
         assert Simulation._is_after_loaded_sedtrails_data(SedtrailsData(), 7200.1)
         assert not Simulation._is_after_loaded_sedtrails_data(SedtrailsData(), 7200.0)
+
+    def test_input_exhaustion_detects_time_before_loaded_data(self):
+        """Reverse runs can also exhaust forcing before the first loaded timestamp."""
+
+        class SedtrailsData:
+            times = np.array([4800.0, 6000.0, 7200.0])
+
+        assert Simulation._is_before_loaded_sedtrails_data(SedtrailsData(), 4799.9)
+        assert not Simulation._is_before_loaded_sedtrails_data(SedtrailsData(), 4800.0)
 
     def test_simulation_window_must_reach_first_input_time(self):
         """A simulation that ends before input forcing starts should fail clearly."""
@@ -501,6 +622,48 @@ class TestSimulationManagerTimeConfig:
         assert Simulation._should_attempt_sedtrails_reload(SedtrailsData(), 7200.1, input_data_exhausted=False)
         assert not Simulation._should_attempt_sedtrails_reload(SedtrailsData(), 7200.1, input_data_exhausted=True)
 
+    @pytest.mark.parametrize(
+        ('current_time', 'expected'),
+        [
+            (0.0, 0.0),
+            (3600.0, 3600.0),
+            (3900.0, 300.0),
+            (-300.0, 3300.0),
+        ],
+    )
+    def test_repeat_eulerian_fields_wraps_forward_and_reverse(self, current_time, expected):
+        """Looped Eulerian forcing should wrap on both sides of the input window."""
+        mapped = Simulation._map_eulerian_field_time(
+            current_time,
+            repeat_eulerian_fields=True,
+            input_time_bounds=(0.0, 3600.0),
+        )
+
+        assert mapped == pytest.approx(expected)
+
+    def test_reverse_flow_field_negates_temporal_vector_components_and_cache_keys(self):
+        """Reverse tracking should flip u/v fields without mutating input arrays."""
+        lower_u = np.array([1.0, 2.0])
+        lower_v = np.array([3.0, 4.0])
+        upper_u = np.array([5.0, 6.0])
+        upper_v = np.array([7.0, 8.0])
+        flow_field = {
+            'lower': {'u': lower_u, 'v': lower_v, 'magnitude': np.hypot(lower_u, lower_v)},
+            'upper': {'u': upper_u, 'v': upper_v, 'magnitude': np.hypot(upper_u, upper_v)},
+            'weight': 0.5,
+            'cache_generation': {'lower': ('field', 0), 'upper': ('field', 1)},
+        }
+
+        reversed_field = Simulation._reverse_flow_field(flow_field)
+
+        np.testing.assert_array_equal(reversed_field['lower']['u'], -lower_u)
+        np.testing.assert_array_equal(reversed_field['lower']['v'], -lower_v)
+        np.testing.assert_array_equal(reversed_field['upper']['u'], -upper_u)
+        np.testing.assert_array_equal(reversed_field['upper']['v'], -upper_v)
+        np.testing.assert_array_equal(flow_field['lower']['u'], lower_u)
+        assert reversed_field['lower']['magnitude'] is flow_field['lower']['magnitude']
+        assert reversed_field['cache_generation']['lower'][0] == 'reverse_tracking'
+
     def test_simulation_start_must_be_within_forcing_window(self):
         """A run must start on forcing data; repeat mapping is only allowed after that."""
 
@@ -536,8 +699,8 @@ class TestSimulationManagerTimeConfig:
 
         assert mapped_time == 25.0
 
-    def test_eulerian_time_before_input_start_is_not_mapped_forward(self):
-        """Before-start lookups remain invalid so validation/reload failures stay clear."""
+    def test_eulerian_time_before_input_start_wraps_when_repeating(self):
+        """Before-start lookups wrap for reverse tracking with repeated forcing."""
 
         mapped_time = Simulation._map_eulerian_field_time(
             current_time_seconds=50.0,
@@ -545,7 +708,7 @@ class TestSimulationManagerTimeConfig:
             input_time_bounds=(100.0, 200.0),
         )
 
-        assert mapped_time == 50.0
+        assert mapped_time == 150.0
 
     @pytest.mark.parametrize(
         'current_time,expected_time',
@@ -678,10 +841,32 @@ class TestSimulationManagerTimeConfig:
         assert Simulation._next_scheduled_output_time(SimulationTime(), 3600, 1) == 3600.0
         assert Simulation._next_scheduled_output_time(SimulationTime(), 3600, 3) == 9000.0
 
+    def test_next_scheduled_output_time_reverse_tracking(self):
+        """Reverse output targets should step backward from the simulation start."""
+        simulation_time = Time(
+            _start='2000-01-01 03:00:00',
+            duration=Duration('2H30M'),
+            reference_date='2000-01-01',
+            reverse_tracking=True,
+        )
+
+        assert Simulation._next_scheduled_output_time(simulation_time, 3600, 1) == 7200.0
+        assert Simulation._next_scheduled_output_time(simulation_time, 3600, 3) == 1800.0
+
     def test_limit_timestep_to_output_schedule_hits_save_boundary(self):
         """A CFL step that crosses an output boundary should land exactly on it."""
         limited = Simulation._limit_timestep_to_output_schedule(
             current_time=3598.0,
+            current_timestep=10.0,
+            next_output_time=3600.0,
+        )
+
+        assert limited == 2.0
+
+    def test_limit_timestep_to_reverse_output_schedule_hits_save_boundary(self):
+        """Reverse CFL steps should also land exactly on output boundaries."""
+        limited = Simulation._limit_timestep_to_output_schedule(
+            current_time=3602.0,
             current_timestep=10.0,
             next_output_time=3600.0,
         )
@@ -709,6 +894,20 @@ class TestSimulationManagerTimeConfig:
     def test_output_sample_due_on_interval_or_final_time(self, sample_time, next_output_time, end_time, expected):
         """Samples should be saved only on configured boundaries or at final time."""
         assert Simulation._is_output_sample_due(sample_time, next_output_time, end_time) is expected
+
+    @pytest.mark.parametrize(
+        'sample_time,next_output_time,end_time,expected',
+        [
+            (3601.0, 3600.0, 0.0, False),
+            (3600.0, 3600.0, 0.0, True),
+            (0.0, -3600.0, 0.0, True),
+        ],
+    )
+    def test_reverse_output_sample_due_on_interval_or_final_time(
+        self, sample_time, next_output_time, end_time, expected
+    ):
+        """Reverse samples should be saved when time decreases past the boundary."""
+        assert Simulation._is_output_sample_due(sample_time, next_output_time, end_time, direction=-1) is expected
 
     @pytest.mark.parametrize(
         'method_name,transport_probability_method,expected',
@@ -765,6 +964,24 @@ class TestSimulationManagerTimeConfig:
         np.testing.assert_array_equal(population.particles['status_released'], np.array([True, False]))
         np.testing.assert_array_equal(population.particles['status_transported'], np.array([False, False]))
         np.testing.assert_array_equal(population.particles['status_mobile'], np.array([False, False]))
+
+    def test_initialize_population_output_status_uses_reverse_release_direction(self):
+        """Initial output status should respect release times in reverse simulations."""
+
+        class Population:
+            particles = {
+                'x': np.array([1.0, 2.0]),
+                'y': np.array([3.0, 4.0]),
+                'release_time': np.array([10.0, 0.0]),
+                'burial_depth': np.array([0.0, 0.0]),
+            }
+            _particle_simplices = np.array([5, 5])
+
+        population = Population()
+
+        Simulation._initialize_population_output_status([population], current_time=5.0, time_direction=-1)
+
+        np.testing.assert_array_equal(population.particles['status_released'], np.array([True, False]))
 
 
 class TestSimulationManagerNetCDFOutputOptions:

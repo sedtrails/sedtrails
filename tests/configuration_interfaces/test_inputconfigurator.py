@@ -367,6 +367,7 @@ class TestYAMLConfigValidator:
         config_data = {
             'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
             'inputs': {'data': 'dummy.nc'},
+            'time': {'timestep': '60S'},
         }
         config_file = tmp_path / 'valid_config.yml'
         config_file.write_text(yaml.dump(config_data))
@@ -376,6 +377,23 @@ class TestYAMLConfigValidator:
 
         assert result['inputs']['repeat_eulerian_fields'] is False
         assert result['inputs']['max_eulerian_memory_mb'] == 2048
+        assert result['time']['reverse_tracking'] is False
+
+    def test_validate_yaml_accepts_reverse_tracking(self, tmp_path):
+        """The reverse tracking option is accepted under time."""
+
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc'},
+            'time': {'timestep': '60S', 'reverse_tracking': True},
+        }
+        config_file = tmp_path / 'valid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        result = validator.validate_yaml(str(config_file))
+
+        assert result['time']['reverse_tracking'] is True
 
     def test_validate_yaml_accepts_report_domain_exit_updates(self, tmp_path):
         """General config accepts optional per-timestep domain-exit update logging."""

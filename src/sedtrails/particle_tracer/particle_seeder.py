@@ -542,6 +542,18 @@ def _release_time_to_seconds(release_time: str | int | float, reference_date: st
     return release_seconds
 
 
+def release_status_mask(
+    current_time: int | float,
+    release_time: np.ndarray | int | float,
+    time_direction: int = 1,
+) -> np.ndarray:
+    """Return particles whose release time has been reached in the integration direction."""
+    release_time = np.asarray(release_time, dtype=float)
+    if int(time_direction) < 0:
+        return float(current_time) <= release_time
+    return float(current_time) >= release_time
+
+
 def _is_temporal_field(field_value: Any) -> bool:
     return isinstance(field_value, dict) and {'lower', 'upper', 'weight'}.issubset(field_value)
 
@@ -1774,7 +1786,7 @@ class ParticlePopulation:
         self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
 
 
-    def update_status(self) -> None:
+    def update_status(self, time_direction: int = 1) -> None:
         """
         updates status of particles in the population.
         """
@@ -1828,7 +1840,11 @@ class ParticlePopulation:
             # self.particles['status_buried'] = (this is where we implement Soulsby's F based on a and b)
 
         # Compute whether particles are released (or retained)
-        self.particles['status_released'] = self._current_time >= self.particles['release_time']
+        self.particles['status_released'] = release_status_mask(
+            self._current_time,
+            self.particles['release_time'],
+            time_direction,
+        )
 
         # Compute whether particles are alive (or dead) (still TODO)
         self.particles['status_alive'] = ~left_domain

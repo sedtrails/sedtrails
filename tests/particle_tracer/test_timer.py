@@ -175,6 +175,18 @@ class TestTimer:
         expected = timer.current + 95400
         assert timer.next == expected
 
+    def test_next_property_reverse_tracking(self):
+        """Reverse tracking should decrease the actual simulation clock."""
+        time = Time(
+            _start='2023-01-01 12:00:00',
+            time_step=Duration('1H'),
+            reverse_tracking=True,
+        )
+        timer = Timer(simulation_time=time)
+
+        assert time.direction == -1
+        assert timer.next == timer.current - 3600
+
     def test_advance(self):
         """Test advance method updates current time."""
         time = Time(_start='2023-01-01 12:00:00', time_step=Duration('1H'))
@@ -215,6 +227,27 @@ class TestTimer:
 
         # Timer should stop when it would exceed the end
         assert timer.stop
+
+    def test_reverse_advance_reaches_reverse_end(self):
+        """Reverse timers should stop at start minus duration."""
+        time = Time(
+            _start='2023-01-01 12:00:00',
+            time_step=Duration('30M'),
+            duration=Duration('1H'),
+            reference_date='2023-01-01 00:00:00',
+            reverse_tracking=True,
+        )
+        timer = Timer(simulation_time=time)
+
+        assert time.start == 43200
+        assert time.end == 39600
+        assert timer.should_continue()
+        timer.advance()
+        assert timer.current == 41400
+        assert timer.remaining_seconds() == 1800
+        timer.advance()
+        assert timer.current == 39600
+        assert not timer.should_continue()
 
     def test_advance_when_stopped_raises_warning(self):
         """Test advance raises RuntimeWarning when timer is stopped."""
@@ -308,6 +341,17 @@ class TestTime:
         # Duration: 1*86400 + 2*3600 + 30*60 + 45 = 95445 seconds
         expected_end = 95445
         assert time.end == expected_end
+
+    def test_end_property_reverse_tracking(self):
+        """Reverse tracking end time is start minus duration."""
+        time = Time(
+            _start='2023-01-02 00:00:00',
+            duration=Duration('6H'),
+            reference_date='2023-01-01 00:00:00',
+            reverse_tracking=True,
+        )
+
+        assert time.end == 18 * 3600
 
     def test_time_invalid_start_date(self):
         """Test Time with invalid start date format."""

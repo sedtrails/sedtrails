@@ -195,6 +195,7 @@ class Time:
     read_input_interval: Duration = field(default_factory=lambda: Duration('30D12H25M0S'), init=True)
     reference_date: str = field(default='1970-01-01 00:00:00')
     cfl_condition: float = field(default=0.7)
+    reverse_tracking: bool = field(default=False)
     _start_time_np: np.datetime64 = field(init=False)
 
     def __post_init__(self):
@@ -263,7 +264,19 @@ class Time:
         int
             The simulation end time as seconds since the reference date.
         """
-        return self.start + self.duration.seconds
+        return self.start + self.direction * self.duration.seconds
+
+    @property
+    def direction(self) -> int:
+        """
+        Return the signed simulation direction.
+
+        Returns
+        -------
+        int
+            ``1`` for forward tracking and ``-1`` for reverse tracking.
+        """
+        return -1 if self.reverse_tracking else 1
 
 
 @dataclass
@@ -379,14 +392,14 @@ class Timer:
     @property
     def next(self) -> int | float:
         """
-        Returns the next time as current + current_timestep in seconds.
+        Returns the next time as current +/- current_timestep in seconds.
 
         Returns
         -------
         int | float
             The next time step value in seconds since reference date.
         """
-        return self._current + self._current_timestep
+        return self._current + self.simulation_time.direction * self._current_timestep
 
     def set_timestep(self, timestep: float) -> None:
         """
@@ -415,11 +428,41 @@ class Timer:
         if self.stop:
             raise RuntimeWarning('Timer has stopped. Cannot advance time.')
 
-        if self.next <= self.simulation_time.end:
+        if self._next_within_bounds():
             self._current = self.next
             self.step_count += 1
         else:
             self.stop = True
+
+    def _next_within_bounds(self) -> bool:
+        """Return whether the next step stays inside the configured time interval."""
+        if self.simulation_time.direction > 0:
+            return self.next <= self.simulation_time.end
+        return self.next >= self.simulation_time.end
+
+    def remaining_seconds(self) -> float:
+        """
+        Return the absolute remaining simulation duration in seconds.
+
+        Returns
+        -------
+        float
+            Absolute seconds between the current clock and the configured end.
+        """
+        return abs(float(self.simulation_time.end) - float(self.current))
+
+    def should_continue(self) -> bool:
+        """
+        Return whether the simulation loop should continue advancing.
+
+        Returns
+        -------
+        bool
+            True while the current clock has not reached the configured end.
+        """
+        if self.simulation_time.direction > 0:
+            return self.current < self.simulation_time.end
+        return self.current > self.simulation_time.end
 
     def compute_cfl_timestep(self, flow_data_list: list, sedtrails_data) -> None:
         """

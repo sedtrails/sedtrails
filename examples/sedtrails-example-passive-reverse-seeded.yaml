@@ -1,0 +1,45 @@
+general:
+  input_model:
+    format: fm_netcdf
+    reference_date: '1970-01-01'
+    morfac: 1
+inputs:
+  data: .\sample-data\inlet_sedtrails.nc
+  read_interval: 10D
+  repeat_eulerian_fields: false
+time:
+  start: '2016-09-22 19:30:00'
+  timestep: 60S
+  duration: 1D
+  cfl_condition: 0.7
+  reverse_tracking: true
+particles:
+  populations:
+  - name: population_1
+    particle_type: passive
+    characteristics:
+      diffusion_coefficient: 0.0
+    tracer_methods:
+      passive_tracer:
+        flow_field_name:
+        - depth_avg_flow_velocity
+    seeding:
+      release_start: '2016-09-22 19:30:00'
+      quantity: 1
+      strategy:
+        file_points:
+          path: ./examples/sedtrails-example-passive-reverse-seeded.points.txt
+          has_header: false
+          x_col: 0
+          y_col: 1
+          deduplicate: false
+          dropna: false
+          stride: 1
+outputs:
+  directory: ./results
+  store_tracks: true
+  save_interval: 5M
+visualization:
+  dashboard:
+    enable: false
+    update_interval: 1H

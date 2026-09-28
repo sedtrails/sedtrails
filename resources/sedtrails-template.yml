@@ -29,6 +29,7 @@ time:
   timestep: 60S
   duration: 1D
   cfl_condition: 0.7
+  reverse_tracking: false
 physics:
   constants:
     grain_diameter: 0.00025
