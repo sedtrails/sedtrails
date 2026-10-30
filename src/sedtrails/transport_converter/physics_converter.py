@@ -36,6 +36,8 @@ class PhysicsConfig:
         Name of the active sediment tracer physics method.
     suspended_velocity_method : str
         Method used to compute suspended sediment velocity.
+    settling_velocity_method : str
+        Settling velocity formulation for MacDonald populations (default ``van_rijn_1993``).
     gravity : float
         Gravitational acceleration in m/s^2.
     von_karman_constant : float
@@ -59,6 +61,7 @@ class PhysicsConfig:
     # Physics methods
     tracer_method: str = 'vanwesten'  # name of method for
     suspended_velocity_method: str = 'soulsby_2011'  # default suspended velocity method
+    settling_velocity_method: str = 'van_rijn_1993'  # used by MacDonald populations
     gravity: float = GRAVITY
     von_karman_constant: float = VON_KARMAN_CONSTANT
     kinematic_viscosity: float = KINEMATIC_VISCOSITY
@@ -197,7 +200,7 @@ class PhysicsConverter:
                 self.config.particle_density,
                 self.config.water_density,
                 self.config.kinematic_viscosity,
-                settling_velocity_method="macdonald2006"
+                settling_velocity_method=self.config.settling_velocity_method
             )
         else:
             self._grain_properties = physics_lib.compute_grain_properties(

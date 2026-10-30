@@ -586,3 +586,32 @@ def test_population_schema_rejects_invalid_macdonald_2d_deposition(tmp_path, dep
 
     with pytest.raises(YamlValidationError, match='YAML config validation error'):
         _validate_config(tmp_path, config)
+
+
+@pytest.mark.parametrize('method', ['van_rijn_1993', 'macdonald_2006', 'soulsby_1997'])
+def test_population_schema_accepts_macdonald_settling_velocity_method(tmp_path, method):
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'settling_velocity_method': method,
+        }
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    macdonald = validated['particles']['populations'][0]['tracer_methods']['macdonald']
+    assert macdonald['settling_velocity_method'] == method
+
+
+def test_population_schema_rejects_unknown_macdonald_settling_velocity_method(tmp_path):
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'macdonald': {
+            'flow_field_name': ['centroid_particle_velocity'],
+            'settling_velocity_method': 'unknown',
+        }
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)

@@ -119,6 +119,12 @@
 				  "default": "model-native",
 				  "description": "Select which transport fields are used for particle transport. 'model-native' uses transport velocity fields from Delft3D-FM; 'SoulsbyvanRijn1997' computes Soulsby-vanRijn transports."
 				},
+				"settling_velocity_method": {
+				  "type": "string",
+				  "enum": ["van_rijn_1993", "macdonald_2006", "soulsby_1997"],
+				  "default": "van_rijn_1993",
+				  "description": "Settling velocity formulation for this MacDonald population. 'van_rijn_1993' follows Delft3D Eq. 8.37 (non-cohesive sediment, D > 65 um)."
+				},
 				"sediment_fraction_index": {
 				  "type": "integer",
 				  "minimum": 0,

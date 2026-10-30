@@ -61,3 +61,33 @@ def test_converter_instances_do_not_share_config_or_caches():
 
     assert second._grain_properties == {}
     assert second._physics_plugin is None
+
+
+def test_macdonald_defaults_to_van_rijn_1993_settling_velocity():
+    from sedtrails.transport_converter.physics_lib import compute_grain_properties
+
+    converter = PhysicsConverter({'tracer_method': 'macdonald', 'grain_diameter': 0.0002})
+    cfg = converter.config
+    expected = compute_grain_properties(
+        0.0002, cfg.gravity, cfg.particle_density, cfg.water_density, cfg.kinematic_viscosity,
+        settling_velocity_method='van_rijn_1993',
+    )['settling_velocity']
+
+    assert cfg.settling_velocity_method == 'van_rijn_1993'
+    assert converter.grain_properties['settling_velocity'] == expected
+
+
+def test_macdonald_settling_velocity_method_from_population_config():
+    from sedtrails.transport_converter.physics_lib import compute_grain_properties
+
+    converter = PhysicsConverter(
+        {'tracer_method': 'macdonald', 'grain_diameter': 0.0002},
+        {'macdonald': {'settling_velocity_method': 'macdonald_2006'}},
+    )
+    cfg = converter.config
+    expected = compute_grain_properties(
+        0.0002, cfg.gravity, cfg.particle_density, cfg.water_density, cfg.kinematic_viscosity,
+        settling_velocity_method='macdonald2006',
+    )['settling_velocity']
+
+    assert converter.grain_properties['settling_velocity'] == expected

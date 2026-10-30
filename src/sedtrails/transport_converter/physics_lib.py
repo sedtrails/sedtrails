@@ -484,7 +484,7 @@ def compute_grain_properties(
     sediment_density: float,
     water_density: float,
     kinematic_viscosity: float,
-    settling_velocity_method: str = "soulsby1997",  # or "macdonald2006"
+    settling_velocity_method: str = "soulsby1997",  # or "macdonald2006", "van_rijn_1993"
 
 ) -> dict[str, float]:
     """
@@ -492,6 +492,8 @@ def compute_grain_properties(
     Settling velocity can be computed using:
     - "soulsby1997" (default)
     - "macdonald2006" (MacDonald et al., 2006, equation 28)
+    - "van_rijn_1993" (Van Rijn, 1993; Delft3D manual, equation 8.37).
+      Only valid for non-cohesive sediment, D > 65 um.
 
     Parameters
     ----------
@@ -541,16 +543,32 @@ def compute_grain_properties(
         settling_velocity = (kinematic_viscosity / grain_diameter) * (
             np.sqrt(10.36**2 + 1.049 * dstar**3) - 10.36
         )
-    elif settling_velocity_method.lower() in ["macdonald2006", "macdonald", "ptm"]: # (MacDonald et al., 2006, Equation 28)
+    elif settling_velocity_method.lower() in ["macdonald2006", "macdonald_2006", "macdonald", "ptm"]: # (MacDonald et al., 2006, Equation 28)
         term_large = np.sqrt(107.33 + 1.049 * dstar**3) - 10.36
         ws_large = (kinematic_viscosity / grain_diameter) * term_large
         ws_small = (kinematic_viscosity / grain_diameter) * (0.0077 * dstar**2)
         settling_velocity = np.where(dstar >= 0.672, ws_large, ws_small)
 
+    elif settling_velocity_method.lower() in ["van_rijn_1993", "van_rijn", "vanrijn"]:
+        # Van Rijn (1993), Delft3D manual Equation 8.37 (non-cohesive sediment)
+        if grain_diameter <= 65e-6:
+            raise ValueError(
+                "The van_rijn_1993 settling velocity is defined for non-cohesive sediment "
+                f"with D > 65 um; got D={grain_diameter * 1e6:.1f} um."
+            )
+        s_minus_1 = sediment_density / water_density - 1
+        if grain_diameter <= 100e-6:
+            settling_velocity = s_minus_1 * gravity * grain_diameter**2 / (18 * kinematic_viscosity)
+        elif grain_diameter <= 1000e-6:
+            settling_velocity = (10 * kinematic_viscosity / grain_diameter) * (
+                np.sqrt(1 + 0.01 * s_minus_1 * gravity * grain_diameter**3 / kinematic_viscosity**2) - 1
+            )
+        else:
+            settling_velocity = 1.1 * np.sqrt(s_minus_1 * gravity * grain_diameter)
     else:
         raise ValueError(
             f"Unknown settling_velocity_method='{settling_velocity_method}'. "
-            "Use 'soulsby1997' or 'macdonald2006'."
+            "Use 'soulsby1997', 'macdonald2006' or 'van_rijn_1993'."
         )
     # Critical shear stress, τ_cr
     critical_shear_stress = (sediment_density - water_density) * gravity * grain_diameter * theta_cr

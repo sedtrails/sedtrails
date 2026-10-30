@@ -1102,3 +1102,35 @@ if __name__ == '__main__':
     """
     # Run tests when script is executed directly with verbose output
     pytest.main([__file__, '-v'])
+
+
+class TestVanRijn1993SettlingVelocity:
+    """Van Rijn (1993) settling velocity, Delft3D manual Eq. 8.37."""
+
+    G, RHO_S, RHO_W, NU = 9.81, 2650.0, 1000.0, 1.0e-6
+
+    def _ws(self, d):
+        from sedtrails.transport_converter.physics_lib import compute_grain_properties
+
+        return compute_grain_properties(
+            d, self.G, self.RHO_S, self.RHO_W, self.NU, settling_velocity_method='van_rijn_1993'
+        )['settling_velocity']
+
+    @pytest.mark.parametrize('d', [80e-6, 200e-6, 2000e-6])
+    def test_matches_eq_8_37(self, d):
+        s1 = self.RHO_S / self.RHO_W - 1
+        if d <= 100e-6:
+            expected = s1 * self.G * d**2 / (18 * self.NU)
+        elif d <= 1000e-6:
+            expected = 10 * self.NU / d * (np.sqrt(1 + 0.01 * s1 * self.G * d**3 / self.NU**2) - 1)
+        else:
+            expected = 1.1 * np.sqrt(s1 * self.G * d)
+        assert self._ws(d) == pytest.approx(expected)
+
+    def test_200um_known_value(self):
+        # 10e-6/2e-4 * (sqrt(1 + 0.01*1.65*9.81*8e-12/1e-12) - 1) = 0.05 * (sqrt(2.29492) - 1)
+        assert self._ws(200e-6) == pytest.approx(0.05 * (np.sqrt(2.294920) - 1), rel=1e-6)
+
+    def test_rejects_cohesive_range(self):
+        with pytest.raises(ValueError, match='65 um'):
+            self._ws(50e-6)
