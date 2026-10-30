@@ -56,6 +56,7 @@ def test_vanwesten_plugin_uses_macdonald_suspended_velocity_method():
         config.particle_density,
         config.water_density,
         config.kinematic_viscosity,
+        settling_velocity_method='soulsby1997',
     )
 
     plugin.add_physics(sedtrails_data, grain_properties, transport_probability_method='no_probability')
@@ -103,6 +104,7 @@ def test_vanwesten_plugin_rejects_unknown_suspended_velocity_method():
         config.particle_density,
         config.water_density,
         config.kinematic_viscosity,
+        settling_velocity_method='soulsby1997',
     )
 
     with pytest.raises(ValueError, match='Unknown suspended_velocity_method'):
@@ -129,6 +131,7 @@ def test_vanwesten_plugin_passes_custom_bertin_coefficient(monkeypatch):
         config.particle_density,
         config.water_density,
         config.kinematic_viscosity,
+        settling_velocity_method='soulsby1997',
     )
 
     plugin.add_physics(sedtrails_data, grain_properties, transport_probability_method='stochastic_transport')

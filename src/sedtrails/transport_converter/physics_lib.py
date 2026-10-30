@@ -484,15 +484,15 @@ def compute_grain_properties(
     sediment_density: float,
     water_density: float,
     kinematic_viscosity: float,
-    settling_velocity_method: str = "soulsby1997",  # or "macdonald2006", "van_rijn_1993"
+    settling_velocity_method: str = "van_rijn_1993",  # or "soulsby1997", "macdonald2006"
 
 ) -> dict[str, float]:
     """
     Compute all grain-related properties.
     Settling velocity can be computed using:
-    - "soulsby1997" (default)
+    - "van_rijn_1993" (default; Van Rijn, 1993; Delft3D manual, equation 8.37).
+    - "soulsby1997" (Soulsby, 1997, equation 102)
     - "macdonald2006" (MacDonald et al., 2006, equation 28)
-    - "van_rijn_1993" (Van Rijn, 1993; Delft3D manual, equation 8.37).
       Only valid for non-cohesive sediment, D > 65 um.
 
     Parameters
@@ -539,7 +539,7 @@ def compute_grain_properties(
     theta_cr = 0.3 / (1 + 1.2 * dstar) + 0.055 * (1 - np.exp(-0.020 * dstar))
 
     # Settling velocity, w_s
-    if settling_velocity_method.lower() in ["soulsby1997", "soulsby", "soulsby_1997"]: #(default is Soulsby 1997, Equation 102, p. 134)
+    if settling_velocity_method.lower() in ["soulsby1997", "soulsby", "soulsby_1997"]: # (Soulsby 1997, Equation 102, p. 134)
         settling_velocity = (kinematic_viscosity / grain_diameter) * (
             np.sqrt(10.36**2 + 1.049 * dstar**3) - 10.36
         )

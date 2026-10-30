@@ -192,6 +192,7 @@ class PhysicsConverter:
                 self.config.particle_density,
                 self.config.water_density,
                 self.config.kinematic_viscosity,
+                settling_velocity_method='soulsby1997',  # keep Soulsby (1997) for this tracer method
             )
         elif self.config.tracer_method == 'macdonald':
             self._grain_properties = physics_lib.compute_grain_properties(
@@ -209,6 +210,7 @@ class PhysicsConverter:
                 self.config.particle_density,
                 self.config.water_density,
                 self.config.kinematic_viscosity,
+                settling_velocity_method='soulsby1997',  # keep Soulsby (1997) for this tracer method
             )
 
     @property

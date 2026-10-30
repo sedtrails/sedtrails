@@ -115,7 +115,7 @@ class TestComputeGrainProperties:
 
         The 1% tolerance accounts for numerical precision in iterative solutions.
         """
-        result = compute_grain_properties(**grain_parameters)
+        result = compute_grain_properties(**grain_parameters, settling_velocity_method='soulsby1997')
 
         # Expected settling velocity for these parameters should be approximately 0.0202 m/s
         # This value comes from Soulsby (1997, p. 136) empirical formulation for natural sediments
@@ -127,6 +127,12 @@ class TestComputeGrainProperties:
             rtol=0.01,  # 1% relative tolerance for numerical precision
             err_msg=f'Expected settling velocity ~{expected_settling_velocity}, got {result["settling_velocity"]}',
         )
+
+    def test_default_settling_velocity_method_is_van_rijn_1993(self, grain_parameters):
+        """The default settling velocity is Van Rijn (1993), same as the converter default."""
+        default = compute_grain_properties(**grain_parameters)
+        van_rijn = compute_grain_properties(**grain_parameters, settling_velocity_method='van_rijn_1993')
+        assert default['settling_velocity'] == pytest.approx(van_rijn['settling_velocity'])
 
     def test_all_properties_returned(self, grain_parameters):
         """Test that all expected properties are returned."""
@@ -1045,6 +1051,8 @@ class TestEdgeCases:
             'sediment_density': 2650.0,
             'water_density': 1025.0,
             'kinematic_viscosity': 1.36e-6,
+            # Soulsby (1997) covers clay to gravel; van Rijn (1993) is sand-only
+            'settling_velocity_method': 'soulsby1997',
         }
 
         result = compute_grain_properties(**params)

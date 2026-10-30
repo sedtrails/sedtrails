@@ -58,6 +58,7 @@ def test_soulsby_zero_flow_magnitude_does_not_warn_or_emit_nan():
         config.particle_density,
         config.water_density,
         config.kinematic_viscosity,
+        settling_velocity_method='soulsby1997',
     )
 
     with warnings.catch_warnings():
