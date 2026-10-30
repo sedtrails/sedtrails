@@ -491,9 +491,9 @@ def compute_grain_properties(
     Compute all grain-related properties.
     Settling velocity can be computed using:
     - "van_rijn_1993" (default; Van Rijn, 1993; Delft3D manual, equation 8.37).
+      Only valid for non-cohesive sediment, D > 65 um.
     - "soulsby1997" (Soulsby, 1997, equation 102)
     - "macdonald2006" (MacDonald et al., 2006, equation 28)
-      Only valid for non-cohesive sediment, D > 65 um.
 
     Parameters
     ----------
