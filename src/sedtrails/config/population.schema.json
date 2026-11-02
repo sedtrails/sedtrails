@@ -169,9 +169,9 @@
                   "properties": {
                     "threshold_parameter": {
                       "type": "string",
-                      "enum": ["skin_roughness", "reference_height", "grain_diameter"],
+                      "enum": ["skin_roughness", "reference_height", "grain_diameter", "water_depth"],
                       "default": "skin_roughness",
-                      "description": "Q3D deposition-height parameter. reference_height uses the no-wave Van Rijn reference-height formulation."
+                      "description": "Q3D deposition-height parameter. reference_height uses the no-wave Van Rijn reference-height formulation. water_depth sets the threshold to threshold_value times the local water depth, i.e. deposit when z_p/h <= threshold_value."
                     },
                     "threshold_value": {
                       "type": "number",

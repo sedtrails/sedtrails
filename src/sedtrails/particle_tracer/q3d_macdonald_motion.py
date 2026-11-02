@@ -671,6 +671,9 @@ class Q3DMacdonaldMotionMixin:
             return float(value) * skin_roughness
         if parameter == 'grain_diameter':
             return np.full_like(water_depth, float(value) * float(grain_diameter))
+        if parameter == 'water_depth':
+            # Relative threshold: deposit when z_p/h <= value.
+            return float(value) * water_depth
         if parameter == 'reference_height':
             return np.minimum(np.maximum(float(aks_factor) * skin_roughness, 0.01 * water_depth), 0.20 * water_depth)
         raise ValueError(f'Unsupported Q3D deposition threshold_parameter {parameter!r}.')
