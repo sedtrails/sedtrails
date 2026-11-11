@@ -196,7 +196,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         for i in range(0, theta_max.shape[0]):
             for j in range(0, theta_max.shape[1]):
                 if theta_max[i][j] > theta_cr_exp:
-                    soulsby_P[i][j] = (1 + ((np.pi / (6 * soulsby_mu_d)) / (theta_max[i][j] - theta_cr_exp)) ** 4) ** (
+                    soulsby_P[i][j] = (1 + ((np.pi / 6 * soulsby_mu_d) / (theta_max[i][j] - theta_cr_exp)) ** 4) ** (
                         -1 / 4
                     )
                 else:
